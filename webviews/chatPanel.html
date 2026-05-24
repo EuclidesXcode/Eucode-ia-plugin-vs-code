@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Eucode AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 13px;
+            background: #0d0d0d;
+            color: #d4d4d4;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #1e1e1e;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #0d0d0d;
+        }
+
+        #header .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+        }
+
+        #header .title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6b6b6b;
+            flex: 1;
+        }
+
+        #config-btn {
+            background: none;
+            border: none;
+            color: #444;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 4px;
+            line-height: 1;
+            transition: color 0.15s;
+            border-radius: 3px;
+        }
+        #config-btn:hover { color: #13EBFF; }
+
+        /* Config panel */
+        #config-panel {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            border-bottom: 1px solid #1e1e1e;
+            background: #0d0d0d;
+        }
+
+        #config-panel.open { display: flex; }
+
+        .config-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
+        #config-host-input {
+            width: 100%;
+            background: #111;
+            border: 1px solid #1e1e1e;
+            border-radius: 5px;
+            padding: 8px 12px;
+            color: #d4d4d4;
+            font-size: 13px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        #config-host-input:focus { border-color: #13EBFF; }
+
+        .config-hint {
+            font-size: 11px;
+            color: #3a3a3a;
+            margin-top: 4px;
+        }
+
+        .config-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .config-save-btn {
+            background: #1a1a3e;
+            border: 1px solid #2a2a5a;
+            color: #7090d0;
+            border-radius: 5px;
+            padding: 7px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .config-save-btn:hover { background: #22225a; color: #a0b8f0; }
+
+        .config-cancel-btn {
+            background: none;
+            border: 1px solid #1e1e1e;
+            color: #444;
+            border-radius: 5px;
+            padding: 7px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .config-cancel-btn:hover { border-color: #333; color: #666; }
+
+        #config-feedback {
+            font-size: 11px;
+            color: #22c55e;
+            text-align: right;
+            height: 14px;
+        }
+
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            scrollbar-width: thin;
+            scrollbar-color: #2a2a2a transparent;
+        }
+
+        #chat-container::-webkit-scrollbar { width: 4px; }
+        #chat-container::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+
+        .message-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-width: 100%;
+        }
+
+        .message-row.user { align-items: flex-end; }
+        .message-row.agent { align-items: flex-start; }
+
+        .message-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #444;
+        }
+
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: 6px;
+            line-height: 1.6;
+            max-width: 88%;
+            word-break: break-word;
+        }
+
+        .user .message-bubble {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            color: #c9d1d9;
+            border-radius: 6px 6px 2px 6px;
+        }
+
+        .agent .message-bubble {
+            background: #111;
+            border: 1px solid #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 6px 6px 6px 2px;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .agent .message-bubble.loading {
+            color: #555;
+            font-style: italic;
+        }
+
+        .message-bubble p { margin-bottom: 8px; }
+        .message-bubble p:last-child { margin-bottom: 0; }
+        .message-bubble strong { color: #e2e8f0; font-weight: 600; }
+        .message-bubble em { color: #a0aec0; }
+        .message-bubble ul, .message-bubble ol { padding-left: 18px; margin-bottom: 8px; }
+        .message-bubble li { margin-bottom: 3px; }
+        .message-bubble h1, .message-bubble h2, .message-bubble h3 {
+            color: #e2e8f0;
+            font-weight: 600;
+            margin: 12px 0 6px;
+            line-height: 1.3;
+        }
+        .message-bubble h1 { font-size: 15px; }
+        .message-bubble h2 { font-size: 13px; }
+        .message-bubble h3 { font-size: 12px; color: #a0aec0; }
+
+        .message-bubble code:not(pre code) {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            color: #79c0ff;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+        }
+
+        .message-bubble pre {
+            margin: 8px 0;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid #2a2a2a;
+        }
+
+        .code-header {
+            background: #161616;
+            padding: 5px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .code-lang {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #555;
+        }
+
+        .copy-btn {
+            font-size: 10px;
+            color: #555;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            transition: color 0.15s;
+        }
+        .copy-btn:hover { color: #a0aec0; }
+
+        .message-bubble pre code {
+            display: block;
+            padding: 12px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            overflow-x: auto;
+            background: #0d0d0d;
+        }
+
+        #input-area {
+            padding: 12px 16px;
+            border-top: 1px solid #1e1e1e;
+            display: flex;
+            gap: 8px;
+            background: #0d0d0d;
+        }
+
+        #user-input {
+            flex: 1;
+            background: #111;
+            border: 1px solid #1e1e1e;
+            border-radius: 5px;
+            padding: 9px 12px;
+            color: #d4d4d4;
+            font-size: 13px;
+            font-family: inherit;
+            resize: none;
+            outline: none;
+            line-height: 1.5;
+            transition: border-color 0.15s;
+        }
+
+        #user-input:focus { border-color: #13EBFF; }
+        #user-input::placeholder { color: #333; }
+
+        #send-btn {
+            background: #1a1a3e;
+            border: 1px solid #2a2a5a;
+            color: #7090d0;
+            border-radius: 5px;
+            padding: 9px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            white-space: nowrap;
+            align-self: flex-end;
+        }
+
+        #send-btn:hover { background: #22225a; color: #a0b8f0; }
+        #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        #image-btn {
+            background: none;
+            border: 1px solid #1e1e1e;
+            border-radius: 5px;
+            color: #444;
+            cursor: pointer;
+            padding: 9px 10px;
+            font-size: 14px;
+            line-height: 1;
+            align-self: flex-end;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        #image-btn:hover { border-color: #13EBFF; color: #13EBFF; }
+
+        #image-preview {
+            padding: 6px 16px 0;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        #image-preview img {
+            height: 48px;
+            border-radius: 4px;
+            border: 1px solid #2a2a2a;
+            object-fit: cover;
+        }
+        #image-preview-name {
+            font-size: 11px;
+            color: #555;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #image-remove {
+            background: none;
+            border: none;
+            color: #444;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 2px 4px;
+            transition: color 0.15s;
+        }
+        #image-remove:hover { color: #e05555; }
+
+        .msg-image {
+            max-width: 100%;
+            max-height: 240px;
+            border-radius: 5px;
+            border: 1px solid #2a2a2a;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        #status-bar {
+            font-size: 11px;
+            color: #4a6a8a;
+            padding: 4px 2px;
+            font-style: italic;
+            letter-spacing: 0.03em;
+            animation: pulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <div class="dot"></div>
+        <span class="title">Eucode IA</span>
+        <button id="config-btn" title="Configuracoes">&#9881;</button>
+    </div>
+
+    <div id="config-panel">
+        <div>
+            <div class="config-label">Host da IA</div>
+            <input id="config-host-input" type="text" placeholder="http://localhost:1234" spellcheck="false">
+            <div class="config-hint">Endereco completo com porta. Ex: http://192.168.1.10:1234</div>
+        </div>
+        <div>
+            <div id="config-feedback"></div>
+            <div class="config-actions">
+                <button class="config-cancel-btn" id="config-cancel-btn">Cancelar</button>
+                <button class="config-save-btn" id="config-save-btn">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-container">
+        <div class="message-row agent">
+            <div class="message-label">Eucode IA</div>
+            <div class="message-bubble">Ola! Como posso ajudar?</div>
+        </div>
+    </div>
+
+    <div id="image-preview">
+        <img id="image-preview-img" src="" alt="preview">
+        <span id="image-preview-name"></span>
+        <button id="image-remove" title="Remover imagem">x</button>
+    </div>
+
+    <div id="input-area">
+        <button id="image-btn" title="Anexar imagem">&#128247;</button>
+        <textarea id="user-input" rows="1" placeholder="Digite sua mensagem..."></textarea>
+        <button id="send-btn">Enviar</button>
+    </div>
+    <input type="file" id="image-input" accept="image/*" style="display:none">
+
+    <script>
+        const vscode = acquireVsCodeApi();
+        const chatContainer = document.getElementById('chat-container');
+        const input = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const imageBtn = document.getElementById('image-btn');
+        const imageInput = document.getElementById('image-input');
+        const imagePreview = document.getElementById('image-preview');
+        const imagePreviewImg = document.getElementById('image-preview-img');
+        const imagePreviewName = document.getElementById('image-preview-name');
+        const imageRemove = document.getElementById('image-remove');
+
+        const configBtn = document.getElementById('config-btn');
+        const configPanel = document.getElementById('config-panel');
+        const configHostInput = document.getElementById('config-host-input');
+        const configSaveBtn = document.getElementById('config-save-btn');
+        const configCancelBtn = document.getElementById('config-cancel-btn');
+        const configFeedback = document.getElementById('config-feedback');
+
+        let pendingImage = null;
+        let savedHost = '';
+
+        // Config panel toggle
+        configBtn.addEventListener('click', () => {
+            const isOpen = configPanel.classList.toggle('open');
+            if (isOpen) {
+                configHostInput.value = savedHost;
+                configFeedback.textContent = '';
+            }
+        });
+
+        configCancelBtn.addEventListener('click', () => {
+            configPanel.classList.remove('open');
+            configHostInput.value = savedHost;
+            configFeedback.textContent = '';
+        });
+
+        configSaveBtn.addEventListener('click', () => {
+            const host = configHostInput.value.trim();
+            if (!host) { return; }
+            vscode.postMessage({ command: 'save_config', apiHost: host });
+        });
+
+        // Image handling
+        imageBtn.addEventListener('click', () => imageInput.click());
+
+        imageInput.addEventListener('change', function() {
+            const file = this.files[0];
+            if (!file) { return; }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target.result;
+                const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+                if (!match) { return; }
+                pendingImage = { base64: match[2], mimeType: match[1], name: file.name };
+                imagePreviewImg.src = dataUrl;
+                imagePreviewName.textContent = file.name;
+                imagePreview.style.display = 'flex';
+            };
+            reader.readAsDataURL(file);
+            this.value = '';
+        });
+
+        imageRemove.addEventListener('click', () => {
+            pendingImage = null;
+            imagePreview.style.display = 'none';
+            imagePreviewImg.src = '';
+        });
+
+        // Markdown renderer
+        marked.setOptions({ breaks: true });
+
+        const renderer = new marked.Renderer();
+        renderer.code = function(code, lang) {
+            const language = lang || 'plaintext';
+            const highlighted = hljs.getLanguage(language)
+                ? hljs.highlight(code, { language }).value
+                : hljs.highlightAuto(code).value;
+            return `<pre><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" onclick="copyCode(this)">copiar</button></div><code class="hljs language-${language}">${highlighted}</code></pre>`;
+        };
+        marked.use({ renderer });
+
+        function copyCode(btn) {
+            const code = btn.closest('pre').querySelector('code').innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                btn.textContent = 'copiado';
+                setTimeout(() => btn.textContent = 'copiar', 2000);
+            });
+        }
+
+        function appendMessage(text, role, isLoading = false, imageDataUrl = null) {
+            const row = document.createElement('div');
+            row.className = `message-row ${role}`;
+
+            const label = document.createElement('div');
+            label.className = 'message-label';
+            label.textContent = role === 'user' ? 'Voce' : 'Eucode IA';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble' + (isLoading ? ' loading' : '');
+
+            if (imageDataUrl) {
+                const img = document.createElement('img');
+                img.src = imageDataUrl;
+                img.className = 'msg-image';
+                bubble.appendChild(img);
+            }
+
+            if (isLoading) {
+                bubble.appendChild(document.createTextNode(text));
+                bubble.dataset.loading = 'true';
+            } else if (role === 'agent') {
+                const md = document.createElement('div');
+                md.innerHTML = marked.parse(text);
+                bubble.appendChild(md);
+            } else if (text) {
+                bubble.appendChild(document.createTextNode(text));
+            }
+
+            row.appendChild(label);
+            row.appendChild(bubble);
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return row;
+        }
+
+        window.addEventListener('message', function(event) {
+            const message = event.data;
+
+            if (message.command === 'load_config') {
+                savedHost = message.apiHost;
+                configHostInput.value = savedHost;
+            } else if (message.command === 'config_saved') {
+                savedHost = configHostInput.value.trim();
+                configFeedback.textContent = 'Configuracao salva.';
+                setTimeout(() => {
+                    configFeedback.textContent = '';
+                    configPanel.classList.remove('open');
+                }, 1200);
+            } else if (message.command === 'status') {
+                updateStatus(message.text);
+            } else if (message.command === 'agent_response') {
+                clearStatus();
+                const loading = chatContainer.querySelector('[data-loading="true"]');
+                if (loading) { loading.closest('.message-row').remove(); }
+                appendMessage(message.text, 'agent');
+                sendBtn.disabled = false;
+            }
+        });
+
+        function updateStatus(text) {
+            let statusEl = document.getElementById('status-bar');
+            if (!statusEl) {
+                statusEl = document.createElement('div');
+                statusEl.id = 'status-bar';
+                chatContainer.appendChild(statusEl);
+            }
+            statusEl.textContent = text;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function clearStatus() {
+            const statusEl = document.getElementById('status-bar');
+            if (statusEl) { statusEl.remove(); }
+        }
+
+        function sendMessage() {
+            const text = input.value.trim();
+            if (!text && !pendingImage) { return; }
+
+            const imageDataUrl = pendingImage ? `data:${pendingImage.mimeType};base64,${pendingImage.base64}` : null;
+            appendMessage(text, 'user', false, imageDataUrl);
+
+            input.value = '';
+            input.style.height = 'auto';
+            sendBtn.disabled = true;
+            appendMessage('Aguardando resposta...', 'agent', true);
+
+            vscode.postMessage({
+                command: 'user_input',
+                text: text || '(analise esta imagem)',
+                image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
+            });
+
+            pendingImage = null;
+            imagePreview.style.display = 'none';
+            imagePreviewImg.src = '';
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        input.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // Avisa o extension host que o webview esta pronto para receber configs
+        vscode.postMessage({ command: 'webview_ready' });
+    </script>
+</body>
+</html>

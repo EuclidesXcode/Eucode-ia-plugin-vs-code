@@ -1,0 +1,51 @@
+{
+    "name": "eucode-ia-plugin-vs-code",
+    "displayName": "Eucode IA",
+    "description": "Agente de IA para engenharia de software integrado ao VS Code. Roda 100% local via LM Studio — le arquivos, edita codigo, executa comandos e analisa imagens sem enviar dados para servidores externos.",
+    "version": "0.1.0",
+    "publisher": "EuclidesXcode",
+    "license": "MIT",
+    "icon": "icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/EuclidesXcode/eucode-ia-plugin-vs-code"
+    },
+    "engines": {
+        "vscode": "^1.87.0"
+    },
+    "categories": [
+        "Programming Languages",
+        "Machine Learning",
+        "Other"
+    ],
+    "keywords": [
+        "ai",
+        "agent",
+        "lm studio",
+        "local ai",
+        "copilot",
+        "gemma",
+        "llm",
+        "chat"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "eucode-ia.activateAgent",
+                "title": "Abrir Chat",
+                "category": "Eucode IA"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch --project src/tsconfig.json"
+    },
+    "devDependencies": {
+        "@types/node": "^25.9.1",
+        "@types/vscode": "^1.120.0",
+        "typescript": "^6.0.3"
+    }
+}

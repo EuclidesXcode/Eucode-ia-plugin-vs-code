@@ -1,0 +1,9 @@
+src/
+node_modules/
+.vscode/
+tsconfig.json
+yarn.lock
+package-lock.json
+**/*.map
+**/*.ts
+!dist/**
