@@ -83,6 +83,21 @@ function buildToolHandlers(
     };
 }
 
+const PENDING_ACTION_PATTERNS = [
+    /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
+    /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
+    /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
+    /agora vou/i, /agora crio/i, /agora escrevo/i,
+    /a seguir vou/i, /em seguida vou/i,
+    /criando o arquivo/i, /escrevendo o arquivo/i,
+    /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
+];
+
+function detectsPendingAction(text: string): boolean {
+    const last = text.split('\n').filter(l => l.trim()).slice(-4).join(' ');
+    return PENDING_ACTION_PATTERNS.some(p => p.test(last));
+}
+
 function detectEscapedToolCall(text: string): ToolCall | null {
     // Formato simples: funcao({ ... })
     const simple = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
@@ -212,7 +227,15 @@ export async function runAgentLoop(
                 tool_call_id: toolCallId,
             });
         } else if (result.responseText !== undefined) {
-            return result.responseText || 'Nao foi possivel obter resposta.';
+            const text = result.responseText || '';
+            if (text && detectsPendingAction(text)) {
+                // Modelo anunciou uma ação mas não chamou a ferramenta — empurra de volta
+                roundMessages.push({ role: 'assistant', content: text });
+                roundMessages.push({ role: 'user', content: 'continue' });
+                lastToolName = '';
+                continue;
+            }
+            return text || 'Nao foi possivel obter resposta.';
         } else {
             break;
         }
