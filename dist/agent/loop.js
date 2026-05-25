@@ -79,28 +79,76 @@ function buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite) {
             return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
         },
         run_command: async (args, cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
+            const cmd = args.command || '';
+            onStatus(`Passo ${step}/${max} — executando: ${cmd}`);
             return new Promise((resolve) => {
-                const emitter = (0, tools_definition_1.runCommandTool)(args.command || '', args.cwd || cwd);
+                const emitter = (0, tools_definition_1.runCommandTool)(cmd, args.cwd || cwd);
                 let output = '';
+                let isLongRunning = false;
                 emitter.on('stdout', (chunk) => { output += chunk; onCommandOutput(chunk); });
                 emitter.on('stderr', (chunk) => { output += chunk; onCommandOutput(chunk); });
-                emitter.on('done', () => resolve(output || '[OK] Comando executado sem saida.'));
+                emitter.on('long_running', () => { isLongRunning = true; });
+                emitter.on('done', () => {
+                    if (isLongRunning) {
+                        onStatus('Processo rodando — aguardando sua resposta...');
+                        // Retorna para o modelo saber que o processo subiu e está rodando
+                        resolve(`[PROCESSO INICIADO] O comando "${cmd}" esta rodando em background. Output ate agora:\n${output}\nO servidor esta ativo. Informe o usuario que pode interagir.`);
+                    }
+                    else {
+                        resolve(output || '[OK] Comando executado sem saida.');
+                    }
+                });
             });
         },
     };
 }
 function detectEscapedToolCall(text) {
-    const match = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
-    if (!match || !tools_definition_2.TOOL_NAMES.has(match[1])) {
-        return null;
+    // Formato simples: funcao({ ... })
+    const simple = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
+    if (simple && tools_definition_2.TOOL_NAMES.has(simple[1])) {
+        try {
+            return { function: { name: simple[1], arguments: JSON.parse(`{${simple[2]}}`) } };
+        }
+        catch { }
     }
+    // Formato JSON com tool_calls array (modelo gera como texto)
+    const jsonBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = jsonBlock ? jsonBlock[1] : text;
     try {
-        return { function: { name: match[1], arguments: JSON.parse(`{${match[2]}}`) } };
+        const parsed = JSON.parse(jsonStr.trim());
+        // { tool_calls: [{ function: { name, args } }] }
+        const tc = parsed?.tool_calls?.[0];
+        if (tc?.function?.name && tools_definition_2.TOOL_NAMES.has(tc.function.name)) {
+            const args = typeof tc.function.arguments === 'string'
+                ? JSON.parse(tc.function.arguments)
+                : (tc.function.args || tc.function.arguments || {});
+            return { id: tc.id, function: { name: tc.function.name, arguments: args } };
+        }
+        // { function: { name, arguments } } direto
+        if (parsed?.function?.name && tools_definition_2.TOOL_NAMES.has(parsed.function.name)) {
+            const args = typeof parsed.function.arguments === 'string'
+                ? JSON.parse(parsed.function.arguments)
+                : (parsed.function.args || parsed.function.arguments || {});
+            return { function: { name: parsed.function.name, arguments: args } };
+        }
     }
-    catch {
-        return null;
+    catch { }
+    // Formato <|tool_call|>call:nome{args}<|/tool_call|> ou variantes
+    const tagMatch = text.match(/<\|tool_call\|>call:(\w+)\{([^}]*)\}<\|\/tool_call\|>/);
+    if (tagMatch && tools_definition_2.TOOL_NAMES.has(tagMatch[1])) {
+        try {
+            // args no formato key:<|"value"|>
+            const rawArgs = tagMatch[2].replace(/<\|"([^"]*)"\|>/g, '"$1"');
+            return { function: { name: tagMatch[1], arguments: JSON.parse(`{${rawArgs}}`) } };
+        }
+        catch { }
+        // tenta extrair command diretamente
+        const cmdMatch = tagMatch[2].match(/"command"\s*:\s*"([^"]+)"/);
+        if (cmdMatch) {
+            return { function: { name: tagMatch[1], arguments: { command: cmdMatch[1] } } };
+        }
     }
+    return null;
 }
 async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
     const systemContent = [prompt_1.SYSTEM_PROMPT, contextBlock].filter(Boolean).join('\n\n');

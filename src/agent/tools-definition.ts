@@ -42,6 +42,7 @@ export const runCommandTool = (command: string, cwd: string): EventEmitter => {
         longRunningTimer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
+                emitter.emit('long_running');
                 emitter.emit('done', outputBuffer || '[Processo rodando em background]');
             }
         }, 8000);
@@ -51,7 +52,7 @@ export const runCommandTool = (command: string, cwd: string): EventEmitter => {
         if (!resolved && isLongRunning && SERVER_READY_PATTERNS.some(p => p.test(chunk))) {
             resolved = true;
             if (longRunningTimer) { clearTimeout(longRunningTimer); }
-            // Pequeno delay para capturar a linha completa antes de resolver
+            emitter.emit('long_running');
             setTimeout(() => emitter.emit('done', outputBuffer), 300);
         }
     }

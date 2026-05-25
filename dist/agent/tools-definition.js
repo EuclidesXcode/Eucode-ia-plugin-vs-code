@@ -38,6 +38,7 @@ const runCommandTool = (command, cwd) => {
         longRunningTimer = setTimeout(() => {
             if (!resolved) {
                 resolved = true;
+                emitter.emit('long_running');
                 emitter.emit('done', outputBuffer || '[Processo rodando em background]');
             }
         }, 8000);
@@ -48,7 +49,7 @@ const runCommandTool = (command, cwd) => {
             if (longRunningTimer) {
                 clearTimeout(longRunningTimer);
             }
-            // Pequeno delay para capturar a linha completa antes de resolver
+            emitter.emit('long_running');
             setTimeout(() => emitter.emit('done', outputBuffer), 300);
         }
     }
