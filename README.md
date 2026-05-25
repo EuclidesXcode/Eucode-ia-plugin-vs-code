@@ -126,6 +126,23 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.2.4)
+
+- Novo tema visual: fundo escuro profundo com accent azul (#3a7bd5)
+- Avatares de mensagem: "EI" para o agente, "VC" para o usuario — identidade visual clara
+- Bubbles de usuario com gradiente azul-escuro e borda destacada
+- Animacao de carregamento com tres pontos em bounce
+- Status dot com brilho verde ao conectar e pulso azul na barra de status
+- Blocos de codigo redesenhados com label de linguagem em azul e fundo mais escuro
+- Focus rings azuis nos campos de entrada e selects
+- Painel de configuracao com botoes e estados de hover refinados
+
+## Nota da versao (0.2.3)
+
+- Botao "Retomar conversa" no header: ao reabrir o chat, o historico da sessao anterior e restaurado com um clique
+- Chat nao reinicia mais ao mudar de aba no VS Code (`retainContextWhenHidden`)
+- Timeout de resposta aumentado para 10 minutos para acomodar modelos com reasoning longo
+
 ## Nota da versao (0.2.2)
 
 - Correcao de leitura de arquivos: dotfiles como `.gitignore` e `.env` agora aparecem na listagem de diretorios

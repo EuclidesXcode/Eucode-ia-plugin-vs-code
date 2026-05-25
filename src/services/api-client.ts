@@ -108,7 +108,7 @@ export async function callAI(
     try {
         const data = await request(endpoint, 'POST', {
             model: MODEL, messages, tools: formattedTools, tool_choice: 'auto',
-        }, authHeaders, 120000) as any;
+        }, authHeaders, 600000) as any;
 
         const message = data?.choices?.[0]?.message;
         if (!message) { throw new Error('Resposta inesperada da API.'); }
@@ -151,7 +151,7 @@ export async function callAIWithVision(
                     ],
                 },
             ],
-        }, authHeaders, 120000) as any;
+        }, authHeaders, 600000) as any;
 
         return data?.choices?.[0]?.message?.content || 'Nao foi possivel analisar a imagem.';
     } catch (error) {

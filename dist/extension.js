@@ -49,7 +49,7 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.activateAgent', () => initializeEucodeAgent(context)));
 }
 async function initializeEucodeAgent(context) {
-    const panel = vscode.window.createWebviewPanel('eucodeChatPanel', 'Eucode AI Agent', vscode.ViewColumn.One, { enableScripts: true });
+    const panel = vscode.window.createWebviewPanel('eucodeChatPanel', 'Eucode AI Agent', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
     const htmlPath = path.join(context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
     panel.webview.html = fs.readFileSync(htmlPath, 'utf8');
     let sessionHistory = (0, history_service_1.loadHistory)();
@@ -69,6 +69,11 @@ async function initializeEucodeAgent(context) {
                 apiHost: settings.apiHost,
                 apiKey: settings.apiKey,
             });
+            // Envia historico para restaurar conversa anterior
+            const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+            if (history.length > 0) {
+                panel.webview.postMessage({ command: 'load_history', entries: history });
+            }
             pingAndNotify(settings);
             return;
         }
