@@ -104,13 +104,20 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmW
     };
 }
 const PENDING_ACTION_PATTERNS = [
+    // Intenção futura
     /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
     /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
     /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
     /agora vou/i, /agora crio/i, /agora escrevo/i,
     /a seguir vou/i, /em seguida vou/i,
     /criando o arquivo/i, /escrevendo o arquivo/i,
+    // Modelo afirmou ter feito sem usar ferramenta
+    /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
+    /escrevi o arquivo/i, /gravei o arquivo/i,
+    /criei o mock/i, /gerei o arquivo/i,
+    // Inglês (modelo ignorando instrução de idioma)
     /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
+    /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
 ];
 function detectsPendingAction(text) {
     const last = text.split('\n').filter(l => l.trim()).slice(-4).join(' ');
