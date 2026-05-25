@@ -147,6 +147,8 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
                 }
                 const defaultCwd = getDefaultCwd(ctx.roots);
+                const notifyCommandStart = (cmd: string) =>
+                    panel.webview.postMessage({ command: 'command_start', cmd });
                 const notifyCommandOutput = (chunk: string) =>
                     panel.webview.postMessage({ command: 'command_output', chunk });
 
@@ -158,6 +160,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     authHeaders,
                     sessionHistory,
                     notify,
+                    notifyCommandStart,
                     notifyCommandOutput,
                     makeConfirmWrite(),
                     activeModel

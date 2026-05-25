@@ -46,7 +46,7 @@ const prompt_1 = require("./prompt");
 const tools_definition_2 = require("./tools-definition");
 const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
-function buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite) {
     return {
         list_directory: async (args, _cwd, _step, _max) => {
             onStatus(`Lendo estrutura: ${path.basename(args.dirPath || args.dirPath || '/')}`);
@@ -81,6 +81,7 @@ function buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite) {
         run_command: async (args, cwd, _step, _max) => {
             const cmd = args.command || '';
             onStatus(`Executando: ${cmd}`);
+            onCommandStart(cmd);
             return new Promise((resolve) => {
                 const emitter = (0, tools_definition_1.runCommandTool)(cmd, args.cwd || cwd);
                 let output = '';
@@ -150,7 +151,7 @@ function detectEscapedToolCall(text) {
     }
     return null;
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
     const systemContent = [prompt_1.SYSTEM_PROMPT, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
     const roundMessages = [
@@ -158,7 +159,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
-    const toolHandlers = buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite);
     const thinkingStatus = [
         'Analisando sua solicitacao...',
         'Processando contexto do projeto...',

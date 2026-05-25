@@ -21,6 +21,7 @@ export type ConfirmWriteRequest = {
 
 function buildToolHandlers(
     onStatus: (s: string) => void,
+    onCommandStart: (cmd: string) => void,
     onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
@@ -60,6 +61,7 @@ function buildToolHandlers(
         run_command: async (args, cwd, _step, _max) => {
             const cmd: string = args.command || '';
             onStatus(`Executando: ${cmd}`);
+            onCommandStart(cmd);
             return new Promise<string>((resolve) => {
                 const emitter = runCommandTool(cmd, args.cwd || cwd);
                 let output = '';
@@ -136,6 +138,7 @@ export async function runAgentLoop(
     authHeaders: Record<string, string>,
     sessionHistory: HistoryEntry[],
     onStatus: (s: string) => void,
+    onCommandStart: (cmd: string) => void,
     onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
     model: string = DEFAULT_MODEL
@@ -148,7 +151,7 @@ export async function runAgentLoop(
         { role: 'user', content: userPrompt },
     ];
 
-    const toolHandlers = buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite);
 
     const thinkingStatus = [
         'Analisando sua solicitacao...',

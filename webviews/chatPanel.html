@@ -1253,6 +1253,8 @@
                 }, 1200);
             } else if (msg.command === 'status') {
                 updateStatus(msg.text);
+            } else if (msg.command === 'command_start') {
+                startTerminal(msg.cmd);
             } else if (msg.command === 'command_output') {
                 appendCommandChunk(msg.chunk);
             } else if (msg.command === 'confirm_write') {
@@ -1285,44 +1287,54 @@
         }
 
         let activeTerminal = null;
+        let activeTerminalWrapper = null;
+
+        function startTerminal(cmd) {
+            // Finaliza terminal anterior se existir
+            finalizeTerminal();
+
+            const loadingEl = chatContainer.querySelector('[data-loading="true"]');
+            const anchor = loadingEl ? loadingEl.closest('.message-row') : null;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'terminal-output';
+            wrapper.id = 'active-terminal';
+
+            const label = document.createElement('div');
+            label.className = 'terminal-label';
+            label.textContent = cmd || 'Terminal';
+
+            const body = document.createElement('div');
+            body.className = 'terminal-body';
+            body.id = 'active-terminal-body';
+
+            wrapper.appendChild(label);
+            wrapper.appendChild(body);
+
+            if (anchor) {
+                chatContainer.insertBefore(wrapper, anchor);
+            } else {
+                chatContainer.appendChild(wrapper);
+            }
+
+            activeTerminal = body;
+            activeTerminalWrapper = wrapper;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
 
         function appendCommandChunk(chunk) {
-            if (!activeTerminal) {
-                // Insere o terminal dentro da bolha de loading, logo acima dos 3 pontos
-                const loadingEl = chatContainer.querySelector('[data-loading="true"]');
-                const anchor = loadingEl ? loadingEl.closest('.message-row') : null;
-
-                const wrapper = document.createElement('div');
-                wrapper.className = 'terminal-output';
-                wrapper.id = 'active-terminal';
-                const label = document.createElement('div');
-                label.className = 'terminal-label';
-                label.textContent = 'Terminal';
-                const body = document.createElement('div');
-                body.className = 'terminal-body';
-                body.id = 'active-terminal-body';
-                wrapper.appendChild(label);
-                wrapper.appendChild(body);
-
-                if (anchor) {
-                    // Insere antes da bolha de loading para ficar acima dela
-                    chatContainer.insertBefore(wrapper, anchor);
-                } else {
-                    chatContainer.appendChild(wrapper);
-                }
-                activeTerminal = body;
-            }
+            // Cria bloco se command_start não chegou por algum motivo
+            if (!activeTerminal) { startTerminal(''); }
             const span = document.createElement('span');
             span.textContent = chunk;
             activeTerminal.appendChild(span);
-            // Auto-scroll interno do terminal
-            const termWrapper = document.getElementById('active-terminal');
-            if (termWrapper) { termWrapper.scrollTop = termWrapper.scrollHeight; }
+            if (activeTerminalWrapper) { activeTerminalWrapper.scrollTop = activeTerminalWrapper.scrollHeight; }
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function finalizeTerminal() {
             activeTerminal = null;
+            activeTerminalWrapper = null;
             const el = document.getElementById('active-terminal');
             if (el) { el.removeAttribute('id'); }
             const body = document.getElementById('active-terminal-body');
