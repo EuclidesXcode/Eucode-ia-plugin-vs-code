@@ -48,22 +48,22 @@ const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
 function buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite) {
     return {
-        list_directory: async (args, _cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
+        list_directory: async (args, _cwd, _step, _max) => {
+            onStatus(`Lendo estrutura: ${path.basename(args.dirPath || args.dirPath || '/')}`);
             return (0, file_tools_1.listDirectory)(args.dirPath || '');
         },
-        read_local_file: async (args, cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — lendo: ${path.basename(args.filePath || '')}`);
+        read_local_file: async (args, cwd, _step, _max) => {
+            onStatus(`Lendo arquivo: ${path.basename(args.filePath || '')}`);
             return (0, file_tools_1.readLocalFile)(args.filePath || '', cwd);
         },
-        search_in_workspace: async (args, cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — buscando: "${args.query}"`);
+        search_in_workspace: async (args, cwd, _step, _max) => {
+            onStatus(`Buscando no projeto: "${args.query}"`);
             return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd);
         },
-        write_local_file: async (args, cwd, step, max) => {
+        write_local_file: async (args, cwd, _step, _max) => {
             const filePath = args.filePath || '';
             const content = args.content || '';
-            onStatus(`Passo ${step}/${max} — aguardando aprovacao: ${path.basename(filePath)}`);
+            onStatus(`Aguardando aprovacao: ${path.basename(filePath)}`);
             let before = null;
             try {
                 const fullPath = (0, validation_1.resolveFilePath)(filePath, cwd);
@@ -78,9 +78,9 @@ function buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite) {
             }
             return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
         },
-        run_command: async (args, cwd, step, max) => {
+        run_command: async (args, cwd, _step, _max) => {
             const cmd = args.command || '';
-            onStatus(`Passo ${step}/${max} — executando: ${cmd}`);
+            onStatus(`Executando: ${cmd}`);
             return new Promise((resolve) => {
                 const emitter = (0, tools_definition_1.runCommandTool)(cmd, args.cwd || cwd);
                 let output = '';
@@ -159,8 +159,28 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         { role: 'user', content: userPrompt },
     ];
     const toolHandlers = buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite);
+    const thinkingStatus = [
+        'Analisando sua solicitacao...',
+        'Processando contexto do projeto...',
+        'Elaborando solucao...',
+        'Revisando o codigo...',
+        'Verificando dependencias...',
+        'Planejando proximos passos...',
+        'Gerando resposta...',
+    ];
+    let lastToolName = '';
     for (let step = 1; step <= constants_2.MAX_AGENT_STEPS; step++) {
-        onStatus(`Passo ${step}/${constants_2.MAX_AGENT_STEPS} — pensando...`);
+        const statusAfterTool = {
+            list_directory: 'Analisando estrutura do projeto...',
+            read_local_file: 'Processando arquivo lido...',
+            search_in_workspace: 'Analisando resultados da busca...',
+            write_local_file: 'Elaborando proxima acao...',
+            run_command: 'Analisando output do comando...',
+        };
+        const thinking = lastToolName && statusAfterTool[lastToolName]
+            ? statusAfterTool[lastToolName]
+            : thinkingStatus[step % thinkingStatus.length];
+        onStatus(thinking);
         const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_2.TOOLS, model);
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
@@ -171,6 +191,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         }
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
+            lastToolName = name;
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler

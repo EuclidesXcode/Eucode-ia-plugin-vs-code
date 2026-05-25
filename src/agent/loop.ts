@@ -25,22 +25,22 @@ function buildToolHandlers(
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
-        list_directory: async (args, _cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
+        list_directory: async (args, _cwd, _step, _max) => {
+            onStatus(`Lendo estrutura: ${path.basename(args.dirPath || args.dirPath || '/')}`);
             return listDirectory(args.dirPath || '');
         },
-        read_local_file: async (args, cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — lendo: ${path.basename(args.filePath || '')}`);
+        read_local_file: async (args, cwd, _step, _max) => {
+            onStatus(`Lendo arquivo: ${path.basename(args.filePath || '')}`);
             return readLocalFile(args.filePath || '', cwd);
         },
-        search_in_workspace: async (args, cwd, step, max) => {
-            onStatus(`Passo ${step}/${max} — buscando: "${args.query}"`);
+        search_in_workspace: async (args, cwd, _step, _max) => {
+            onStatus(`Buscando no projeto: "${args.query}"`);
             return searchInWorkspace(args.query || '', args.dirPath || cwd);
         },
-        write_local_file: async (args, cwd, step, max) => {
+        write_local_file: async (args, cwd, _step, _max) => {
             const filePath: string = args.filePath || '';
             const content: string = args.content || '';
-            onStatus(`Passo ${step}/${max} — aguardando aprovacao: ${path.basename(filePath)}`);
+            onStatus(`Aguardando aprovacao: ${path.basename(filePath)}`);
 
             let before: string | null = null;
             try {
@@ -57,9 +57,9 @@ function buildToolHandlers(
 
             return writeLocalFile(filePath, content, cwd);
         },
-        run_command: async (args, cwd, step, max) => {
+        run_command: async (args, cwd, _step, _max) => {
             const cmd: string = args.command || '';
-            onStatus(`Passo ${step}/${max} — executando: ${cmd}`);
+            onStatus(`Executando: ${cmd}`);
             return new Promise<string>((resolve) => {
                 const emitter = runCommandTool(cmd, args.cwd || cwd);
                 let output = '';
@@ -150,8 +150,31 @@ export async function runAgentLoop(
 
     const toolHandlers = buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite);
 
+    const thinkingStatus = [
+        'Analisando sua solicitacao...',
+        'Processando contexto do projeto...',
+        'Elaborando solucao...',
+        'Revisando o codigo...',
+        'Verificando dependencias...',
+        'Planejando proximos passos...',
+        'Gerando resposta...',
+    ];
+
+    let lastToolName = '';
+
     for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
-        onStatus(`Passo ${step}/${MAX_AGENT_STEPS} — pensando...`);
+        const statusAfterTool: Record<string, string> = {
+            list_directory:    'Analisando estrutura do projeto...',
+            read_local_file:   'Processando arquivo lido...',
+            search_in_workspace: 'Analisando resultados da busca...',
+            write_local_file:  'Elaborando proxima acao...',
+            run_command:       'Analisando output do comando...',
+        };
+        const thinking = lastToolName && statusAfterTool[lastToolName]
+            ? statusAfterTool[lastToolName]
+            : thinkingStatus[step % thinkingStatus.length];
+        onStatus(thinking);
+
         const result = await callAI(endpoint, authHeaders, roundMessages, TOOLS, model);
 
         if (!result.toolCall && result.responseText) {
@@ -164,6 +187,7 @@ export async function runAgentLoop(
 
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
+            lastToolName = name;
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
