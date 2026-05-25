@@ -133,6 +133,14 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.3.0)
+
+- Diff estilo VS Code no card de aprovacao: algoritmo Myers com diff real linha a linha, numeros de linha antes/depois em colunas separadas, contexto de 3 linhas ao redor das alteracoes e separador de hunk entre blocos distantes
+- Syntax highlight no diff com as cores exatas do tema VS Code dark (keywords, strings, comentarios, tipos)
+- Agente sempre escreve o arquivo diretamente via ferramenta — nunca mais exibe codigo no chat pedindo para o usuario aplicar manualmente
+- Respostas sem raciocinio interno exposto: analises, estrategias e propostas proativas removidas das respostas
+- Terminal em tempo real no lugar certo: bloco de terminal inserido antes da bolha de loading, eliminando o problema de quebra de layout
+
 ## Nota da versao (0.2.9)
 
 - Terminal em tempo real no chat: ao executar comandos, a saida aparece linha a linha diretamente no chat, sem esperar o processo terminar
