@@ -14,8 +14,10 @@ Quando o usuario perguntar sobre o projeto, estrutura, tecnologias ou qualquer c
 Nunca responda sobre o workspace sem ter explorado com as ferramentas.
 
 ## Criar ou editar arquivos
-- Leia o arquivo com read_local_file antes de editar (se ja existir).
-- Chame write_local_file com o conteudo completo do arquivo.
+- Se o arquivo ja existir, SEMPRE leia com read_local_file antes de editar.
+- Ao editar, preserve TODO o conteudo anterior e apenas adicione ou altere o que o usuario pediu. Nunca descarte o que ja estava no arquivo.
+- Se o usuario pediu duas coisas separadas para o mesmo arquivo, inclua as DUAS no write_local_file final — nunca uma no lugar da outra.
+- Chame write_local_file com o conteudo COMPLETO e ACUMULADO do arquivo.
 - Nunca mostre o codigo no chat pedindo para o usuario aplicar. Sempre escreva diretamente.
 - Siga o padrao de nomenclatura do projeto (ingles ou portugues, conforme o codigo existente).
 

@@ -63,7 +63,8 @@ function buildToolHandlers(
     onCommandStart: (cmd: string) => void,
     onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
-    autoMode: boolean
+    autoMode: boolean,
+    filesReadThisRound: Set<string>
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
         list_directory: async (args, cwd, _step, _max) => {
@@ -72,8 +73,10 @@ function buildToolHandlers(
             return listDirectory(dir);
         },
         read_local_file: async (args, cwd, _step, _max) => {
-            onStatus(`Lendo arquivo: ${path.basename(args.filePath || '')}`);
-            return readLocalFile(args.filePath || '', cwd);
+            const fp: string = args.filePath || '';
+            onStatus(`Lendo arquivo: ${path.basename(fp)}`);
+            filesReadThisRound.add(path.resolve(cwd, fp));
+            return readLocalFile(fp, cwd);
         },
         search_in_workspace: async (args, cwd, _step, _max) => {
             onStatus(`Buscando no projeto: "${args.query}"`);
@@ -89,6 +92,14 @@ function buildToolHandlers(
                 before = fs.readFileSync(fullPath, 'utf8');
             } catch {
                 before = null;
+            }
+
+            // Se o arquivo já existe e o modelo não o leu nessa rodada, force a leitura antes
+            if (before !== null) {
+                const fullPath = resolveFilePath(filePath, cwd);
+                if (!filesReadThisRound.has(fullPath)) {
+                    return `[OBRIGATORIO] Voce tentou editar "${path.basename(filePath)}" sem ter lido o conteudo atual. Chame read_local_file("${filePath}") primeiro para preservar o conteudo existente, depois chame write_local_file com o conteudo completo e acumulado.`;
+                }
             }
 
             // Detecta símbolos removidos que não são substituídos no novo conteúdo
@@ -253,7 +264,8 @@ export async function runAgentLoop(
         onInjectMessage((msg) => { injectedMessage = msg; });
     }
 
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode);
+    const filesReadThisRound = new Set<string>();
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode, filesReadThisRound);
 
     const thinkingStatus = [
         'Analisando sua solicitacao...',

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Protecao contra perda de conteudo em edicoes: write_local_file em arquivo existente exige read_local_file previo na mesma rodada
+- Prompt reforçado: regras explicitas para preservar conteudo acumulado ao editar arquivos com multiplas solicitacoes
+
 ## 0.4.0
 
 - Notificacoes do sistema funcionando corretamente: rastreia foco via onDidChangeWindowState em vez de checar vscode.window.state.focused no momento da chamada
