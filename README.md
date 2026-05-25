@@ -137,6 +137,11 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.4.0)
+
+- Notificacoes do sistema corrigidas: agora rastreia o foco da janela em tempo real
+- Notifica quando o agente conclui a tarefa ou aguarda aprovacao de arquivo, se o VS Code nao estiver em foco
+
 ## Nota da versao (0.3.8)
 
 - Notificacao do sistema quando o agente conclui a tarefa e o VS Code nao esta em foco

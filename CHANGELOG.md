@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Notificacoes do sistema funcionando corretamente: rastreia foco via onDidChangeWindowState em vez de checar vscode.window.state.focused no momento da chamada
+- Notifica quando agente conclui tarefa e quando aguarda aprovacao de arquivo, sempre que o VS Code nao estiver em foco
+
 ## 0.3.9
 
 - Correcao: modelo retornando vazio apos tool call agora continua o loop em vez de encerrar com "Nao foi possivel obter resposta"

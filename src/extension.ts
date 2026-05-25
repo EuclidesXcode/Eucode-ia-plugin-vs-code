@@ -18,6 +18,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
     private _pendingConfirms = new Map<string, (approved: boolean) => void>();
     private _abortController: AbortController | null = null;
     private _injectMessage: ((msg: string) => void) | null = null;
+    private _windowFocused: boolean = true;
 
     constructor(private readonly _context: vscode.ExtensionContext) {
         this._historyManager = new HistoryManagerService(_context);
@@ -40,9 +41,14 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
         const notify = (text: string) => webviewView.webview.postMessage({ command: 'status', text });
 
+        // Rastreia foco real: onDidChangeWindowState dispara quando o usuario alterna janelas
+        this._windowFocused = vscode.window.state.focused;
+        this._context.subscriptions.push(
+            vscode.window.onDidChangeWindowState(state => { this._windowFocused = state.focused; })
+        );
+
         const notifyUser = (message: string, actions: string[] = []) => {
-            // Notifica sempre que a janela do VS Code não estiver com foco
-            if (!vscode.window.state.focused) {
+            if (!this._windowFocused) {
                 vscode.window.showInformationMessage(`Eucode IA: ${message}`, ...actions).then(action => {
                     if (action) { webviewView.show(true); }
                 });
