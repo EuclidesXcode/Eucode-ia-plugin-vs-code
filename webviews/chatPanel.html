@@ -564,39 +564,103 @@
         .confirm-card-badge.edit { background: #1a1a0a; color: #f59e0b; border: 1px solid #f59e0b44; }
 
         .confirm-diff {
-            max-height: 320px;
+            max-height: 420px;
             overflow-y: auto;
             scrollbar-width: thin;
-            scrollbar-color: #1a1a2e transparent;
+            scrollbar-color: #2a2a3e transparent;
+            background: #1e1e1e;
         }
 
-        .diff-section {
-            padding: 0;
+        .diff-hunk-header {
+            font-family: 'Consolas', 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #569cd6;
+            background: #0d1926;
+            padding: 2px 0;
+            border-top: 1px solid #2a3a4a;
+            border-bottom: 1px solid #2a3a4a;
+            user-select: none;
         }
-
-        .diff-section-label {
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            padding: 6px 14px;
-            border-bottom: 1px solid #1a1a2e;
+        .diff-hunk-header .diff-ln {
+            display: inline-block;
+            width: 38px;
+            text-align: right;
+            padding-right: 8px;
+            color: #3a5a7a;
         }
-        .diff-section-label.before { color: #e05555; background: #1a0808; }
-        .diff-section-label.after { color: #22c55e; background: #081a08; border-top: 1px solid #1a1a2e; }
+        .diff-hunk-header .diff-ln + .diff-ln { width: 38px; }
+        .diff-hunk-header .diff-sign { display: inline-block; width: 14px; color: #569cd6; }
+        .diff-hunk-header .diff-text { color: #569cd6; font-style: italic; }
 
-        .diff-code {
-            padding: 10px 14px;
-            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-            font-size: 11.5px;
+        .diff-line {
+            display: flex;
+            align-items: stretch;
+            font-family: 'Consolas', 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 12px;
             line-height: 1.6;
-            white-space: pre-wrap;
-            word-break: break-all;
-            background: transparent;
-            color: #a0aec0;
+            min-height: 19px;
         }
-        .diff-section-label.before ~ .diff-code { background: #0f0808; color: #f08080; }
-        .diff-section-label.after ~ .diff-code { background: #080f08; color: #80c880; }
+        .diff-line:hover { background: rgba(255,255,255,0.03); }
+
+        .diff-line.removed { background: #3f1f1f; }
+        .diff-line.removed:hover { background: #4a2020; }
+        .diff-line.added   { background: #1a2f1a; }
+        .diff-line.added:hover   { background: #1f3a1f; }
+        .diff-line.context { background: transparent; }
+
+        .diff-ln-col {
+            display: inline-flex;
+            flex-shrink: 0;
+            user-select: none;
+        }
+        .diff-ln-num {
+            width: 38px;
+            text-align: right;
+            padding: 0 6px 0 0;
+            color: #4a4a6a;
+            font-size: 11px;
+            line-height: 1.6;
+            background: #252526;
+            border-right: 1px solid #2d2d2d;
+        }
+        .diff-line.removed .diff-ln-num { background: #2d1515; color: #7a3a3a; }
+        .diff-line.added   .diff-ln-num { background: #152515; color: #3a7a3a; }
+
+        .diff-sign-col {
+            width: 14px;
+            text-align: center;
+            flex-shrink: 0;
+            font-size: 12px;
+            line-height: 1.6;
+            padding: 0 2px;
+        }
+        .diff-line.removed .diff-sign-col { color: #f14c4c; }
+        .diff-line.added   .diff-sign-col { color: #23d18b; }
+        .diff-line.context .diff-sign-col { color: transparent; }
+
+        .diff-content {
+            flex: 1;
+            padding: 0 8px;
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Sobrescreve cores do hljs apenas dentro do diff para não colidir */
+        .diff-content .hljs-keyword   { color: #569cd6; }
+        .diff-content .hljs-string    { color: #ce9178; }
+        .diff-content .hljs-comment   { color: #6a9955; font-style: italic; }
+        .diff-content .hljs-number    { color: #b5cea8; }
+        .diff-content .hljs-built_in  { color: #4ec9b0; }
+        .diff-content .hljs-title     { color: #dcdcaa; }
+        .diff-content .hljs-params    { color: #9cdcfe; }
+        .diff-content .hljs-variable  { color: #9cdcfe; }
+        .diff-content .hljs-attr      { color: #9cdcfe; }
+        .diff-content .hljs-type      { color: #4ec9b0; }
+        .diff-content .hljs-literal   { color: #569cd6; }
+        .diff-content .hljs-operator  { color: #d4d4d4; }
+        .diff-line.removed .diff-content { color: #f4a0a0; }
+        .diff-line.added   .diff-content { color: #a0d4a0; }
+        .diff-line.context .diff-content { color: #d4d4d4; }
 
         .confirm-actions {
             display: flex;
@@ -915,9 +979,170 @@
         }
 
         // ── Confirm write card ──
+        // ── Diff engine ──
+        function computeDiff(beforeLines, afterLines) {
+            // Myers LCS-based diff
+            const m = beforeLines.length, n = afterLines.length;
+            const max = m + n;
+            const v = new Array(2 * max + 1).fill(0);
+            const trace = [];
+            outer: for (let d = 0; d <= max; d++) {
+                trace.push(v.slice());
+                for (let k = -d; k <= d; k += 2) {
+                    let x;
+                    if (k === -d || (k !== d && v[k - 1 + max] < v[k + 1 + max])) {
+                        x = v[k + 1 + max];
+                    } else {
+                        x = v[k - 1 + max] + 1;
+                    }
+                    let y = x - k;
+                    while (x < m && y < n && beforeLines[x] === afterLines[y]) { x++; y++; }
+                    v[k + max] = x;
+                    if (x >= m && y >= n) break outer;
+                }
+            }
+            // Backtrack
+            const ops = [];
+            let x = m, y = n;
+            for (let d = trace.length - 1; d >= 0; d--) {
+                const vv = trace[d];
+                const k = x - y;
+                let prevK;
+                if (k === -d || (k !== d && vv[k - 1 + max] < vv[k + 1 + max])) {
+                    prevK = k + 1;
+                } else {
+                    prevK = k - 1;
+                }
+                const prevX = vv[prevK + max];
+                const prevY = prevX - prevK;
+                while (x > prevX && y > prevY) { ops.push({ type: 'eq', bLine: x - 1, aLine: y - 1 }); x--; y--; }
+                if (d > 0) {
+                    if (x === prevX) { ops.push({ type: 'add', aLine: y - 1 }); y--; }
+                    else             { ops.push({ type: 'del', bLine: x - 1 }); x--; }
+                }
+            }
+            return ops.reverse();
+        }
+
+        function buildDiffView(beforeText, afterText, lang) {
+            const beforeLines = beforeText ? beforeText.split('\n') : [];
+            const afterLines  = afterText.split('\n');
+            const CONTEXT = 3;
+            const container = document.createElement('div');
+            container.className = 'confirm-diff';
+
+            // For new files, show all lines as added
+            const ops = beforeText
+                ? computeDiff(beforeLines, afterLines)
+                : afterLines.map((_, i) => ({ type: 'add', aLine: i }));
+
+            // Highlight both sides
+            function highlight(line) {
+                const el = document.createElement('span');
+                try {
+                    el.innerHTML = lang && hljs.getLanguage(lang)
+                        ? hljs.highlight(line, { language: lang }).value
+                        : hljs.highlightAuto(line).value;
+                } catch(e) { el.textContent = line; }
+                return el;
+            }
+
+            // Find changed line indices to know what context to show
+            const changedOpIdx = new Set();
+            ops.forEach((op, i) => { if (op.type !== 'eq') changedOpIdx.add(i); });
+            const visibleOpIdx = new Set();
+            changedOpIdx.forEach(ci => {
+                for (let d = -CONTEXT; d <= CONTEXT; d++) {
+                    if (ci + d >= 0 && ci + d < ops.length) visibleOpIdx.add(ci + d);
+                }
+            });
+
+            let bNum = 1, aNum = 1;
+            let lastVisible = -1;
+
+            ops.forEach((op, i) => {
+                if (op.type === 'eq') { bNum++; aNum++; }
+
+                if (!visibleOpIdx.has(i)) {
+                    if (op.type === 'eq') { /* skip silently */ }
+                    return;
+                }
+
+                // Hunk separator
+                if (lastVisible !== -1 && i > lastVisible + 1) {
+                    const hunk = document.createElement('div');
+                    hunk.className = 'diff-hunk-header';
+                    hunk.innerHTML =
+                        `<span class="diff-ln"></span><span class="diff-ln"></span>` +
+                        `<span class="diff-sign">@@</span> ` +
+                        `<span class="diff-text">... ${i - lastVisible - 1} linha(s) ocultada(s) ...</span>`;
+                    container.appendChild(hunk);
+                }
+                lastVisible = i;
+
+                const row = document.createElement('div');
+
+                if (op.type === 'eq') {
+                    const lineNum = op.bLine !== undefined ? op.bLine + 1 : bNum;
+                    const aLineNum = op.aLine !== undefined ? op.aLine + 1 : aNum;
+                    row.className = 'diff-line context';
+                    row.innerHTML =
+                        `<span class="diff-ln-col"><span class="diff-ln-num">${lineNum}</span><span class="diff-ln-num">${aLineNum}</span></span>` +
+                        `<span class="diff-sign-col"> </span>`;
+                    const content = document.createElement('span');
+                    content.className = 'diff-content';
+                    content.appendChild(highlight(beforeLines[op.bLine] ?? ''));
+                    row.appendChild(content);
+
+                } else if (op.type === 'del') {
+                    const lineNum = op.bLine + 1;
+                    row.className = 'diff-line removed';
+                    row.innerHTML =
+                        `<span class="diff-ln-col"><span class="diff-ln-num">${lineNum}</span><span class="diff-ln-num"> </span></span>` +
+                        `<span class="diff-sign-col">-</span>`;
+                    const content = document.createElement('span');
+                    content.className = 'diff-content';
+                    content.appendChild(highlight(beforeLines[op.bLine]));
+                    row.appendChild(content);
+
+                } else if (op.type === 'add') {
+                    const lineNum = op.aLine + 1;
+                    row.className = 'diff-line added';
+                    row.innerHTML =
+                        `<span class="diff-ln-col"><span class="diff-ln-num"> </span><span class="diff-ln-num">${lineNum}</span></span>` +
+                        `<span class="diff-sign-col">+</span>`;
+                    const content = document.createElement('span');
+                    content.className = 'diff-content';
+                    content.appendChild(highlight(afterLines[op.aLine]));
+                    row.appendChild(content);
+                }
+
+                container.appendChild(row);
+
+                if (op.type === 'eq') { /* already counted */ }
+            });
+
+            if (container.children.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'padding:10px 14px;color:#6a9955;font-size:11px;font-family:monospace';
+                empty.textContent = '(sem alteracoes)';
+                container.appendChild(empty);
+            }
+
+            return container;
+        }
+
+        function guessLang(filePath) {
+            const ext = filePath.split('.').pop().toLowerCase();
+            const map = { ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+                          py: 'python', rs: 'rust', go: 'go', java: 'java', cs: 'csharp',
+                          cpp: 'cpp', c: 'c', html: 'html', css: 'css', json: 'json',
+                          md: 'markdown', sh: 'bash', yaml: 'yaml', yml: 'yaml', toml: 'ini' };
+            return map[ext] || null;
+        }
+
         function appendConfirmCard(id, filePath, before, after) {
             const isNew = before === null;
-            const fileName = filePath.split('/').pop() || filePath;
 
             const row = document.createElement('div');
             row.className = 'message-row agent';
@@ -962,29 +1187,9 @@
             header.appendChild(title);
             header.appendChild(badge);
 
-            // Diff
-            const diff = document.createElement('div');
-            diff.className = 'confirm-diff';
-
-            if (!isNew && before) {
-                const beforeLabel = document.createElement('div');
-                beforeLabel.className = 'diff-section-label before';
-                beforeLabel.textContent = 'Antes';
-                const beforeCode = document.createElement('div');
-                beforeCode.className = 'diff-code';
-                beforeCode.textContent = before.length > 2000 ? before.slice(0, 2000) + '\n... (truncado)' : before;
-                diff.appendChild(beforeLabel);
-                diff.appendChild(beforeCode);
-            }
-
-            const afterLabel = document.createElement('div');
-            afterLabel.className = 'diff-section-label after';
-            afterLabel.textContent = isNew ? 'Conteudo' : 'Depois';
-            const afterCode = document.createElement('div');
-            afterCode.className = 'diff-code';
-            afterCode.textContent = after.length > 2000 ? after.slice(0, 2000) + '\n... (truncado)' : after;
-            diff.appendChild(afterLabel);
-            diff.appendChild(afterCode);
+            // Diff view
+            const lang = guessLang(filePath);
+            const diffView = buildDiffView(before, after, lang);
 
             // Actions
             const actions = document.createElement('div');
@@ -1015,7 +1220,7 @@
             actions.appendChild(acceptBtn);
 
             card.appendChild(header);
-            card.appendChild(diff);
+            card.appendChild(diffView);
             card.appendChild(actions);
             bubble.appendChild(card);
             row.appendChild(meta);
