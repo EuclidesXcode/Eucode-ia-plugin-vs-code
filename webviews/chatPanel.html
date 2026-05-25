@@ -486,12 +486,18 @@
         #status-bar {
             font-size: 11px;
             color: #3a7bd5;
-            padding: 3px 4px;
+            padding: 4px 14px;
             font-style: italic;
             letter-spacing: 0.03em;
-            display: flex;
+            display: none;
             align-items: center;
             gap: 6px;
+            flex-shrink: 0;
+            border-top: 1px solid #13131f;
+            background: #0a0a0f;
+        }
+        #status-bar.visible {
+            display: flex;
         }
         #status-bar::before {
             content: '';
@@ -785,6 +791,8 @@
             <div class="message-bubble">Ola! Como posso ajudar?</div>
         </div>
     </div>
+
+    <div id="status-bar" style="display:none"></div>
 
     <div id="image-preview">
         <img id="image-preview-img" src="" alt="preview">
@@ -1270,20 +1278,17 @@
             }
         });
 
+        const statusBar = document.getElementById('status-bar');
+
         function updateStatus(text) {
-            let el = document.getElementById('status-bar');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'status-bar';
-                chatContainer.appendChild(el);
-            }
-            el.textContent = text;
+            statusBar.textContent = text;
+            statusBar.classList.add('visible');
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function clearStatus() {
-            const el = document.getElementById('status-bar');
-            if (el) { el.remove(); }
+            statusBar.classList.remove('visible');
+            statusBar.textContent = '';
         }
 
         let activeTerminal = null;
