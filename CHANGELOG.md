@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1
+
+- Multiplas sessoes de chat com titulo gerado automaticamente da primeira mensagem
+- Painel de sessoes no header: lista conversas anteriores, permite carregar ou excluir individualmente
+- Botao "Novo chat" inicia sessao limpa sem perder o historico anterior
+- Card de aprovacao de arquivo some do chat apos aceitar ou rejeitar
+- Agente auto-continua ao detectar mais padroes de acao pendente: "vou refatorar", "vou corrigir", "vou focar", "enquanto isso" e variantes em ingles
+- Janela de deteccao de acao pendente ampliada de 4 para 6 linhas
+- Limite de passos do agente aumentado de 10 para 20
+- Status contextual exibido diretamente na bolha de loading ao lado das 3 bolinhas, substituindo o status-bar externo
+- Terminal inserido dentro da bolha de loading (abaixo do status), eliminando quebra de layout
+- Prompt simplificado: instrucoes diretas e imperativas, sem secoes que o modelo usava como template de raciocinio
+
 ## 0.3.0
 
 - Diff estilo VS Code no card de aprovacao: algoritmo Myers com diff real linha a linha, numeros de linha antes/depois em colunas separadas, contexto de 3 linhas ao redor das alteracoes e separador de hunk entre blocos distantes

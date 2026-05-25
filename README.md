@@ -133,6 +133,16 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.3.1)
+
+- Multiplas sessoes de chat com titulo gerado automaticamente da primeira mensagem
+- Painel de sessoes no header: lista conversas anteriores, permite carregar ou excluir
+- Botao "Novo chat" inicia sessao limpa sem perder o historico anterior
+- Card de aprovacao de arquivo some do chat apos aceitar ou rejeitar
+- Agente auto-continua ao detectar mais padroes de acao pendente ("vou refatorar", "vou corrigir", "enquanto isso", etc.)
+- Limite de passos do agente aumentado de 10 para 20
+- Status contextual exibido diretamente na bolha de loading ao lado das 3 bolinhas
+
 ## Nota da versao (0.3.0)
 
 - Diff estilo VS Code no card de aprovacao: algoritmo Myers com diff real linha a linha, numeros de linha antes/depois em colunas separadas, contexto de 3 linhas ao redor das alteracoes e separador de hunk entre blocos distantes
