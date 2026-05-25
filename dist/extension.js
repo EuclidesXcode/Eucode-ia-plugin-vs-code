@@ -95,10 +95,27 @@ async function initializeEucodeAgent(context) {
                 model: settings.model,
             });
             const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
-            if (history.length > 0) {
-                panel.webview.postMessage({ command: 'load_history', entries: history });
-            }
+            panel.webview.postMessage({ command: 'load_history', entries: history });
+            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
             pingAndNotify(settings);
+            return;
+        }
+        if (message?.command === 'new_session') {
+            sessionHistory = await historyManager.newSession();
+            panel.webview.postMessage({ command: 'session_started', entries: [] });
+            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
+            return;
+        }
+        if (message?.command === 'load_session') {
+            sessionHistory = await historyManager.loadSession(message.id);
+            panel.webview.postMessage({ command: 'load_history', entries: sessionHistory });
+            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
+            return;
+        }
+        if (message?.command === 'delete_session') {
+            await historyManager.deleteSession(message.id);
+            sessionHistory = historyManager.load();
+            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
             return;
         }
         if (message?.command === 'save_config') {

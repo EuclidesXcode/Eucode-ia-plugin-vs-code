@@ -64,7 +64,9 @@
             flex: 1;
         }
 
-        #history-btn {
+        #history-btn { display: none; }
+
+        .header-btn {
             background: none;
             border: 1px solid #1e2a3a;
             border-radius: 4px;
@@ -80,8 +82,71 @@
             gap: 5px;
             transition: border-color 0.15s, background 0.15s;
         }
-        #history-btn:hover { border-color: #3a7bd5; background: #0d1a2e; }
-        #history-btn.hidden { display: none; }
+        .header-btn:hover { border-color: #3a7bd5; background: #0d1a2e; }
+
+        /* ── Sessions panel ── */
+        #sessions-panel {
+            display: none;
+            flex-direction: column;
+            background: #0d0d1a;
+            border-bottom: 1px solid #13131f;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+        #sessions-panel.open { display: flex; }
+        .sessions-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 14px;
+            border-bottom: 1px solid #13131f;
+            flex-shrink: 0;
+        }
+        .sessions-panel-title {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #3a5080;
+        }
+        .sessions-list { display: flex; flex-direction: column; }
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #13131f;
+            transition: background 0.12s;
+        }
+        .session-item:hover { background: #0d1525; }
+        .session-item.active { background: #0d1a2e; border-left: 2px solid #3a7bd5; }
+        .session-info { flex: 1; min-width: 0; }
+        .session-title {
+            font-size: 11px;
+            color: #c9d1d9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .session-date {
+            font-size: 10px;
+            color: #3a5080;
+            margin-top: 2px;
+        }
+        .session-delete {
+            background: none;
+            border: none;
+            color: #3a3a5a;
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            transition: color 0.12s;
+        }
+        .session-delete:hover { color: #e05555; }
 
         /* ── Config panel ── */
         #config-panel {
@@ -724,7 +789,16 @@
     <div id="header">
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
-        <button id="history-btn" class="hidden"><span class="mi" style="font-size:14px">history</span>Retomar conversa</button>
+        <button id="history-btn" class="hidden"></button>
+        <button id="sessions-btn" class="header-btn"><span class="mi" style="font-size:14px">forum</span>Sessoes</button>
+        <button id="new-session-btn" class="header-btn"><span class="mi" style="font-size:14px">add</span>Novo chat</button>
+    </div>
+
+    <div id="sessions-panel">
+        <div class="sessions-panel-header">
+            <span class="sessions-panel-title">Historico de sessoes</span>
+        </div>
+        <div id="sessions-list" class="sessions-list"></div>
     </div>
 
     <div id="config-panel">
@@ -805,10 +879,78 @@
         const configCancelBtn = document.getElementById('config-cancel-btn');
         const configFeedback = document.getElementById('config-feedback');
         const historyBtn = document.getElementById('history-btn');
+        const sessionsBtn = document.getElementById('sessions-btn');
+        const newSessionBtn = document.getElementById('new-session-btn');
+        const sessionsPanel = document.getElementById('sessions-panel');
+        const sessionsList = document.getElementById('sessions-list');
 
         let pendingImage = null;
         let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '', model: '' };
         let pendingHistory = null;
+        let currentSessionId = null;
+
+        // ── Sessions panel ──
+        sessionsBtn.addEventListener('click', () => sessionsPanel.classList.toggle('open'));
+
+        newSessionBtn.addEventListener('click', () => {
+            sessionsPanel.classList.remove('open');
+            vscode.postMessage({ command: 'new_session' });
+        });
+
+        function formatDate(ts) {
+            const d = new Date(ts);
+            return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderSessions(sessions) {
+            sessionsList.innerHTML = '';
+            if (!sessions || sessions.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'padding:12px 14px;color:#3a5080;font-size:11px;';
+                empty.textContent = 'Nenhuma sessao salva.';
+                sessionsList.appendChild(empty);
+                return;
+            }
+            // Mais recentes primeiro
+            [...sessions].reverse().forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'session-item' + (s.id === currentSessionId ? ' active' : '');
+
+                const info = document.createElement('div');
+                info.className = 'session-info';
+
+                const title = document.createElement('div');
+                title.className = 'session-title';
+                title.textContent = s.title || 'Sem titulo';
+
+                const date = document.createElement('div');
+                date.className = 'session-date';
+                date.textContent = formatDate(s.createdAt);
+
+                info.appendChild(title);
+                info.appendChild(date);
+
+                const del = document.createElement('button');
+                del.className = 'session-delete';
+                del.title = 'Excluir sessao';
+                del.innerHTML = '<span class="mi" style="font-size:14px">delete</span>';
+                del.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    vscode.postMessage({ command: 'delete_session', id: s.id });
+                });
+
+                item.appendChild(info);
+                item.appendChild(del);
+                item.addEventListener('click', () => {
+                    sessionsPanel.classList.remove('open');
+                    currentSessionId = s.id;
+                    vscode.postMessage({ command: 'load_session', id: s.id });
+                });
+
+                sessionsList.appendChild(item);
+            });
+        }
 
         // ── Config ──
         configBtn.addEventListener('click', () => {
@@ -1219,11 +1361,22 @@
 
             if (msg.command === 'load_config') {
                 savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '' };
+            } else if (msg.command === 'load_sessions') {
+                renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
+                // Limpa o chat e renderiza o historico da sessao
+                const rows = chatContainer.querySelectorAll('.message-row');
+                rows.forEach(r => r.remove());
                 if (msg.entries && msg.entries.length > 0) {
-                    pendingHistory = msg.entries;
-                    historyBtn.classList.remove('hidden');
+                    msg.entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent'));
+                } else {
+                    appendMessage('Ola! Como posso ajudar?', 'agent');
                 }
+            } else if (msg.command === 'session_started') {
+                const rows = chatContainer.querySelectorAll('.message-row');
+                rows.forEach(r => r.remove());
+                appendMessage('Ola! Como posso ajudar?', 'agent');
+                sendBtn.disabled = false;
             } else if (msg.command === 'connection_status') {
                 statusDot.classList.toggle('online', msg.online);
             } else if (msg.command === 'config_saved') {

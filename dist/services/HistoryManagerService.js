@@ -40,24 +40,80 @@ class HistoryManagerService {
     constructor(context) {
         this.context = context;
     }
-    getKey() {
+    getSessionsKey() {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        return root ? `history:${root}` : 'history:global';
+        return root ? `sessions:${root}` : 'sessions:global';
+    }
+    getActiveIdKey() {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        return root ? `activeSession:${root}` : 'activeSession:global';
+    }
+    loadSessions() {
+        return this.context.globalState.get(this.getSessionsKey(), []);
+    }
+    async saveSessions(sessions) {
+        await this.context.globalState.update(this.getSessionsKey(), sessions);
+    }
+    getActiveId() {
+        return this.context.globalState.get(this.getActiveIdKey());
+    }
+    async setActiveId(id) {
+        await this.context.globalState.update(this.getActiveIdKey(), id);
     }
     load() {
-        const raw = this.context.globalState.get(this.getKey(), []);
-        return raw.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+        const sessions = this.loadSessions();
+        const activeId = this.getActiveId();
+        const session = activeId ? sessions.find(s => s.id === activeId) : sessions[sessions.length - 1];
+        return (session?.entries ?? []).filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
     }
     async save(entries) {
-        await this.context.globalState.update(this.getKey(), entries.slice(-constants_1.MAX_HISTORY_ENTRIES));
+        const sessions = this.loadSessions();
+        const activeId = this.getActiveId();
+        const idx = activeId ? sessions.findIndex(s => s.id === activeId) : -1;
+        const clean = entries.slice(-constants_1.MAX_HISTORY_ENTRIES);
+        if (idx >= 0) {
+            sessions[idx].entries = clean;
+        }
+        else {
+            const newSession = this.createSession(entries);
+            sessions.push(newSession);
+            await this.setActiveId(newSession.id);
+        }
+        await this.saveSessions(sessions);
+    }
+    createSession(entries) {
+        const firstUser = entries.find(e => e.role === 'user');
+        const title = firstUser
+            ? firstUser.content.slice(0, 50).replace(/\n/g, ' ').trim()
+            : 'Nova sessao';
+        return { id: Date.now().toString(), title, createdAt: Date.now(), entries };
+    }
+    async newSession() {
+        const sessions = this.loadSessions();
+        const session = this.createSession([]);
+        sessions.push(session);
+        await this.saveSessions(sessions);
+        await this.setActiveId(session.id);
+        return [];
+    }
+    async loadSession(id) {
+        await this.setActiveId(id);
+        return this.load();
+    }
+    async deleteSession(id) {
+        let sessions = this.loadSessions();
+        sessions = sessions.filter(s => s.id !== id);
+        await this.saveSessions(sessions);
+        const activeId = this.getActiveId();
+        if (activeId === id) {
+            const last = sessions[sessions.length - 1];
+            await this.setActiveId(last?.id ?? '');
+        }
     }
     append(entries, entry) {
         const updated = [...entries, entry];
         this.save(updated);
         return updated;
-    }
-    getWorkspaceKey() {
-        return this.getKey();
     }
 }
 exports.HistoryManagerService = HistoryManagerService;
