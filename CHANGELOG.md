@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.8
+
+- Notificacao ao usuario quando o agente conclui a tarefa e o VS Code nao esta em foco
+- Notificacao corrigida para usar vscode.window.state.focused (janela do sistema), nao visibilidade do painel
+
 ## 0.3.7
 
 - Botao Stop com mesmo tamanho e estilo do botao Enviar (alinhamento corrigido)

@@ -40,11 +40,21 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
         const notify = (text: string) => webviewView.webview.postMessage({ command: 'status', text });
 
+        const notifyUser = (message: string, actions: string[] = []) => {
+            // Notifica sempre que a janela do VS Code não estiver com foco
+            if (!vscode.window.state.focused) {
+                vscode.window.showInformationMessage(`Eucode IA: ${message}`, ...actions).then(action => {
+                    if (action) { webviewView.show(true); }
+                });
+            }
+        };
+
         const makeConfirmWrite = (): (req: ConfirmWriteRequest) => Promise<boolean> =>
             (req) => new Promise<boolean>((resolve) => {
                 const id = `confirm_${Date.now()}`;
                 this._pendingConfirms.set(id, resolve);
                 webviewView.webview.postMessage({ command: 'confirm_write', id, filePath: req.filePath, before: req.before, after: req.after });
+                notifyUser(`Aguardando aprovacao para editar "${path.basename(req.filePath)}"`, ['Abrir chat']);
             });
 
         const pingAndNotify = async (s: EucodeSettings) => {
@@ -149,6 +159,12 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 const defaultCwd = getDefaultCwd(ctx.roots);
                 const notifyCommandStart = (cmd: string) => webviewView.webview.postMessage({ command: 'command_start', cmd });
                 const notifyCommandOutput = (chunk: string) => webviewView.webview.postMessage({ command: 'command_output', chunk });
+                const notifyStatus = (s: string) => {
+                    notify(s);
+                    if (s.toLowerCase().includes('aguardando sua resposta')) {
+                        notifyUser('Processo rodando — aguardando sua resposta no chat', ['Abrir chat']);
+                    }
+                };
 
                 this._abortController = new AbortController();
                 this._injectMessage = null;
@@ -156,7 +172,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
                 response = await runAgentLoop(
                     message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders,
-                    this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput,
+                    this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput,
                     makeConfirmWrite(), activeModel, !!message.autoMode,
                     this._abortController.signal,
                     (handler) => { this._injectMessage = handler; }
@@ -164,6 +180,9 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
+                if (response && !response.startsWith('[INTERROMPIDO]')) {
+                    notifyUser('Tarefa concluida', ['Abrir chat']);
+                }
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
             }
 

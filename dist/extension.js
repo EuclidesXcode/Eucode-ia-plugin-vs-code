@@ -65,10 +65,21 @@ class EucodeViewProvider {
         const htmlPath = path.join(this._context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
         webviewView.webview.html = fs.readFileSync(htmlPath, 'utf8');
         const notify = (text) => webviewView.webview.postMessage({ command: 'status', text });
+        const notifyUser = (message, actions = []) => {
+            // Notifica sempre que a janela do VS Code não estiver com foco
+            if (!vscode.window.state.focused) {
+                vscode.window.showInformationMessage(`Eucode IA: ${message}`, ...actions).then(action => {
+                    if (action) {
+                        webviewView.show(true);
+                    }
+                });
+            }
+        };
         const makeConfirmWrite = () => (req) => new Promise((resolve) => {
             const id = `confirm_${Date.now()}`;
             this._pendingConfirms.set(id, resolve);
             webviewView.webview.postMessage({ command: 'confirm_write', id, filePath: req.filePath, before: req.before, after: req.after });
+            notifyUser(`Aguardando aprovacao para editar "${path.basename(req.filePath)}"`, ['Abrir chat']);
         });
         const pingAndNotify = async (s) => {
             const online = await (0, api_client_1.checkConnection)((0, settings_1.buildApiEndpoint)(s), (0, settings_1.buildAuthHeader)(s));
@@ -160,13 +171,22 @@ class EucodeViewProvider {
                 const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
                 const notifyCommandStart = (cmd) => webviewView.webview.postMessage({ command: 'command_start', cmd });
                 const notifyCommandOutput = (chunk) => webviewView.webview.postMessage({ command: 'command_output', chunk });
+                const notifyStatus = (s) => {
+                    notify(s);
+                    if (s.toLowerCase().includes('aguardando sua resposta')) {
+                        notifyUser('Processo rodando — aguardando sua resposta no chat', ['Abrir chat']);
+                    }
+                };
                 this._abortController = new AbortController();
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: true });
-                response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; });
+                response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; });
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
+                if (response && !response.startsWith('[INTERROMPIDO]')) {
+                    notifyUser('Tarefa concluida', ['Abrir chat']);
+                }
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
             }
             webviewView.webview.postMessage({ command: 'agent_response', text: response });
