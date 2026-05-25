@@ -46,142 +46,122 @@ const loop_1 = require("./agent/loop");
 const prompt_1 = require("./agent/prompt");
 const settings_1 = require("./config/settings");
 const constants_1 = require("./utils/constants");
+class EucodeViewProvider {
+    constructor(_context) {
+        this._context = _context;
+        this._sessionHistory = [];
+        this._pendingConfirms = new Map();
+        this._historyManager = new HistoryManagerService_1.HistoryManagerService(_context);
+        this._sessionHistory = this._historyManager.load();
+        this._settings = (0, settings_1.loadSettings)(_context);
+    }
+    resolveWebviewView(webviewView, _ctx, _token) {
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this._context.extensionUri],
+        };
+        const htmlPath = path.join(this._context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
+        webviewView.webview.html = fs.readFileSync(htmlPath, 'utf8');
+        const notify = (text) => webviewView.webview.postMessage({ command: 'status', text });
+        const makeConfirmWrite = () => (req) => new Promise((resolve) => {
+            const id = `confirm_${Date.now()}`;
+            this._pendingConfirms.set(id, resolve);
+            webviewView.webview.postMessage({ command: 'confirm_write', id, filePath: req.filePath, before: req.before, after: req.after });
+        });
+        const pingAndNotify = async (s) => {
+            const online = await (0, api_client_1.checkConnection)((0, settings_1.buildApiEndpoint)(s), (0, settings_1.buildAuthHeader)(s));
+            webviewView.webview.postMessage({ command: 'connection_status', online });
+        };
+        this._context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+            this._sessionHistory = this._historyManager.load();
+            const filtered = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+            webviewView.webview.postMessage({ command: 'load_history', entries: filtered });
+        }));
+        webviewView.webview.onDidReceiveMessage(async (message) => {
+            if (message?.command === 'webview_ready') {
+                webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model });
+                const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+                webviewView.webview.postMessage({ command: 'load_history', entries: history });
+                webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
+                pingAndNotify(this._settings);
+                return;
+            }
+            if (message?.command === 'new_session') {
+                this._sessionHistory = await this._historyManager.newSession();
+                webviewView.webview.postMessage({ command: 'session_started', entries: [] });
+                webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
+                return;
+            }
+            if (message?.command === 'load_session') {
+                this._sessionHistory = await this._historyManager.loadSession(message.id);
+                webviewView.webview.postMessage({ command: 'load_history', entries: this._sessionHistory });
+                webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
+                return;
+            }
+            if (message?.command === 'delete_session') {
+                await this._historyManager.deleteSession(message.id);
+                this._sessionHistory = this._historyManager.load();
+                webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
+                return;
+            }
+            if (message?.command === 'save_config') {
+                this._settings = { provider: message.provider ?? this._settings.provider, apiHost: message.apiHost ?? this._settings.apiHost, apiKey: message.apiKey ?? '', model: message.model ?? '' };
+                await (0, settings_1.saveSettings)(this._context, this._settings);
+                webviewView.webview.postMessage({ command: 'config_saved' });
+                pingAndNotify(this._settings);
+                return;
+            }
+            if (message?.command === 'confirm_write_response') {
+                const resolve = this._pendingConfirms.get(message.id);
+                if (resolve) {
+                    this._pendingConfirms.delete(message.id);
+                    resolve(message.approved === true);
+                }
+                return;
+            }
+            if (message?.command !== 'user_input' || !message.text) {
+                return;
+            }
+            this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image });
+            const endpoint = (0, settings_1.buildApiEndpoint)(this._settings);
+            const authHeaders = (0, settings_1.buildAuthHeader)(this._settings);
+            const activeModel = this._settings.model || constants_1.DEFAULT_MODEL;
+            let response;
+            if (message.image?.base64) {
+                notify('Analisando imagem...');
+                const historySummary = (0, history_service_1.buildHistorySummary)(this._sessionHistory.slice(0, -1));
+                const systemWithHistory = [prompt_1.SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
+                response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory, activeModel);
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now(), hasImage: true, imageSummary: response.slice(0, 300) });
+            }
+            else {
+                notify('Mapeando workspace...');
+                const ctx = (0, context_1.collectWorkspaceContext)();
+                if (ctx.openFiles.length > 0) {
+                    notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
+                }
+                const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
+                const notifyCommandStart = (cmd) => webviewView.webview.postMessage({ command: 'command_start', cmd });
+                const notifyCommandOutput = (chunk) => webviewView.webview.postMessage({ command: 'command_output', chunk });
+                response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel);
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
+            }
+            webviewView.webview.postMessage({ command: 'agent_response', text: response });
+        }, undefined, this._context.subscriptions);
+    }
+}
+EucodeViewProvider.viewType = 'eucode-ia.chatView';
 function activate(context) {
     console.log('Eucode-IA Plugin ativo.');
-    context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.activateAgent', () => initializeEucodeAgent(context)));
-}
-async function initializeEucodeAgent(context) {
-    const panel = vscode.window.createWebviewPanel('eucodeChatPanel', 'Eucode AI Agent', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
-    const htmlPath = path.join(context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
-    panel.webview.html = fs.readFileSync(htmlPath, 'utf8');
-    const historyManager = new HistoryManagerService_1.HistoryManagerService(context);
-    let sessionHistory = historyManager.load();
-    let settings = (0, settings_1.loadSettings)(context);
-    const notify = (text) => panel.webview.postMessage({ command: 'status', text });
-    // Mapa de Promises pendentes para aprovação de escrita de arquivo
-    const pendingConfirms = new Map();
-    async function pingAndNotify(s) {
-        const endpoint = (0, settings_1.buildApiEndpoint)(s);
-        const auth = (0, settings_1.buildAuthHeader)(s);
-        const online = await (0, api_client_1.checkConnection)(endpoint, auth);
-        panel.webview.postMessage({ command: 'connection_status', online });
-    }
-    function makeConfirmWrite() {
-        return (req) => new Promise((resolve) => {
-            const id = `confirm_${Date.now()}`;
-            pendingConfirms.set(id, resolve);
-            panel.webview.postMessage({
-                command: 'confirm_write',
-                id,
-                filePath: req.filePath,
-                before: req.before,
-                after: req.after,
-            });
-        });
-    }
-    const workspaceListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
-        sessionHistory = historyManager.load();
-        const filtered = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
-        panel.webview.postMessage({ command: 'load_history', entries: filtered });
-    });
-    context.subscriptions.push(workspaceListener);
-    panel.webview.onDidReceiveMessage(async (message) => {
-        if (message?.command === 'webview_ready') {
-            panel.webview.postMessage({
-                command: 'load_config',
-                provider: settings.provider,
-                apiHost: settings.apiHost,
-                apiKey: settings.apiKey,
-                model: settings.model,
-            });
-            const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
-            panel.webview.postMessage({ command: 'load_history', entries: history });
-            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
-            pingAndNotify(settings);
-            return;
-        }
-        if (message?.command === 'new_session') {
-            sessionHistory = await historyManager.newSession();
-            panel.webview.postMessage({ command: 'session_started', entries: [] });
-            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
-            return;
-        }
-        if (message?.command === 'load_session') {
-            sessionHistory = await historyManager.loadSession(message.id);
-            panel.webview.postMessage({ command: 'load_history', entries: sessionHistory });
-            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
-            return;
-        }
-        if (message?.command === 'delete_session') {
-            await historyManager.deleteSession(message.id);
-            sessionHistory = historyManager.load();
-            panel.webview.postMessage({ command: 'load_sessions', sessions: historyManager.loadSessions() });
-            return;
-        }
-        if (message?.command === 'save_config') {
-            settings = {
-                provider: message.provider ?? settings.provider,
-                apiHost: message.apiHost ?? settings.apiHost,
-                apiKey: message.apiKey ?? '',
-                model: message.model ?? '',
-            };
-            await (0, settings_1.saveSettings)(context, settings);
-            panel.webview.postMessage({ command: 'config_saved' });
-            pingAndNotify(settings);
-            return;
-        }
-        // Resposta do usuário para aprovação de escrita de arquivo
-        if (message?.command === 'confirm_write_response') {
-            const resolve = pendingConfirms.get(message.id);
-            if (resolve) {
-                pendingConfirms.delete(message.id);
-                resolve(message.approved === true);
-            }
-            return;
-        }
-        if (message?.command !== 'user_input' || !message.text) {
-            return;
-        }
-        sessionHistory = historyManager.append(sessionHistory, {
-            role: 'user',
-            content: message.text,
-            timestamp: Date.now(),
-            hasImage: !!message.image,
-        });
-        const endpoint = (0, settings_1.buildApiEndpoint)(settings);
-        const authHeaders = (0, settings_1.buildAuthHeader)(settings);
-        const activeModel = settings.model || constants_1.DEFAULT_MODEL;
-        let response;
-        if (message.image?.base64) {
-            notify('Analisando imagem...');
-            const historySummary = (0, history_service_1.buildHistorySummary)(sessionHistory.slice(0, -1));
-            const systemWithHistory = [prompt_1.SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
-            response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory, activeModel);
-            sessionHistory = historyManager.append(sessionHistory, {
-                role: 'assistant',
-                content: response,
-                timestamp: Date.now(),
-                hasImage: true,
-                imageSummary: response.slice(0, 300),
-            });
-        }
-        else {
-            notify('Mapeando workspace...');
-            const ctx = (0, context_1.collectWorkspaceContext)();
-            if (ctx.openFiles.length > 0) {
-                notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
-            }
-            const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
-            const notifyCommandStart = (cmd) => panel.webview.postMessage({ command: 'command_start', cmd });
-            const notifyCommandOutput = (chunk) => panel.webview.postMessage({ command: 'command_output', chunk });
-            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel);
-            sessionHistory = historyManager.append(sessionHistory, {
-                role: 'assistant',
-                content: response,
-                timestamp: Date.now(),
-            });
-        }
-        panel.webview.postMessage({ command: 'agent_response', text: response });
-    }, undefined, context.subscriptions);
+    const provider = new EucodeViewProvider(context);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(EucodeViewProvider.viewType, provider, {
+        webviewOptions: { retainContextWhenHidden: true },
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.activateAgent', () => {
+        vscode.commands.executeCommand('eucode-ia.chatView.focus');
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.openChat', () => {
+        vscode.commands.executeCommand('eucode-ia.chatView.focus');
+    }));
 }
 function deactivate() { }

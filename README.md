@@ -133,6 +133,12 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.3.2)
+
+- Icone [E] na Activity Bar: acesso rapido ao chat sem precisar digitar comando
+- Chat registrado como WebviewView — abre como aba no painel lateral, pode ser arrastado para qualquer posicao
+- Icone SVG monocromatico [E] otimizado com proporcoes balanceadas
+
 ## Nota da versao (0.3.1)
 
 - Multiplas sessoes de chat com titulo gerado automaticamente da primeira mensagem
