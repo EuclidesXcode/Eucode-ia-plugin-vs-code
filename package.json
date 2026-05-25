@@ -2,7 +2,7 @@
     "name": "eucode-ia-plugin-vs-code",
     "displayName": "Eucode IA",
     "description": "Agente de IA para engenharia de software integrado ao VS Code. Roda 100% local via LM Studio — le arquivos, edita codigo, executa comandos e analisa imagens sem enviar dados para servidores externos.",
-    "version": "0.3.5",
+    "version": "0.3.7",
     "publisher": "EucodeIA",
     "license": "MIT",
     "icon": "icon.png",
@@ -65,11 +65,15 @@
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch --project src/tsconfig.json",
-        "build": "npm run compile && vsce package"
+        "build": "npm run compile && vsce package",
+        "test": "jest"
     },
     "devDependencies": {
+        "@types/jest": "^29.5.14",
         "@types/node": "^25.9.1",
         "@types/vscode": "^1.120.0",
+        "jest": "^29.7.0",
+        "ts-jest": "^29.4.11",
         "typescript": "^6.0.3"
     }
 }

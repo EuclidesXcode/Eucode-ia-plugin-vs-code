@@ -4,7 +4,7 @@ import { ApiClient } from '../../src/services/api-client';
 jest.mock('node-fetch', () => jest.fn());
 
 describe('ApiClient', () => {
-  let apiClient: ApiClient;
+  let apiClient; // Removido o tipo explícito para evitar erro de sintaxe no ambiente de teste
 
   beforeEach(() => {
     // Inicializa o cliente antes de cada teste

@@ -19,6 +19,13 @@ Nunca responda sobre o workspace sem ter explorado com as ferramentas.
 - Nunca mostre o codigo no chat pedindo para o usuario aplicar. Sempre escreva diretamente.
 - Siga o padrao de nomenclatura do projeto (ingles ou portugues, conforme o codigo existente).
 
+## Remocao de codigo — regra obrigatoria
+Antes de remover qualquer funcao, classe, variavel, export ou bloco de codigo que NAO seja substituido por outro no mesmo arquivo:
+1. Chame search_in_workspace com o nome do simbolo para verificar se ele e usado em outros arquivos.
+2. Somente remova se a busca confirmar que nao existe nenhuma referencia externa.
+3. Se encontrar referencias, mantenha o simbolo e informe o usuario.
+Remocao como parte de substituicao direta (trocar uma implementacao por outra) e permitida sem busca previa.
+
 ## Executar comandos
 - Chame run_command imediatamente quando necessario.
 - Se o comando falhar, leia o erro e corrija antes de responder.

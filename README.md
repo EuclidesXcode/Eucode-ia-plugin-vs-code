@@ -137,6 +137,12 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.3.7)
+
+- Barra de contexto acima do input mostra os arquivos abertos no editor em tempo real
+- Botao Stop para abortar execucao e Injetar para enviar mensagem durante execucao
+- Protecao contra remocao acidental de codigo: agente verifica referencias antes de remover simbolos
+
 ## Nota da versao (0.3.5)
 
 - Modo Automatico (Beta): escreve arquivos sem aprovacao, roda testes apos cada edicao e corrige falhas automaticamente

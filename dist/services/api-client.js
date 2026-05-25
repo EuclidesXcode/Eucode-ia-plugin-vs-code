@@ -38,8 +38,11 @@ exports.callAI = callAI;
 exports.callAIWithVision = callAIWithVision;
 const https = __importStar(require("https"));
 const http = __importStar(require("http"));
-function request(url, method, body, headers, timeoutMs) {
+function request(url, method, body, headers, timeoutMs, signal) {
     return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            return reject(new Error('ABORTED'));
+        }
         const parsed = new URL(url);
         const payload = JSON.stringify(body);
         const options = {
@@ -71,6 +74,7 @@ function request(url, method, body, headers, timeoutMs) {
                 }
             });
         });
+        signal?.addEventListener('abort', () => { req.destroy(); reject(new Error('ABORTED')); });
         req.on('timeout', () => { req.destroy(); reject(new Error('Timeout ao conectar.')); });
         req.on('error', reject);
         req.write(payload);
@@ -108,7 +112,7 @@ async function checkConnection(endpoint, authHeaders) {
         return false;
     }
 }
-async function callAI(endpoint, authHeaders, messages, tools, model) {
+async function callAI(endpoint, authHeaders, messages, tools, model, signal) {
     const formattedTools = tools.map(t => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters },
@@ -116,7 +120,7 @@ async function callAI(endpoint, authHeaders, messages, tools, model) {
     try {
         const data = await request(endpoint, 'POST', {
             model, messages, tools: formattedTools, tool_choice: 'auto',
-        }, authHeaders, 600000);
+        }, authHeaders, 600000, signal);
         const message = data?.choices?.[0]?.message;
         if (!message) {
             throw new Error('Resposta inesperada da API.');
@@ -131,6 +135,9 @@ async function callAI(endpoint, authHeaders, messages, tools, model) {
         return { responseText: message.content || 'Nao foi possivel obter resposta.' };
     }
     catch (error) {
+        if (error instanceof Error && error.message === 'ABORTED') {
+            return { responseText: '__ABORTED__' };
+        }
         console.error('[API] Falha ao chamar o LLM:', error);
         return {
             responseText: `ERRO DE CONEXAO: Nao foi possivel conectar com a IA em ${endpoint}. Verifique se o servico esta rodando. Detalhe: ${error instanceof Error ? error.message : String(error)}`,

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.7
+
+- Botao Stop com mesmo tamanho e estilo do botao Enviar (alinhamento corrigido)
+- Barra de contexto acima do input mostra os arquivos abertos no editor, atualiza ao trocar de aba
+- Botao Injetar aparece no lugar de Enviar durante execucao do agente
+- Protecao contra remocao de codigo: write_local_file verifica referencias externas antes de remover simbolos
+- Regra de remocao adicionada ao prompt: busca obrigatoria antes de apagar funcoes ou exports
+- Botao Stop e Enviar nivelados verticalmente com align-items center
+
+## 0.3.6
+
+- Botao Stop para abortar execucao do agente a qualquer momento
+- Injecao de mensagem durante execucao: usuario pode enviar mensagem enquanto agente roda
+- Terminal unico: fecha bloco anterior ao iniciar novo comando
+- Modo auto sem limite de passos: step reseta a cada tool call, limite de 200 iteracoes
+
 ## 0.3.5
 
 - Modo Automatico (Beta): botao no header que ativa escrita direta de arquivos sem card de aprovacao

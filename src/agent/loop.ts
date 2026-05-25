@@ -19,6 +19,45 @@ export type ConfirmWriteRequest = {
     after: string;
 };
 
+// Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
+function extractSymbols(code: string): string[] {
+    const patterns = [
+        /^export\s+(?:async\s+)?function\s+(\w+)/gm,
+        /^export\s+(?:const|let|var)\s+(\w+)/gm,
+        /^export\s+class\s+(\w+)/gm,
+        /^export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)/gm,
+        /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/gm,
+        /^(?:export\s+)?class\s+(\w+)/gm,
+    ];
+    const symbols = new Set<string>();
+    for (const pattern of patterns) {
+        let match;
+        while ((match = pattern.exec(code)) !== null) {
+            if (match[1] && match[1].length > 2) { symbols.add(match[1]); }
+        }
+    }
+    return Array.from(symbols);
+}
+
+async function checkRemovedSymbols(before: string, after: string, cwd: string): Promise<string[]> {
+    const beforeSymbols = extractSymbols(before);
+    const afterSymbols = new Set(extractSymbols(after));
+
+    // Símbolos que existiam antes mas não existem mais no novo conteúdo
+    const removed = beforeSymbols.filter(s => !afterSymbols.has(s));
+    if (removed.length === 0) { return []; }
+
+    const warnings: string[] = [];
+    for (const symbol of removed) {
+        const result = await searchInWorkspace(symbol, cwd);
+        // Se encontrou referências (além do próprio arquivo sendo editado)
+        if (result && !result.startsWith('[ERRO]') && result.trim().length > 0) {
+            warnings.push(`  - "${symbol}" — referencias encontradas:\n${result.split('\n').slice(0, 3).map(l => '    ' + l).join('\n')}`);
+        }
+    }
+    return warnings;
+}
+
 function buildToolHandlers(
     onStatus: (s: string) => void,
     onCommandStart: (cmd: string) => void,
@@ -50,6 +89,15 @@ function buildToolHandlers(
                 before = fs.readFileSync(fullPath, 'utf8');
             } catch {
                 before = null;
+            }
+
+            // Detecta símbolos removidos que não são substituídos no novo conteúdo
+            if (before) {
+                const warnings = await checkRemovedSymbols(before, content, cwd);
+                if (warnings.length > 0) {
+                    // Retorna aviso para o modelo reconsiderar antes de escrever
+                    return `[ATENCAO] Os seguintes simbolos serao removidos e foram encontrados em outros arquivos:\n${warnings.join('\n')}\n\nSe a remocao for intencional como substituicao, chame write_local_file novamente com confirmacao explicita no campo content iniciando com "// REMOCAO_CONFIRMADA". Caso contrario, revise o conteudo para preservar esses simbolos.`;
+                }
             }
 
             if (autoMode) {
@@ -184,7 +232,9 @@ export async function runAgentLoop(
     onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
     model: string = DEFAULT_MODEL,
-    autoMode: boolean = false
+    autoMode: boolean = false,
+    signal?: AbortSignal,
+    onInjectMessage?: (handler: (msg: string) => void) => void
 ): Promise<string> {
     const autoBlock = autoMode
         ? `\nMODO AUTOMATICO ATIVO: Escreva arquivos diretamente sem pedir confirmacao. Apos cada escrita, rode os testes do projeto automaticamente com run_command. Se os testes falharem, corrija o codigo e rode os testes de novo. Repita ate todos os testes passarem ou atingir o limite de tentativas.`
@@ -196,6 +246,12 @@ export async function runAgentLoop(
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
+
+    // Fila de mensagens injetadas pelo usuário durante a execução
+    let injectedMessage: string | null = null;
+    if (onInjectMessage) {
+        onInjectMessage((msg) => { injectedMessage = msg; });
+    }
 
     const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode);
 
@@ -210,8 +266,20 @@ export async function runAgentLoop(
     ];
 
     let lastToolName = '';
+    const maxSteps = autoMode ? 200 : MAX_AGENT_STEPS;
+    let step = 0;
 
-    for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
+    while (++step <= maxSteps) {
+        // Verifica abort
+        if (signal?.aborted) { return '[INTERROMPIDO] Execucao cancelada pelo usuario.'; }
+
+        // Verifica mensagem injetada — insere no contexto e continua
+        if (injectedMessage) {
+            const msg = injectedMessage;
+            injectedMessage = null;
+            roundMessages.push({ role: 'user', content: `[USUARIO INTERROMPEU]: ${msg}` });
+            lastToolName = '';
+        }
         const statusAfterTool: Record<string, string> = {
             list_directory:    'Analisando estrutura do projeto...',
             read_local_file:   'Processando arquivo lido...',
@@ -224,7 +292,11 @@ export async function runAgentLoop(
             : thinkingStatus[step % thinkingStatus.length];
         onStatus(thinking);
 
-        const result = await callAI(endpoint, authHeaders, roundMessages, TOOLS, model);
+        const result = await callAI(endpoint, authHeaders, roundMessages, TOOLS, model, signal);
+
+        if (result.responseText === '__ABORTED__') {
+            return '[INTERROMPIDO] Execucao cancelada pelo usuario.';
+        }
 
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
@@ -237,6 +309,8 @@ export async function runAgentLoop(
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
             lastToolName = name;
+            // Reseta o contador a cada tool call para que tarefas longas não estourem o limite
+            if (autoMode) { step = 1; }
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler

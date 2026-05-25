@@ -20,8 +20,10 @@ export interface ToolCall {
     };
 }
 
-function request(url: string, method: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<unknown> {
+function request(url: string, method: string, body: unknown, headers: Record<string, string>, timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
     return new Promise((resolve, reject) => {
+        if (signal?.aborted) { return reject(new Error('ABORTED')); }
+
         const parsed = new URL(url);
         const payload = JSON.stringify(body);
         const options = {
@@ -54,6 +56,7 @@ function request(url: string, method: string, body: unknown, headers: Record<str
             });
         });
 
+        signal?.addEventListener('abort', () => { req.destroy(); reject(new Error('ABORTED')); });
         req.on('timeout', () => { req.destroy(); reject(new Error('Timeout ao conectar.')); });
         req.on('error', reject);
         req.write(payload);
@@ -98,7 +101,8 @@ export async function callAI(
     authHeaders: Record<string, string>,
     messages: { role: string; content: unknown }[],
     tools: ToolDefinition[],
-    model: string
+    model: string,
+    signal?: AbortSignal
 ): Promise<AIResponse> {
     const formattedTools = tools.map(t => ({
         type: 'function',
@@ -108,7 +112,7 @@ export async function callAI(
     try {
         const data = await request(endpoint, 'POST', {
             model, messages, tools: formattedTools, tool_choice: 'auto',
-        }, authHeaders, 600000) as any;
+        }, authHeaders, 600000, signal) as any;
 
         const message = data?.choices?.[0]?.message;
         if (!message) { throw new Error('Resposta inesperada da API.'); }
@@ -123,6 +127,9 @@ export async function callAI(
 
         return { responseText: message.content || 'Nao foi possivel obter resposta.' };
     } catch (error) {
+        if (error instanceof Error && error.message === 'ABORTED') {
+            return { responseText: '__ABORTED__' };
+        }
         console.error('[API] Falha ao chamar o LLM:', error);
         return {
             responseText: `ERRO DE CONEXAO: Nao foi possivel conectar com a IA em ${endpoint}. Verifique se o servico esta rodando. Detalhe: ${error instanceof Error ? error.message : String(error)}`,
