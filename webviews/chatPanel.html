@@ -485,34 +485,6 @@
             color: #f85149;
         }
 
-        /* ── Status bar ── */
-        #status-bar {
-            font-size: 11px;
-            color: #3a7bd5;
-            padding: 4px 14px;
-            font-style: italic;
-            letter-spacing: 0.03em;
-            display: none;
-            align-items: center;
-            gap: 6px;
-            flex-shrink: 0;
-            border-top: 1px solid #13131f;
-            background: #0a0a0f;
-        }
-        #status-bar.visible {
-            display: flex;
-        }
-        #status-bar::before {
-            content: '';
-            display: inline-block;
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: #3a7bd5;
-            animation: pulse-dot 1.2s ease-in-out infinite;
-            flex-shrink: 0;
-        }
-
         @keyframes pulse-dot {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.3; transform: scale(0.7); }
@@ -795,8 +767,6 @@
         </div>
     </div>
 
-    <div id="status-bar" style="display:none"></div>
-
     <div id="image-preview">
         <img id="image-preview-img" src="" alt="preview">
         <span id="image-preview-name"></span>
@@ -971,7 +941,10 @@
                 const dots = document.createElement('div');
                 dots.className = 'loading-dots';
                 dots.innerHTML = '<span></span><span></span><span></span>';
-                bubble.appendChild(document.createTextNode('Processando'));
+                const statusText = document.createElement('span');
+                statusText.id = 'loading-status-text';
+                statusText.textContent = 'Analisando sua solicitacao...';
+                bubble.appendChild(statusText);
                 bubble.appendChild(dots);
                 bubble.dataset.loading = 'true';
             } else if (role === 'agent') {
@@ -1281,17 +1254,15 @@
             }
         });
 
-        const statusBar = document.getElementById('status-bar');
-
         function updateStatus(text) {
-            statusBar.textContent = text;
-            statusBar.classList.add('visible');
+            const el = document.getElementById('loading-status-text');
+            if (el) { el.textContent = text; }
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function clearStatus() {
-            statusBar.classList.remove('visible');
-            statusBar.textContent = '';
+            const el = document.getElementById('loading-status-text');
+            if (el) { el.textContent = ''; }
         }
 
         let activeTerminal = null;
