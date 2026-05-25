@@ -447,6 +447,41 @@
         #send-btn:hover { background: #3a7bd5; color: #fff; }
         #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
+        /* ── Terminal output ── */
+        .terminal-output {
+            background: #0d1117;
+            border: 1px solid #1e3a1e;
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin: 4px 0;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            color: #7ee787;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 300px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+        .terminal-output .terminal-label {
+            color: #58a6ff;
+            font-size: 10px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .terminal-output .terminal-label::before {
+            content: '▶';
+            color: #3fb950;
+        }
+        .terminal-output .terminal-body {
+            color: #e6edf3;
+        }
+        .terminal-output .stderr-chunk {
+            color: #f85149;
+        }
+
         /* ── Status bar ── */
         #status-bar {
             font-size: 11px;
@@ -1013,11 +1048,14 @@
                 }, 1200);
             } else if (msg.command === 'status') {
                 updateStatus(msg.text);
+            } else if (msg.command === 'command_output') {
+                appendCommandChunk(msg.chunk);
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
             } else if (msg.command === 'agent_response') {
                 clearStatus();
+                finalizeTerminal();
                 const loading = chatContainer.querySelector('[data-loading="true"]');
                 if (loading) { loading.closest('.message-row').remove(); }
                 appendMessage(msg.text, 'agent');
@@ -1039,6 +1077,38 @@
         function clearStatus() {
             const el = document.getElementById('status-bar');
             if (el) { el.remove(); }
+        }
+
+        let activeTerminal = null;
+
+        function appendCommandChunk(chunk) {
+            if (!activeTerminal) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'terminal-output';
+                wrapper.id = 'active-terminal';
+                const label = document.createElement('div');
+                label.className = 'terminal-label';
+                label.textContent = 'Terminal';
+                const body = document.createElement('div');
+                body.className = 'terminal-body';
+                body.id = 'active-terminal-body';
+                wrapper.appendChild(label);
+                wrapper.appendChild(body);
+                chatContainer.appendChild(wrapper);
+                activeTerminal = body;
+            }
+            const span = document.createElement('span');
+            span.textContent = chunk;
+            activeTerminal.appendChild(span);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function finalizeTerminal() {
+            activeTerminal = null;
+            const el = document.getElementById('active-terminal');
+            if (el) { el.removeAttribute('id'); }
+            const body = document.getElementById('active-terminal-body');
+            if (body) { body.removeAttribute('id'); }
         }
 
         // ── Send ──

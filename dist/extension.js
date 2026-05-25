@@ -155,7 +155,8 @@ async function initializeEucodeAgent(context) {
                 notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
             }
             const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
-            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify, makeConfirmWrite(), activeModel);
+            const notifyCommandOutput = (chunk) => panel.webview.postMessage({ command: 'command_output', chunk });
+            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify, notifyCommandOutput, makeConfirmWrite(), activeModel);
             sessionHistory = historyManager.append(sessionHistory, {
                 role: 'assistant',
                 content: response,

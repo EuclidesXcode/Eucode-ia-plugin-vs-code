@@ -4,7 +4,8 @@ import { callAI, ToolCall } from '../services/api-client';
 import { DEFAULT_MODEL } from '../utils/constants';
 import { HistoryEntry, buildMessagesFromHistory } from '../services/history-service';
 import { listDirectory, readLocalFile, writeLocalFile } from '../tools/file-tools';
-import { searchInWorkspace, runCommand } from '../tools/shell-tools';
+import { searchInWorkspace } from '../tools/shell-tools';
+import { runCommandTool } from './tools-definition';
 import { SYSTEM_PROMPT } from './prompt';
 import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS } from '../utils/constants';
@@ -20,6 +21,7 @@ export type ConfirmWriteRequest = {
 
 function buildToolHandlers(
     onStatus: (s: string) => void,
+    onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
@@ -57,7 +59,13 @@ function buildToolHandlers(
         },
         run_command: async (args, cwd, step, max) => {
             onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
-            return runCommand(args.command || '', args.cwd || cwd);
+            return new Promise<string>((resolve) => {
+                const emitter = runCommandTool(args.command || '', args.cwd || cwd);
+                let output = '';
+                emitter.on('stdout', (chunk: string) => { output += chunk; onCommandOutput(chunk); });
+                emitter.on('stderr', (chunk: string) => { output += chunk; onCommandOutput(chunk); });
+                emitter.on('done', () => resolve(output || '[OK] Comando executado sem saida.'));
+            });
         },
     };
 }
@@ -80,6 +88,7 @@ export async function runAgentLoop(
     authHeaders: Record<string, string>,
     sessionHistory: HistoryEntry[],
     onStatus: (s: string) => void,
+    onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
     model: string = DEFAULT_MODEL
 ): Promise<string> {
@@ -91,7 +100,7 @@ export async function runAgentLoop(
         { role: 'user', content: userPrompt },
     ];
 
-    const toolHandlers = buildToolHandlers(onStatus, onConfirmWrite);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite);
 
     for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
         onStatus(`Passo ${step}/${MAX_AGENT_STEPS} — pensando...`);

@@ -133,6 +133,12 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.2.9)
+
+- Terminal em tempo real no chat: ao executar comandos, a saida aparece linha a linha diretamente no chat, sem esperar o processo terminar
+- Bloco de terminal com estilo proprio (fundo escuro, texto claro) separado visualmente da resposta do agente
+- Saida de stdout e stderr transmitida via streaming com `spawn`, substituindo a abordagem anterior que acumulava tudo e exibia so no final
+
 ## Nota da versao (0.2.8)
 
 - Campo **Modelo** no painel de configuracoes: o usuario especifica o nome exato do modelo carregado (ex: `google/gemma-4-e4b`, `qwen2.5-coder:14b`, `llama3.1:8b`)

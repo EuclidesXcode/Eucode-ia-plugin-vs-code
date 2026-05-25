@@ -41,11 +41,12 @@ const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
 const shell_tools_1 = require("../tools/shell-tools");
-const prompt_1 = require("./prompt");
 const tools_definition_1 = require("./tools-definition");
+const prompt_1 = require("./prompt");
+const tools_definition_2 = require("./tools-definition");
 const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
-function buildToolHandlers(onStatus, onConfirmWrite) {
+function buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite) {
     return {
         list_directory: async (args, _cwd, step, max) => {
             onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
@@ -79,13 +80,19 @@ function buildToolHandlers(onStatus, onConfirmWrite) {
         },
         run_command: async (args, cwd, step, max) => {
             onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
-            return (0, shell_tools_1.runCommand)(args.command || '', args.cwd || cwd);
+            return new Promise((resolve) => {
+                const emitter = (0, tools_definition_1.runCommandTool)(args.command || '', args.cwd || cwd);
+                let output = '';
+                emitter.on('stdout', (chunk) => { output += chunk; onCommandOutput(chunk); });
+                emitter.on('stderr', (chunk) => { output += chunk; onCommandOutput(chunk); });
+                emitter.on('done', () => resolve(output || '[OK] Comando executado sem saida.'));
+            });
         },
     };
 }
 function detectEscapedToolCall(text) {
     const match = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
-    if (!match || !tools_definition_1.TOOL_NAMES.has(match[1])) {
+    if (!match || !tools_definition_2.TOOL_NAMES.has(match[1])) {
         return null;
     }
     try {
@@ -95,7 +102,7 @@ function detectEscapedToolCall(text) {
         return null;
     }
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
     const systemContent = [prompt_1.SYSTEM_PROMPT, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
     const roundMessages = [
@@ -103,10 +110,10 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
-    const toolHandlers = buildToolHandlers(onStatus, onConfirmWrite);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandOutput, onConfirmWrite);
     for (let step = 1; step <= constants_2.MAX_AGENT_STEPS; step++) {
         onStatus(`Passo ${step}/${constants_2.MAX_AGENT_STEPS} — pensando...`);
-        const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_1.TOOLS, model);
+        const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_2.TOOLS, model);
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
             if (escaped) {

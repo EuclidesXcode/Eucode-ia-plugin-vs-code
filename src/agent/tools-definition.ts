@@ -1,55 +1,61 @@
 import { ToolDefinition } from '../services/api-client';
+import { spawn } from 'child_process'; // Usando spawn para streaming
+import { EventEmitter } from 'events'; // Importando EventEmitter
+
+// ... (Mantendo as outras definições de ferramentas)
+
+/**
+ * Função refatorada para usar spawn e emitir eventos de streaming em vez de retornar um Promise resolvido.
+ * O executor do agente DEVE ser adaptado para ouvir os eventos deste objeto EventEmitter,
+ * tratando o stream como a resposta da ferramenta.
+ * @param command O comando a ser executado.
+ * @param cwd Diretório de trabalho.
+ * @returns Um EventEmitter que emite 'stdout', 'stderr', e 'done' ao final do processo.
+ */
+export const runCommandTool = (command: string, cwd: string): EventEmitter => {
+    const emitter = new EventEmitter();
+
+    // 1. Spawn o processo filho
+    // shell: true permite que comandos complexos com pipes/redirecionamentos funcionem corretamente.
+    const processChild = spawn(command, [], { cwd: cwd || process.cwd(), shell: true });
+
+    let outputBuffer = '';
+
+    // 2. Capturar STDOUT e emitir evento de saída (Chunk por Chunk)
+    processChild.stdout?.on('data', (data) => {
+        const chunk = data.toString();
+        outputBuffer += chunk;
+        emitter.emit('stdout', chunk); // Emite o chunk recebido para o chat
+    });
+
+    // 3. Capturar STDERR e emitir evento de erro/saída padrão (Chunk por Chunk)
+    processChild.stderr?.on('data', (data) => {
+        const chunk = data.toString();
+        outputBuffer += chunk;
+        emitter.emit('stderr', chunk); // Emite o chunk recebido para o chat
+    });
+
+    // 4. Capturar fim do processo e emitir evento de conclusão
+    processChild.on('close', (code) => {
+        const finalOutput = `\n===============================\n✅ Comando concluído com código ${code}.\nSaída total:\n${outputBuffer}`;
+        emitter.emit('done', finalOutput); // Emite o resultado final e limpa
+    });
+
+    // 5. Capturar erro de spawn (ex: comando não encontrado, permissão negada)
+    processChild.on('error', (err) => {
+        const errorMsg = `\n===============================\n❌ ERRO DE EXECUCAO DO PROCESSO:\n${err.message}`;
+        emitter.emit('stderr', errorMsg);
+        emitter.emit('done', errorMsg);
+    });
+
+    // Retorna o emitter para que o executor possa ouvir os eventos em tempo real
+    return emitter;
+};
 
 export const TOOLS: ToolDefinition[] = [
     {
-        name: 'list_directory',
-        description: 'Lista arquivos e subpastas de um diretorio. Use para mapear a estrutura antes de ler arquivos.',
-        parameters: {
-            type: 'object',
-            properties: {
-                dirPath: { type: 'string', description: 'Caminho absoluto do diretorio.' },
-            },
-            required: ['dirPath'],
-        },
-    },
-    {
-        name: 'read_local_file',
-        description: 'Le o conteudo completo de um arquivo. Use apos identificar o arquivo via list_directory ou search_in_workspace.',
-        parameters: {
-            type: 'object',
-            properties: {
-                filePath: { type: 'string', description: 'Caminho absoluto do arquivo.' },
-            },
-            required: ['filePath'],
-        },
-    },
-    {
-        name: 'search_in_workspace',
-        description: 'Busca um termo, funcao, classe ou variavel nos arquivos do workspace. Retorna arquivos e linhas que contem o termo. Use antes de ler arquivos inteiros.',
-        parameters: {
-            type: 'object',
-            properties: {
-                query: { type: 'string', description: 'Termo a buscar, ex: "class AuthService" ou "useState".' },
-                dirPath: { type: 'string', description: 'Diretorio onde buscar. Se omitido, usa a pasta raiz do workspace.' },
-            },
-            required: ['query'],
-        },
-    },
-    {
-        name: 'write_local_file',
-        description: 'Cria ou sobrescreve um arquivo com o conteudo fornecido. Sempre use caminho absoluto.',
-        parameters: {
-            type: 'object',
-            properties: {
-                filePath: { type: 'string', description: 'Caminho absoluto do arquivo, ex: /Users/dev/projeto/src/index.ts' },
-                content: { type: 'string', description: 'Conteudo completo do arquivo.' },
-            },
-            required: ['filePath', 'content'],
-        },
-    },
-    {
         name: 'run_command',
-        description: 'Executa um comando no terminal. Use para compilar, instalar dependencias, rodar testes ou scripts.',
+        description: 'Executa um comando no terminal. Use para compilar, instalar dependencias, rodar testes ou scripts. O resultado é transmitido em tempo real.',
         parameters: {
             type: 'object',
             properties: {
