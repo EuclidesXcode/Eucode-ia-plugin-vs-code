@@ -453,15 +453,17 @@
             border: 1px solid #1e3a1e;
             border-radius: 6px;
             padding: 8px 10px;
-            margin: 4px 0;
+            margin: 8px 0 0 0;
             font-family: 'Courier New', Courier, monospace;
             font-size: 11px;
             color: #7ee787;
             white-space: pre-wrap;
             word-break: break-all;
-            max-height: 300px;
+            max-height: 320px;
             overflow-y: auto;
             line-height: 1.5;
+            width: 100%;
+            box-sizing: border-box;
         }
         .terminal-output .terminal-label {
             color: #58a6ff;
@@ -1295,11 +1297,10 @@
         let activeTerminalWrapper = null;
 
         function startTerminal(cmd) {
-            // Finaliza terminal anterior se existir
             finalizeTerminal();
 
-            const loadingEl = chatContainer.querySelector('[data-loading="true"]');
-            const anchor = loadingEl ? loadingEl.closest('.message-row') : null;
+            // Insere o terminal DENTRO da bolha de loading, abaixo dos dots
+            const loadingBubble = chatContainer.querySelector('[data-loading="true"]');
 
             const wrapper = document.createElement('div');
             wrapper.className = 'terminal-output';
@@ -1316,8 +1317,8 @@
             wrapper.appendChild(label);
             wrapper.appendChild(body);
 
-            if (anchor) {
-                chatContainer.insertBefore(wrapper, anchor);
+            if (loadingBubble) {
+                loadingBubble.appendChild(wrapper);
             } else {
                 chatContainer.appendChild(wrapper);
             }
