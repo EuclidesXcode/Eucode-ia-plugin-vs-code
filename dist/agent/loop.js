@@ -104,23 +104,27 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmW
     };
 }
 const PENDING_ACTION_PATTERNS = [
-    // Intenção futura
+    // Intenção futura — PT
     /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
     /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
     /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
-    /agora vou/i, /agora crio/i, /agora escrevo/i,
-    /a seguir vou/i, /em seguida vou/i,
-    /criando o arquivo/i, /escrevendo o arquivo/i,
+    /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
+    /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
+    /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
+    /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
+    /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
     // Modelo afirmou ter feito sem usar ferramenta
     /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
     /escrevi o arquivo/i, /gravei o arquivo/i,
     /criei o mock/i, /gerei o arquivo/i,
-    // Inglês (modelo ignorando instrução de idioma)
+    // Inglês
     /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
     /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
+    /i will refactor/i, /i will fix/i, /i will update/i,
 ];
 function detectsPendingAction(text) {
-    const last = text.split('\n').filter(l => l.trim()).slice(-4).join(' ');
+    // Verifica as últimas 6 linhas para cobrir casos onde a intenção não é a última frase
+    const last = text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
     return PENDING_ACTION_PATTERNS.some(p => p.test(last));
 }
 function detectEscapedToolCall(text) {
