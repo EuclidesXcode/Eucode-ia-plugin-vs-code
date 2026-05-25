@@ -35,35 +35,54 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runAgentLoop = runAgentLoop;
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const api_client_1 = require("../services/api-client");
+const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
 const shell_tools_1 = require("../tools/shell-tools");
 const prompt_1 = require("./prompt");
 const tools_definition_1 = require("./tools-definition");
-const constants_1 = require("../utils/constants");
-const toolHandlers = {
-    list_directory: async (args, _cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
-        return (0, file_tools_1.listDirectory)(args.dirPath || '');
-    },
-    read_local_file: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — lendo: ${path.basename(args.filePath || '')}`);
-        return (0, file_tools_1.readLocalFile)(args.filePath || '', cwd);
-    },
-    search_in_workspace: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — buscando: "${args.query}"`);
-        return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd);
-    },
-    write_local_file: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — gravando: ${path.basename(args.filePath || '')}`);
-        return (0, file_tools_1.writeLocalFile)(args.filePath || '', args.content || '', cwd);
-    },
-    run_command: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
-        return (0, shell_tools_1.runCommand)(args.command || '', args.cwd || cwd);
-    },
-};
+const constants_2 = require("../utils/constants");
+const validation_1 = require("../utils/validation");
+function buildToolHandlers(onStatus, onConfirmWrite) {
+    return {
+        list_directory: async (args, _cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
+            return (0, file_tools_1.listDirectory)(args.dirPath || '');
+        },
+        read_local_file: async (args, cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — lendo: ${path.basename(args.filePath || '')}`);
+            return (0, file_tools_1.readLocalFile)(args.filePath || '', cwd);
+        },
+        search_in_workspace: async (args, cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — buscando: "${args.query}"`);
+            return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd);
+        },
+        write_local_file: async (args, cwd, step, max) => {
+            const filePath = args.filePath || '';
+            const content = args.content || '';
+            onStatus(`Passo ${step}/${max} — aguardando aprovacao: ${path.basename(filePath)}`);
+            let before = null;
+            try {
+                const fullPath = (0, validation_1.resolveFilePath)(filePath, cwd);
+                before = fs.readFileSync(fullPath, 'utf8');
+            }
+            catch {
+                before = null;
+            }
+            const approved = await onConfirmWrite({ filePath, before, after: content });
+            if (!approved) {
+                return '[CANCELADO] O usuario rejeitou a alteracao do arquivo.';
+            }
+            return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+        },
+        run_command: async (args, cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
+            return (0, shell_tools_1.runCommand)(args.command || '', args.cwd || cwd);
+        },
+    };
+}
 function detectEscapedToolCall(text) {
     const match = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
     if (!match || !tools_definition_1.TOOL_NAMES.has(match[1])) {
@@ -76,18 +95,18 @@ function detectEscapedToolCall(text) {
         return null;
     }
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus) {
-    const historySummary = (0, history_service_1.buildHistorySummary)(sessionHistory.slice(0, -1));
-    const systemContent = [prompt_1.SYSTEM_PROMPT, historySummary, contextBlock].filter(Boolean).join('\n\n');
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
+    const systemContent = [prompt_1.SYSTEM_PROMPT, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
     const roundMessages = [
         { role: 'system', content: systemContent },
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
-    for (let step = 1; step <= constants_1.MAX_AGENT_STEPS; step++) {
-        onStatus(`Passo ${step}/${constants_1.MAX_AGENT_STEPS} — pensando...`);
-        const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_1.TOOLS);
+    const toolHandlers = buildToolHandlers(onStatus, onConfirmWrite);
+    for (let step = 1; step <= constants_2.MAX_AGENT_STEPS; step++) {
+        onStatus(`Passo ${step}/${constants_2.MAX_AGENT_STEPS} — pensando...`);
+        const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_1.TOOLS, model);
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
             if (escaped) {
@@ -100,9 +119,8 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
-                ? await handler(args, defaultCwd, step, constants_1.MAX_AGENT_STEPS, onStatus)
+                ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
-            // Sequencia correta: assistant com tool_call → tool com tool_call_id
             roundMessages.push({
                 role: 'assistant',
                 content: null,

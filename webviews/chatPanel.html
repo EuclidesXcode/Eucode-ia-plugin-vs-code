@@ -4,10 +4,22 @@
     <meta charset="UTF-8">
     <title>Eucode AI</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20,400,1,0">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .mi {
+            font-family: 'Material Symbols Rounded';
+            font-size: 18px;
+            line-height: 1;
+            font-style: normal;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+        }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -63,6 +75,9 @@
             letter-spacing: 0.06em;
             text-transform: uppercase;
             padding: 4px 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
             transition: border-color 0.15s, background 0.15s;
         }
         #history-btn:hover { border-color: #3a7bd5; background: #0d1a2e; }
@@ -313,6 +328,9 @@
             text-transform: uppercase;
             transition: color 0.15s;
             font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
         }
         .copy-btn:hover { color: #7ab3ff; }
 
@@ -346,10 +364,10 @@
             border: none;
             color: #3a3a5a;
             cursor: pointer;
-            font-size: 14px;
             padding: 2px 4px;
             transition: color 0.15s;
-            line-height: 1;
+            display: inline-flex;
+            align-items: center;
         }
         #image-remove:hover { color: #e05555; }
 
@@ -378,10 +396,12 @@
             border-radius: 8px;
             color: #3a5080;
             cursor: pointer;
-            padding: 8px 10px;
-            font-size: 15px;
+            padding: 7px 9px;
             line-height: 1;
             flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             transition: border-color 0.15s, color 0.15s, background 0.15s;
         }
         .icon-btn:hover { border-color: #3a7bd5; color: #3a7bd5; background: #0d1a2e; }
@@ -411,7 +431,7 @@
             border: 1px solid #3a7bd5;
             color: #3a7bd5;
             border-radius: 8px;
-            padding: 9px 18px;
+            padding: 7px 14px;
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 0.06em;
@@ -420,6 +440,9 @@
             transition: background 0.15s, color 0.15s;
             white-space: nowrap;
             flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
         #send-btn:hover { background: #3a7bd5; color: #fff; }
         #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -451,6 +474,152 @@
             50% { opacity: 0.3; transform: scale(0.7); }
         }
 
+        /* ── Confirm write card ── */
+        .confirm-card {
+            border: 1px solid #2a4a7a;
+            border-radius: 10px;
+            background: #080c14;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .confirm-card-header {
+            padding: 10px 14px;
+            background: #0d1525;
+            border-bottom: 1px solid #1a2a4a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .confirm-card-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            background: #1a3a6a;
+            color: #3a7bd5;
+            font-size: 9px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .confirm-card-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #7ab3ff;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+        }
+
+        .confirm-card-badge {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            border-radius: 3px;
+        }
+        .confirm-card-badge.new { background: #0d2a1a; color: #22c55e; border: 1px solid #22c55e44; }
+        .confirm-card-badge.edit { background: #1a1a0a; color: #f59e0b; border: 1px solid #f59e0b44; }
+
+        .confirm-diff {
+            max-height: 320px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #1a1a2e transparent;
+        }
+
+        .diff-section {
+            padding: 0;
+        }
+
+        .diff-section-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 6px 14px;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        .diff-section-label.before { color: #e05555; background: #1a0808; }
+        .diff-section-label.after { color: #22c55e; background: #081a08; border-top: 1px solid #1a1a2e; }
+
+        .diff-code {
+            padding: 10px 14px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 11.5px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-all;
+            background: transparent;
+            color: #a0aec0;
+        }
+        .diff-section-label.before ~ .diff-code { background: #0f0808; color: #f08080; }
+        .diff-section-label.after ~ .diff-code { background: #080f08; color: #80c880; }
+
+        .confirm-actions {
+            display: flex;
+            gap: 8px;
+            padding: 10px 14px;
+            border-top: 1px solid #1a2a4a;
+            background: #0d1525;
+            justify-content: flex-end;
+        }
+
+        .confirm-accept-btn {
+            background: #0d2a1a;
+            border: 1px solid #22c55e;
+            color: #22c55e;
+            border-radius: 6px;
+            padding: 6px 16px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .confirm-accept-btn:hover { background: #22c55e; color: #000; }
+
+        .confirm-reject-btn {
+            background: none;
+            border: 1px solid #3a1a1a;
+            color: #805050;
+            border-radius: 6px;
+            padding: 6px 16px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .confirm-reject-btn:hover { border-color: #e05555; color: #e05555; }
+
+        .confirm-decided {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 10px 14px;
+            border-top: 1px solid #1a2a4a;
+            background: #0d1525;
+        }
+        .confirm-decided.accepted { color: #22c55e; }
+        .confirm-decided.rejected { color: #e05555; }
+
         /* ── Divider de data ── */
         .day-divider {
             display: flex;
@@ -475,7 +644,7 @@
     <div id="header">
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
-        <button id="history-btn" class="hidden">Retomar conversa</button>
+        <button id="history-btn" class="hidden"><span class="mi" style="font-size:14px">history</span>Retomar conversa</button>
     </div>
 
     <div id="config-panel">
@@ -493,6 +662,11 @@
             <div class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
         </div>
         <div>
+            <div class="config-label">Modelo</div>
+            <input id="config-model-input" class="config-input mono" type="text" placeholder="google/gemma-4-e4b" spellcheck="false" autocomplete="off">
+            <div class="config-hint">Nome exato do modelo carregado. Vazio usa o padrao do servidor.</div>
+        </div>
+        <div>
             <div class="config-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
             <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
         </div>
@@ -506,7 +680,7 @@
     <div id="chat-container">
         <div class="message-row agent">
             <div class="message-meta">
-                <div class="message-avatar">EI</div>
+                <div class="message-avatar"><span class="mi" style="font-size:12px">smart_toy</span></div>
                 <span class="message-label">Eucode IA</span>
             </div>
             <div class="message-bubble">Ola! Como posso ajudar?</div>
@@ -516,14 +690,14 @@
     <div id="image-preview">
         <img id="image-preview-img" src="" alt="preview">
         <span id="image-preview-name"></span>
-        <button id="image-remove" title="Remover">&#x2715;</button>
+        <button id="image-remove" title="Remover"><span class="mi" style="font-size:16px">close</span></button>
     </div>
 
     <div id="input-area">
-        <button id="config-btn" class="icon-btn" title="Configuracoes">&#9881;</button>
-        <button id="image-btn" class="icon-btn" title="Anexar imagem">&#128247;</button>
+        <button id="config-btn" class="icon-btn" title="Configuracoes"><span class="mi">settings</span></button>
+        <button id="image-btn" class="icon-btn" title="Anexar imagem"><span class="mi">add_photo_alternate</span></button>
         <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa..."></textarea>
-        <button id="send-btn">Enviar</button>
+        <button id="send-btn"><span class="mi" style="font-size:16px">send</span>Enviar</button>
     </div>
     <input type="file" id="image-input" accept="image/*" style="display:none">
 
@@ -545,6 +719,7 @@
         const configPanel = document.getElementById('config-panel');
         const configProvider = document.getElementById('config-provider');
         const configHostInput = document.getElementById('config-host-input');
+        const configModelInput = document.getElementById('config-model-input');
         const configKeyInput = document.getElementById('config-key-input');
         const configSaveBtn = document.getElementById('config-save-btn');
         const configCancelBtn = document.getElementById('config-cancel-btn');
@@ -552,7 +727,7 @@
         const historyBtn = document.getElementById('history-btn');
 
         let pendingImage = null;
-        let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '' };
+        let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '', model: '' };
         let pendingHistory = null;
 
         // ── Config ──
@@ -561,6 +736,7 @@
             if (isOpen) {
                 configProvider.value = savedSettings.provider;
                 configHostInput.value = savedSettings.apiHost;
+                configModelInput.value = savedSettings.model || '';
                 configKeyInput.value = '';
                 configFeedback.textContent = '';
             }
@@ -578,6 +754,7 @@
                 command: 'save_config',
                 provider: configProvider.value,
                 apiHost: host,
+                model: configModelInput.value.trim(),
                 apiKey: configKeyInput.value.trim(),
             });
         });
@@ -630,15 +807,15 @@
             const highlighted = hljs.getLanguage(language)
                 ? hljs.highlight(code, { language }).value
                 : hljs.highlightAuto(code).value;
-            return `<pre><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" onclick="copyCode(this)">Copiar</button></div><code class="hljs language-${language}">${highlighted}</code></pre>`;
+            return `<pre><div class="code-header"><span class="code-lang">${language}</span><button class="copy-btn" onclick="copyCode(this)"><span class="mi" style="font-size:12px">content_copy</span>Copiar</button></div><code class="hljs language-${language}">${highlighted}</code></pre>`;
         };
         marked.use({ renderer });
 
         function copyCode(btn) {
             const code = btn.closest('pre').querySelector('code').innerText;
             navigator.clipboard.writeText(code).then(() => {
-                btn.textContent = 'Copiado';
-                setTimeout(() => btn.textContent = 'Copiar', 2000);
+                btn.innerHTML = '<span class="mi" style="font-size:12px">check</span>Copiado';
+                setTimeout(() => { btn.innerHTML = '<span class="mi" style="font-size:12px">content_copy</span>Copiar'; }, 2000);
             });
         }
 
@@ -652,7 +829,11 @@
 
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
-            avatar.textContent = role === 'user' ? 'VC' : '[E]';
+            if (role === 'user') {
+                avatar.textContent = 'VC';
+            } else {
+                avatar.innerHTML = '<span class="mi" style="font-size:12px">smart_toy</span>';
+            }
 
             const label = document.createElement('span');
             label.className = 'message-label';
@@ -698,12 +879,122 @@
             return row;
         }
 
+        // ── Confirm write card ──
+        function appendConfirmCard(id, filePath, before, after) {
+            const isNew = before === null;
+            const fileName = filePath.split('/').pop() || filePath;
+
+            const row = document.createElement('div');
+            row.className = 'message-row agent';
+
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = 'EI';
+            const label = document.createElement('span');
+            label.className = 'message-label';
+            label.textContent = 'Eucode IA';
+            meta.appendChild(avatar);
+            meta.appendChild(label);
+
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.style.padding = '0';
+            bubble.style.overflow = 'hidden';
+            bubble.style.width = '100%';
+            bubble.style.maxWidth = '100%';
+
+            const card = document.createElement('div');
+            card.className = 'confirm-card';
+
+            // Header
+            const header = document.createElement('div');
+            header.className = 'confirm-card-header';
+            const icon = document.createElement('div');
+            icon.className = 'confirm-card-icon';
+            icon.innerHTML = isNew
+                ? '<span class="mi" style="font-size:12px">add</span>'
+                : '<span class="mi" style="font-size:12px">edit</span>';
+            const title = document.createElement('div');
+            title.className = 'confirm-card-title';
+            title.textContent = filePath;
+            title.title = filePath;
+            const badge = document.createElement('span');
+            badge.className = 'confirm-card-badge ' + (isNew ? 'new' : 'edit');
+            badge.textContent = isNew ? 'Novo' : 'Editar';
+            header.appendChild(icon);
+            header.appendChild(title);
+            header.appendChild(badge);
+
+            // Diff
+            const diff = document.createElement('div');
+            diff.className = 'confirm-diff';
+
+            if (!isNew && before) {
+                const beforeLabel = document.createElement('div');
+                beforeLabel.className = 'diff-section-label before';
+                beforeLabel.textContent = 'Antes';
+                const beforeCode = document.createElement('div');
+                beforeCode.className = 'diff-code';
+                beforeCode.textContent = before.length > 2000 ? before.slice(0, 2000) + '\n... (truncado)' : before;
+                diff.appendChild(beforeLabel);
+                diff.appendChild(beforeCode);
+            }
+
+            const afterLabel = document.createElement('div');
+            afterLabel.className = 'diff-section-label after';
+            afterLabel.textContent = isNew ? 'Conteudo' : 'Depois';
+            const afterCode = document.createElement('div');
+            afterCode.className = 'diff-code';
+            afterCode.textContent = after.length > 2000 ? after.slice(0, 2000) + '\n... (truncado)' : after;
+            diff.appendChild(afterLabel);
+            diff.appendChild(afterCode);
+
+            // Actions
+            const actions = document.createElement('div');
+            actions.className = 'confirm-actions';
+
+            const rejectBtn = document.createElement('button');
+            rejectBtn.className = 'confirm-reject-btn';
+            rejectBtn.innerHTML = '<span class="mi" style="font-size:14px">close</span>Rejeitar';
+
+            const acceptBtn = document.createElement('button');
+            acceptBtn.className = 'confirm-accept-btn';
+            acceptBtn.innerHTML = '<span class="mi" style="font-size:14px">check</span>Aceitar';
+
+            function decide(approved) {
+                actions.remove();
+                const decided = document.createElement('div');
+                decided.className = 'confirm-decided ' + (approved ? 'accepted' : 'rejected');
+                decided.innerHTML = approved
+                    ? '<span class="mi" style="font-size:14px;vertical-align:middle">check_circle</span> Alteracao aceita'
+                    : '<span class="mi" style="font-size:14px;vertical-align:middle">cancel</span> Alteracao rejeitada';
+                card.appendChild(decided);
+                vscode.postMessage({ command: 'confirm_write_response', id, approved });
+            }
+
+            acceptBtn.addEventListener('click', () => decide(true));
+            rejectBtn.addEventListener('click', () => decide(false));
+            actions.appendChild(rejectBtn);
+            actions.appendChild(acceptBtn);
+
+            card.appendChild(header);
+            card.appendChild(diff);
+            card.appendChild(actions);
+            bubble.appendChild(card);
+            row.appendChild(meta);
+            row.appendChild(bubble);
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
         // ── Messages from extension ──
         window.addEventListener('message', function(event) {
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '' };
             } else if (msg.command === 'load_history') {
                 if (msg.entries && msg.entries.length > 0) {
                     pendingHistory = msg.entries;
@@ -714,6 +1005,7 @@
             } else if (msg.command === 'config_saved') {
                 savedSettings.provider = configProvider.value;
                 savedSettings.apiHost = configHostInput.value.trim();
+                savedSettings.model = configModelInput.value.trim();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -721,6 +1013,9 @@
                 }, 1200);
             } else if (msg.command === 'status') {
                 updateStatus(msg.text);
+            } else if (msg.command === 'confirm_write') {
+                clearStatus();
+                appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
             } else if (msg.command === 'agent_response') {
                 clearStatus();
                 const loading = chatContainer.querySelector('[data-loading="true"]');

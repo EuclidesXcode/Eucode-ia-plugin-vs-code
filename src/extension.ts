@@ -5,9 +5,10 @@ import { callAIWithVision, checkConnection } from './services/api-client';
 import { buildHistorySummary, HistoryEntry } from './services/history-service';
 import { HistoryManagerService } from './services/HistoryManagerService';
 import { collectWorkspaceContext, getDefaultCwd } from './workspace/context';
-import { runAgentLoop } from './agent/loop';
+import { runAgentLoop, ConfirmWriteRequest } from './agent/loop';
 import { SYSTEM_PROMPT } from './agent/prompt';
 import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSettings } from './config/settings';
+import { DEFAULT_MODEL } from './utils/constants';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Eucode-IA Plugin ativo.');
@@ -33,6 +34,9 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
 
     const notify = (text: string) => panel.webview.postMessage({ command: 'status', text });
 
+    // Mapa de Promises pendentes para aprovação de escrita de arquivo
+    const pendingConfirms = new Map<string, (approved: boolean) => void>();
+
     async function pingAndNotify(s: EucodeSettings) {
         const endpoint = buildApiEndpoint(s);
         const auth = buildAuthHeader(s);
@@ -40,7 +44,20 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
         panel.webview.postMessage({ command: 'connection_status', online });
     }
 
-    // Recarrega historico quando o workspace mudar
+    function makeConfirmWrite(): (req: ConfirmWriteRequest) => Promise<boolean> {
+        return (req) => new Promise<boolean>((resolve) => {
+            const id = `confirm_${Date.now()}`;
+            pendingConfirms.set(id, resolve);
+            panel.webview.postMessage({
+                command: 'confirm_write',
+                id,
+                filePath: req.filePath,
+                before: req.before,
+                after: req.after,
+            });
+        });
+    }
+
     const workspaceListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
         sessionHistory = historyManager.load();
         const filtered = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
@@ -56,6 +73,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     provider: settings.provider,
                     apiHost: settings.apiHost,
                     apiKey: settings.apiKey,
+                    model: settings.model,
                 });
                 const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 if (history.length > 0) {
@@ -70,10 +88,21 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     provider: message.provider ?? settings.provider,
                     apiHost: message.apiHost ?? settings.apiHost,
                     apiKey: message.apiKey ?? '',
+                    model: message.model ?? '',
                 };
                 await saveSettings(context, settings);
                 panel.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(settings);
+                return;
+            }
+
+            // Resposta do usuário para aprovação de escrita de arquivo
+            if (message?.command === 'confirm_write_response') {
+                const resolve = pendingConfirms.get(message.id);
+                if (resolve) {
+                    pendingConfirms.delete(message.id);
+                    resolve(message.approved === true);
+                }
                 return;
             }
 
@@ -88,6 +117,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
 
             const endpoint = buildApiEndpoint(settings);
             const authHeaders = buildAuthHeader(settings);
+            const activeModel = settings.model || DEFAULT_MODEL;
             let response: string;
 
             if (message.image?.base64) {
@@ -100,7 +130,8 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     message.text,
                     message.image.base64,
                     message.image.mimeType,
-                    systemWithHistory
+                    systemWithHistory,
+                    activeModel
                 );
                 sessionHistory = historyManager.append(sessionHistory, {
                     role: 'assistant',
@@ -123,7 +154,9 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     endpoint,
                     authHeaders,
                     sessionHistory,
-                    notify
+                    notify,
+                    makeConfirmWrite(),
+                    activeModel
                 );
                 sessionHistory = historyManager.append(sessionHistory, {
                     role: 'assistant',

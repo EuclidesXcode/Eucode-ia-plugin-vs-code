@@ -88,6 +88,13 @@ O endereco e salvo automaticamente e persiste entre sessoes.
 
 ---
 
+## Requisitos de Rede (LM Studio Distribuído)
+
+**Cenário:** Você deseja rodar o LM Studio em uma máquina na rede e usar o Eucode IA no VS Code em outra máquina.
+**Ação Necessária:** No LM Studio, navegue até **Server Settings** e habilite a opção **"Servir na Rede Local"**. Isso exporá a API para outros dispositivos na mesma rede.
+
+---
+
 ## Capacidades do agente
 
 O agente tem acesso a cinco ferramentas que usa de forma autonoma conforme necessario:
@@ -126,6 +133,27 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.2.8)
+
+- Campo **Modelo** no painel de configuracoes: o usuario especifica o nome exato do modelo carregado (ex: `google/gemma-4-e4b`, `qwen2.5-coder:14b`, `llama3.1:8b`)
+- Se o campo ficar vazio, o servidor usa o modelo padrao que estiver carregado
+- Modelo configuravel funciona com LM Studio, Ollama e qualquer provedor OpenAI-compativel
+
+## Nota da versao (0.2.7)
+
+- Icones Material Symbols Rounded em toda a interface: configuracoes, camera, enviar, fechar, historico, copiar codigo, aceitar/rejeitar arquivos
+- Botao de envio agora exibe icone de seta + texto
+- Avatar do agente substituido por ícone `robot` (ícone de robô)
+- Avatar do usuário exibido com um ícone de pessoa (`person`)
+
+## Nota da versao (0.2.6)
+
+- Aprovacao de edicao de arquivos: antes de gravar qualquer arquivo, o agente exibe um card no chat com o conteudo antes e depois (diff visual) — o usuario aceita ou rejeita com um clique
+- Arquivos novos mostram badge "Novo" em verde; arquivos editados mostram badge "Editar" em amarelo
+- Se rejeitado, o agente recebe feedback e pode tentar uma abordagem diferente
+- Respostas mais rapidas: limite de passos reduzido de 15 para 10, historico enviado ao modelo reduzido de 8 para 5 pares
+- Historico removido do bloco de sistema (era enviado em duplicata) — agora so os pares de mensagens estruturadas sao usados como contexto
+
 ## Nota da versao (0.2.5)
 
 - Historico de conversa isolado por workspace: cada pasta/projeto mantem seu proprio contexto de chat
@@ -143,7 +171,6 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 - Status dot com brilho verde ao conectar e pulso azul na barra de status
 - Blocos de codigo redesenhados com label de linguagem em azul e fundo mais escuro
 - Focus rings azuis nos campos de entrada e selects
-- Painel de configuracao com botoes e estados de hover refinados
 
 ## Nota da versao (0.2.3)
 

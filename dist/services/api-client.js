@@ -38,7 +38,6 @@ exports.callAI = callAI;
 exports.callAIWithVision = callAIWithVision;
 const https = __importStar(require("https"));
 const http = __importStar(require("http"));
-const constants_1 = require("../utils/constants");
 function request(url, method, body, headers, timeoutMs) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
@@ -109,14 +108,14 @@ async function checkConnection(endpoint, authHeaders) {
         return false;
     }
 }
-async function callAI(endpoint, authHeaders, messages, tools) {
+async function callAI(endpoint, authHeaders, messages, tools, model) {
     const formattedTools = tools.map(t => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters },
     }));
     try {
         const data = await request(endpoint, 'POST', {
-            model: constants_1.MODEL, messages, tools: formattedTools, tool_choice: 'auto',
+            model, messages, tools: formattedTools, tool_choice: 'auto',
         }, authHeaders, 600000);
         const message = data?.choices?.[0]?.message;
         if (!message) {
@@ -138,10 +137,10 @@ async function callAI(endpoint, authHeaders, messages, tools) {
         };
     }
 }
-async function callAIWithVision(endpoint, authHeaders, userText, imageBase64, imageMimeType, systemContent) {
+async function callAIWithVision(endpoint, authHeaders, userText, imageBase64, imageMimeType, systemContent, model) {
     try {
         const data = await request(endpoint, 'POST', {
-            model: constants_1.MODEL,
+            model,
             messages: [
                 { role: 'system', content: systemContent },
                 {

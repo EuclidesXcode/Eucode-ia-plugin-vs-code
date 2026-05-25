@@ -45,6 +45,7 @@ const context_1 = require("./workspace/context");
 const loop_1 = require("./agent/loop");
 const prompt_1 = require("./agent/prompt");
 const settings_1 = require("./config/settings");
+const constants_1 = require("./utils/constants");
 function activate(context) {
     console.log('Eucode-IA Plugin ativo.');
     context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.activateAgent', () => initializeEucodeAgent(context)));
@@ -57,13 +58,27 @@ async function initializeEucodeAgent(context) {
     let sessionHistory = historyManager.load();
     let settings = (0, settings_1.loadSettings)(context);
     const notify = (text) => panel.webview.postMessage({ command: 'status', text });
+    // Mapa de Promises pendentes para aprovação de escrita de arquivo
+    const pendingConfirms = new Map();
     async function pingAndNotify(s) {
         const endpoint = (0, settings_1.buildApiEndpoint)(s);
         const auth = (0, settings_1.buildAuthHeader)(s);
         const online = await (0, api_client_1.checkConnection)(endpoint, auth);
         panel.webview.postMessage({ command: 'connection_status', online });
     }
-    // Recarrega historico quando o workspace mudar
+    function makeConfirmWrite() {
+        return (req) => new Promise((resolve) => {
+            const id = `confirm_${Date.now()}`;
+            pendingConfirms.set(id, resolve);
+            panel.webview.postMessage({
+                command: 'confirm_write',
+                id,
+                filePath: req.filePath,
+                before: req.before,
+                after: req.after,
+            });
+        });
+    }
     const workspaceListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
         sessionHistory = historyManager.load();
         const filtered = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
@@ -77,6 +92,7 @@ async function initializeEucodeAgent(context) {
                 provider: settings.provider,
                 apiHost: settings.apiHost,
                 apiKey: settings.apiKey,
+                model: settings.model,
             });
             const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
             if (history.length > 0) {
@@ -90,10 +106,20 @@ async function initializeEucodeAgent(context) {
                 provider: message.provider ?? settings.provider,
                 apiHost: message.apiHost ?? settings.apiHost,
                 apiKey: message.apiKey ?? '',
+                model: message.model ?? '',
             };
             await (0, settings_1.saveSettings)(context, settings);
             panel.webview.postMessage({ command: 'config_saved' });
             pingAndNotify(settings);
+            return;
+        }
+        // Resposta do usuário para aprovação de escrita de arquivo
+        if (message?.command === 'confirm_write_response') {
+            const resolve = pendingConfirms.get(message.id);
+            if (resolve) {
+                pendingConfirms.delete(message.id);
+                resolve(message.approved === true);
+            }
             return;
         }
         if (message?.command !== 'user_input' || !message.text) {
@@ -107,12 +133,13 @@ async function initializeEucodeAgent(context) {
         });
         const endpoint = (0, settings_1.buildApiEndpoint)(settings);
         const authHeaders = (0, settings_1.buildAuthHeader)(settings);
+        const activeModel = settings.model || constants_1.DEFAULT_MODEL;
         let response;
         if (message.image?.base64) {
             notify('Analisando imagem...');
             const historySummary = (0, history_service_1.buildHistorySummary)(sessionHistory.slice(0, -1));
             const systemWithHistory = [prompt_1.SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
-            response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory);
+            response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory, activeModel);
             sessionHistory = historyManager.append(sessionHistory, {
                 role: 'assistant',
                 content: response,
@@ -128,7 +155,7 @@ async function initializeEucodeAgent(context) {
                 notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
             }
             const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
-            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify);
+            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify, makeConfirmWrite(), activeModel);
             sessionHistory = historyManager.append(sessionHistory, {
                 role: 'assistant',
                 content: response,

@@ -1,36 +1,66 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { callAI, ToolCall } from '../services/api-client';
-import { HistoryEntry, buildMessagesFromHistory, buildHistorySummary } from '../services/history-service';
+import { DEFAULT_MODEL } from '../utils/constants';
+import { HistoryEntry, buildMessagesFromHistory } from '../services/history-service';
 import { listDirectory, readLocalFile, writeLocalFile } from '../tools/file-tools';
 import { searchInWorkspace, runCommand } from '../tools/shell-tools';
 import { SYSTEM_PROMPT } from './prompt';
 import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS } from '../utils/constants';
+import { resolveFilePath } from '../utils/validation';
 
 type Message = { role: string; content: string | null; tool_calls?: any[]; tool_call_id?: string };
 
-const toolHandlers: Record<string, (args: Record<string, any>, cwd: string, step: number, max: number, onStatus: (s: string) => void) => Promise<string>> = {
-    list_directory: async (args, _cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
-        return listDirectory(args.dirPath || '');
-    },
-    read_local_file: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — lendo: ${path.basename(args.filePath || '')}`);
-        return readLocalFile(args.filePath || '', cwd);
-    },
-    search_in_workspace: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — buscando: "${args.query}"`);
-        return searchInWorkspace(args.query || '', args.dirPath || cwd);
-    },
-    write_local_file: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — gravando: ${path.basename(args.filePath || '')}`);
-        return writeLocalFile(args.filePath || '', args.content || '', cwd);
-    },
-    run_command: async (args, cwd, step, max, onStatus) => {
-        onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
-        return runCommand(args.command || '', args.cwd || cwd);
-    },
+export type ConfirmWriteRequest = {
+    filePath: string;
+    before: string | null;
+    after: string;
 };
+
+function buildToolHandlers(
+    onStatus: (s: string) => void,
+    onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>
+): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
+    return {
+        list_directory: async (args, _cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — listando: ${path.basename(args.dirPath || '')}`);
+            return listDirectory(args.dirPath || '');
+        },
+        read_local_file: async (args, cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — lendo: ${path.basename(args.filePath || '')}`);
+            return readLocalFile(args.filePath || '', cwd);
+        },
+        search_in_workspace: async (args, cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — buscando: "${args.query}"`);
+            return searchInWorkspace(args.query || '', args.dirPath || cwd);
+        },
+        write_local_file: async (args, cwd, step, max) => {
+            const filePath: string = args.filePath || '';
+            const content: string = args.content || '';
+            onStatus(`Passo ${step}/${max} — aguardando aprovacao: ${path.basename(filePath)}`);
+
+            let before: string | null = null;
+            try {
+                const fullPath = resolveFilePath(filePath, cwd);
+                before = fs.readFileSync(fullPath, 'utf8');
+            } catch {
+                before = null;
+            }
+
+            const approved = await onConfirmWrite({ filePath, before, after: content });
+            if (!approved) {
+                return '[CANCELADO] O usuario rejeitou a alteracao do arquivo.';
+            }
+
+            return writeLocalFile(filePath, content, cwd);
+        },
+        run_command: async (args, cwd, step, max) => {
+            onStatus(`Passo ${step}/${max} — executando: ${args.command}`);
+            return runCommand(args.command || '', args.cwd || cwd);
+        },
+    };
+}
 
 function detectEscapedToolCall(text: string): ToolCall | null {
     const match = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
@@ -49,11 +79,11 @@ export async function runAgentLoop(
     endpoint: string,
     authHeaders: Record<string, string>,
     sessionHistory: HistoryEntry[],
-    onStatus: (s: string) => void
+    onStatus: (s: string) => void,
+    onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
+    model: string = DEFAULT_MODEL
 ): Promise<string> {
-    const historySummary = buildHistorySummary(sessionHistory.slice(0, -1));
-    const systemContent = [SYSTEM_PROMPT, historySummary, contextBlock].filter(Boolean).join('\n\n');
-
+    const systemContent = [SYSTEM_PROMPT, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = buildMessagesFromHistory(sessionHistory.slice(0, -1));
     const roundMessages: Message[] = [
         { role: 'system', content: systemContent },
@@ -61,9 +91,11 @@ export async function runAgentLoop(
         { role: 'user', content: userPrompt },
     ];
 
+    const toolHandlers = buildToolHandlers(onStatus, onConfirmWrite);
+
     for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
         onStatus(`Passo ${step}/${MAX_AGENT_STEPS} — pensando...`);
-        const result = await callAI(endpoint, authHeaders, roundMessages, TOOLS);
+        const result = await callAI(endpoint, authHeaders, roundMessages, TOOLS, model);
 
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
@@ -78,10 +110,9 @@ export async function runAgentLoop(
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
-                ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS, onStatus)
+                ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
 
-            // Sequencia correta: assistant com tool_call → tool com tool_call_id
             roundMessages.push({
                 role: 'assistant',
                 content: null,

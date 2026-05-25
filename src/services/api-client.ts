@@ -1,6 +1,5 @@
 import * as https from 'https';
 import * as http from 'http';
-import { MODEL } from '../utils/constants';
 
 export interface ToolDefinition {
     name: string;
@@ -98,7 +97,8 @@ export async function callAI(
     endpoint: string,
     authHeaders: Record<string, string>,
     messages: { role: string; content: unknown }[],
-    tools: ToolDefinition[]
+    tools: ToolDefinition[],
+    model: string
 ): Promise<AIResponse> {
     const formattedTools = tools.map(t => ({
         type: 'function',
@@ -107,7 +107,7 @@ export async function callAI(
 
     try {
         const data = await request(endpoint, 'POST', {
-            model: MODEL, messages, tools: formattedTools, tool_choice: 'auto',
+            model, messages, tools: formattedTools, tool_choice: 'auto',
         }, authHeaders, 600000) as any;
 
         const message = data?.choices?.[0]?.message;
@@ -136,11 +136,12 @@ export async function callAIWithVision(
     userText: string,
     imageBase64: string,
     imageMimeType: string,
-    systemContent: string
+    systemContent: string,
+    model: string
 ): Promise<string> {
     try {
         const data = await request(endpoint, 'POST', {
-            model: MODEL,
+            model,
             messages: [
                 { role: 'system', content: systemContent },
                 {

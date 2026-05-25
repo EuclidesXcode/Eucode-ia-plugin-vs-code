@@ -1,8 +1,8 @@
 export const API_ENDPOINT = 'http://localhost:1234/v1/chat/completions';
-export const MODEL = 'google/gemma-4-e4b';
-export const MAX_AGENT_STEPS = 15;
+export const DEFAULT_MODEL = 'google/gemma-4-e4b';
+export const MAX_AGENT_STEPS = 10;
 export const MAX_HISTORY_ENTRIES = 60;
-export const MAX_HISTORY_PAIRS = 8;
+export const MAX_HISTORY_PAIRS = 5;
 
 export const BINARY_EXTS = new Set([
     '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
