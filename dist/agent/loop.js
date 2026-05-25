@@ -46,11 +46,12 @@ const prompt_1 = require("./prompt");
 const tools_definition_2 = require("./tools-definition");
 const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode) {
     return {
-        list_directory: async (args, _cwd, _step, _max) => {
-            onStatus(`Lendo estrutura: ${path.basename(args.dirPath || args.dirPath || '/')}`);
-            return (0, file_tools_1.listDirectory)(args.dirPath || '');
+        list_directory: async (args, cwd, _step, _max) => {
+            const dir = args.dirPath || args.path || cwd;
+            onStatus(`Lendo estrutura: ${path.basename(dir)}`);
+            return (0, file_tools_1.listDirectory)(dir);
         },
         read_local_file: async (args, cwd, _step, _max) => {
             onStatus(`Lendo arquivo: ${path.basename(args.filePath || '')}`);
@@ -63,7 +64,6 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmW
         write_local_file: async (args, cwd, _step, _max) => {
             const filePath = args.filePath || '';
             const content = args.content || '';
-            onStatus(`Aguardando aprovacao: ${path.basename(filePath)}`);
             let before = null;
             try {
                 const fullPath = (0, validation_1.resolveFilePath)(filePath, cwd);
@@ -72,6 +72,11 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmW
             catch {
                 before = null;
             }
+            if (autoMode) {
+                onStatus(`Escrevendo: ${path.basename(filePath)}`);
+                return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+            }
+            onStatus(`Aguardando aprovacao: ${path.basename(filePath)}`);
             const approved = await onConfirmWrite({ filePath, before, after: content });
             if (!approved) {
                 return '[CANCELADO] O usuario rejeitou a alteracao do arquivo.';
@@ -113,19 +118,28 @@ const PENDING_ACTION_PATTERNS = [
     /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
     /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
     /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
-    // Modelo afirmou ter feito sem usar ferramenta
+    // Modelo afirmou ter feito sem usar ferramenta — PT
     /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
     /escrevi o arquivo/i, /gravei o arquivo/i,
     /criei o mock/i, /gerei o arquivo/i,
+    /eu removi/i, /removi os/i, /apaguei os/i, /deletei os/i,
+    /eu criei/i, /eu escrevi/i, /eu atualizei/i, /eu modifiquei/i,
+    /eu executei/i, /executei os testes/i, /rodei os testes/i,
+    /testes passaram/i, /testes foram executados/i,
+    /atualizei o/i, /modifiquei o/i, /corrigi o/i,
     // Inglês
     /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
     /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
     /i will refactor/i, /i will fix/i, /i will update/i,
+    /i removed/i, /i deleted/i, /i updated/i, /i modified/i,
+    /i ran the tests/i, /tests passed/i, /i executed/i,
 ];
-function detectsPendingAction(text) {
-    // Verifica as últimas 6 linhas para cobrir casos onde a intenção não é a última frase
-    const last = text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
-    return PENDING_ACTION_PATTERNS.some(p => p.test(last));
+function detectsPendingAction(text, autoMode = false) {
+    // Em modo auto verifica o texto inteiro — o modelo pode mentir em qualquer parte
+    const toCheck = autoMode
+        ? text
+        : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
+    return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 function detectEscapedToolCall(text) {
     // Formato simples: funcao({ ... })
@@ -175,15 +189,18 @@ function detectEscapedToolCall(text) {
     }
     return null;
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL) {
-    const systemContent = [prompt_1.SYSTEM_PROMPT, contextBlock].filter(Boolean).join('\n\n');
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL, autoMode = false) {
+    const autoBlock = autoMode
+        ? `\nMODO AUTOMATICO ATIVO: Escreva arquivos diretamente sem pedir confirmacao. Apos cada escrita, rode os testes do projeto automaticamente com run_command. Se os testes falharem, corrija o codigo e rode os testes de novo. Repita ate todos os testes passarem ou atingir o limite de tentativas.`
+        : '';
+    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
     const roundMessages = [
         { role: 'system', content: systemContent },
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode);
     const thinkingStatus = [
         'Analisando sua solicitacao...',
         'Processando contexto do projeto...',
@@ -239,10 +256,15 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         }
         else if (result.responseText !== undefined) {
             const text = result.responseText || '';
-            if (text && detectsPendingAction(text)) {
-                // Modelo anunciou uma ação mas não chamou a ferramenta — empurra de volta
+            if (text && detectsPendingAction(text, autoMode)) {
+                // Modelo anunciou ou fingiu ter feito algo sem chamar a ferramenta — empurra de volta
                 roundMessages.push({ role: 'assistant', content: text });
-                roundMessages.push({ role: 'user', content: 'continue' });
+                roundMessages.push({
+                    role: 'user',
+                    content: autoMode
+                        ? 'Voce descreveu acoes mas nao executou nenhuma ferramenta. Use write_local_file, run_command ou outra ferramenta agora. Nao descreva — execute.'
+                        : 'continue',
+                });
                 lastToolName = '';
                 continue;
             }

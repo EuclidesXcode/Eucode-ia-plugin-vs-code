@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.5
+
+- Modo Automatico (Beta): botao no header que ativa escrita direta de arquivos sem card de aprovacao
+- Apos cada write_local_file no modo auto, agente roda os testes automaticamente e corrige falhas em loop
+- Deteccao ampliada de acoes fingidas: modelo nao consegue mais dizer "eu criei", "eu removi", "executei os testes" sem ter chamado a ferramenta
+- Em modo auto, mensagem de retorno explicita instrui o modelo a usar a ferramenta em vez de descrever
+- Botao Auto (Beta) fica verde quando ativo, com tooltip descritivo
+
+## 0.3.4
+
+- Prompt reescrito: instrui o agente a explorar o workspace com ferramentas antes de responder qualquer pergunta sobre o projeto
+- Analise de imagem: temperature reduzida para respostas mais diretas, filtro de limpeza remove raciocinio interno exposto por modelos locais
+- Regras mais claras contra exposicao de raciocinio interno (Goal, Context, Action Plan, etc.)
+
+## 0.3.3
+
+- Correcao de workspace: ignora raiz do sistema operacional quando nenhum projeto valido esta aberto
+- Aviso claro ao usuario quando nenhuma pasta de projeto esta aberta no VS Code
+
 ## 0.3.2
 
 - Icone [E] na Activity Bar: acesso rapido ao chat sem precisar digitar comando

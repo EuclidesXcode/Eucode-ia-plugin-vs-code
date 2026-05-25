@@ -83,6 +83,12 @@
             transition: border-color 0.15s, background 0.15s;
         }
         .header-btn:hover { border-color: #3a7bd5; background: #0d1a2e; }
+        .header-btn.auto-active {
+            border-color: #22c55e;
+            color: #22c55e;
+            background: #0a1a0f;
+        }
+        .header-btn.auto-active:hover { background: #0d2212; }
 
         /* ── Sessions panel ── */
         #sessions-panel {
@@ -790,6 +796,7 @@
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
+        <button id="auto-btn" class="header-btn" title="Modo automatico: escreve, testa e corrige sem pedir aprovacao"><span class="mi" style="font-size:14px">bolt</span>Auto <span style="font-size:8px;opacity:0.7;letter-spacing:0.04em">BETA</span></button>
         <button id="sessions-btn" class="header-btn"><span class="mi" style="font-size:14px">forum</span>Sessoes</button>
         <button id="new-session-btn" class="header-btn"><span class="mi" style="font-size:14px">add</span>Novo chat</button>
     </div>
@@ -888,6 +895,17 @@
         let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '', model: '' };
         let pendingHistory = null;
         let currentSessionId = null;
+        let autoMode = false;
+
+        // ── Auto mode toggle ──
+        const autoBtn = document.getElementById('auto-btn');
+        autoBtn.addEventListener('click', () => {
+            autoMode = !autoMode;
+            autoBtn.classList.toggle('auto-active', autoMode);
+            autoBtn.title = autoMode
+                ? 'Modo automatico ATIVO — clique para desativar'
+                : 'Modo automatico: escreve, testa e corrige sem pedir aprovacao';
+        });
 
         // ── Sessions panel ──
         sessionsBtn.addEventListener('click', () => sessionsPanel.classList.toggle('open'));
@@ -1482,6 +1500,7 @@
                 command: 'user_input',
                 text: text || '(analise esta imagem)',
                 image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
+                autoMode,
             });
 
             pendingImage = null;

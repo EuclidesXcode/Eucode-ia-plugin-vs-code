@@ -24,16 +24,25 @@ export function collectWorkspaceContext(): WorkspaceContext {
         }
     }
 
-    const defaultRoot = roots[0] ?? '/tmp';
-    let contextBlock = `# WORKSPACE\nPastas raiz: ${roots.join(', ')}\n`;
-    if (openFiles.length > 0) {
-        contextBlock += `Arquivos abertos: ${openFiles.map(f => f.path).join(', ')}\n`;
+    const validRoots = roots.filter(r => r !== '/' && r !== 'C:\\' && r.length > 3);
+    const defaultRoot = validRoots[0] ?? roots[0] ?? '/tmp';
+    let contextBlock = '';
+
+    if (validRoots.length === 0) {
+        contextBlock = `# WORKSPACE\nNenhum projeto aberto no VS Code. Informe o usuario que ele precisa abrir uma pasta de projeto (File > Open Folder) antes de continuar.`;
+    } else {
+        contextBlock = `# WORKSPACE\nPastas raiz: ${validRoots.join(', ')}\n`;
+        if (openFiles.length > 0) {
+            contextBlock += `Arquivos abertos: ${openFiles.map(f => f.path).join(', ')}\n`;
+        }
+        contextBlock += `\nRegras para criar/editar arquivos:\n- Sempre use caminhos ABSOLUTOS no filePath, ex: ${defaultRoot}/nome.ts\n- Nunca use caminhos relativos ou vazios.\n- Para entender a estrutura: use list_directory, read_local_file, search_in_workspace.`;
     }
-    contextBlock += `\nRegras para criar/editar arquivos:\n- Sempre use caminhos ABSOLUTOS no filePath, ex: ${defaultRoot}/nome.ts\n- Nunca use caminhos relativos ou vazios.\n- Para entender a estrutura: use list_directory, read_local_file, search_in_workspace.`;
 
     return { roots, openFiles, contextBlock };
 }
 
 export function getDefaultCwd(roots: string[]): string {
-    return roots.find(r => r !== '/') ?? roots[0] ?? '/tmp';
+    // Ignora raiz do sistema operacional — só aceita pastas reais de projeto
+    const valid = roots.filter(r => r !== '/' && r !== 'C:\\' && r.length > 3);
+    return valid[0] ?? roots[0] ?? '/tmp';
 }

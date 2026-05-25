@@ -151,8 +151,15 @@ async function callAIWithVision(endpoint, authHeaders, userText, imageBase64, im
                     ],
                 },
             ],
+            temperature: 0.2,
         }, authHeaders, 600000);
-        return data?.choices?.[0]?.message?.content || 'Nao foi possivel analisar a imagem.';
+        const content = data?.choices?.[0]?.message?.content || '';
+        // Remove blocos de raciocinio interno que alguns modelos locais expõem
+        const cleaned = content
+            .replace(/^(minha resposta|vou descrever|vou analisar|como sou|devo responder|meu papel)[^\n]*\n?/gim, '')
+            .replace(/^(note que|observa[cç][aã]o|an[aá]lise|estrat[eé]gia)[^\n]*\n?/gim, '')
+            .trim();
+        return cleaned || 'Nao foi possivel analisar a imagem.';
     }
     catch (error) {
         return `ERRO ao analisar imagem: ${error instanceof Error ? error.message : String(error)}`;
