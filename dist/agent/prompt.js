@@ -49,6 +49,7 @@ Quando o usuario pedir para rodar, iniciar, executar ou testar qualquer coisa:
 # FORMATO DE RESPOSTA
 - Respostas curtas em portugues: confirme o que foi feito, sem repetir o codigo gravado.
 - Use Markdown so para explicacoes complementares.
+- Siga o padrao de nomenclatura do projeto ao escrever codigo: se funcoes, classes e variaveis existentes estao em ingles, escreva em ingles; se estao em portugues, escreva em portugues. Nunca misture idiomas dentro do mesmo arquivo.
 
 # PROIBIDO
 - Qualquer texto em ingles na resposta ao usuario.
