@@ -1330,14 +1330,8 @@
             acceptBtn.innerHTML = '<span class="mi" style="font-size:14px">check</span>Aceitar';
 
             function decide(approved) {
-                actions.remove();
-                const decided = document.createElement('div');
-                decided.className = 'confirm-decided ' + (approved ? 'accepted' : 'rejected');
-                decided.innerHTML = approved
-                    ? '<span class="mi" style="font-size:14px;vertical-align:middle">check_circle</span> Alteracao aceita'
-                    : '<span class="mi" style="font-size:14px;vertical-align:middle">cancel</span> Alteracao rejeitada';
-                card.appendChild(decided);
                 vscode.postMessage({ command: 'confirm_write_response', id, approved });
+                row.remove();
             }
 
             acceptBtn.addEventListener('click', () => decide(true));
