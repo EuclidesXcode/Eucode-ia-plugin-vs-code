@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { callAIWithVision, checkConnection } from './services/api-client';
-import { loadHistory, appendEntry, buildHistorySummary, HistoryEntry } from './services/history-service';
+import { buildHistorySummary, HistoryEntry } from './services/history-service';
+import { HistoryManagerService } from './services/HistoryManagerService';
 import { collectWorkspaceContext, getDefaultCwd } from './workspace/context';
 import { runAgentLoop } from './agent/loop';
 import { SYSTEM_PROMPT } from './agent/prompt';
@@ -26,7 +27,8 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
     const htmlPath = path.join(context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
     panel.webview.html = fs.readFileSync(htmlPath, 'utf8');
 
-    let sessionHistory: HistoryEntry[] = loadHistory();
+    const historyManager = new HistoryManagerService(context);
+    let sessionHistory: HistoryEntry[] = historyManager.load();
     let settings = loadSettings(context);
 
     const notify = (text: string) => panel.webview.postMessage({ command: 'status', text });
@@ -38,6 +40,14 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
         panel.webview.postMessage({ command: 'connection_status', online });
     }
 
+    // Recarrega historico quando o workspace mudar
+    const workspaceListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        sessionHistory = historyManager.load();
+        const filtered = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+        panel.webview.postMessage({ command: 'load_history', entries: filtered });
+    });
+    context.subscriptions.push(workspaceListener);
+
     panel.webview.onDidReceiveMessage(
         async (message: any) => {
             if (message?.command === 'webview_ready') {
@@ -47,7 +57,6 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     apiHost: settings.apiHost,
                     apiKey: settings.apiKey,
                 });
-                // Envia historico para restaurar conversa anterior
                 const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 if (history.length > 0) {
                     panel.webview.postMessage({ command: 'load_history', entries: history });
@@ -70,7 +79,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
 
             if (message?.command !== 'user_input' || !message.text) { return; }
 
-            sessionHistory = appendEntry(sessionHistory, {
+            sessionHistory = historyManager.append(sessionHistory, {
                 role: 'user',
                 content: message.text,
                 timestamp: Date.now(),
@@ -93,7 +102,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     message.image.mimeType,
                     systemWithHistory
                 );
-                sessionHistory = appendEntry(sessionHistory, {
+                sessionHistory = historyManager.append(sessionHistory, {
                     role: 'assistant',
                     content: response,
                     timestamp: Date.now(),
@@ -116,7 +125,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     sessionHistory,
                     notify
                 );
-                sessionHistory = appendEntry(sessionHistory, {
+                sessionHistory = historyManager.append(sessionHistory, {
                     role: 'assistant',
                     content: response,
                     timestamp: Date.now(),

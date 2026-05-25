@@ -40,6 +40,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const api_client_1 = require("./services/api-client");
 const history_service_1 = require("./services/history-service");
+const HistoryManagerService_1 = require("./services/HistoryManagerService");
 const context_1 = require("./workspace/context");
 const loop_1 = require("./agent/loop");
 const prompt_1 = require("./agent/prompt");
@@ -52,7 +53,8 @@ async function initializeEucodeAgent(context) {
     const panel = vscode.window.createWebviewPanel('eucodeChatPanel', 'Eucode AI Agent', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
     const htmlPath = path.join(context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
     panel.webview.html = fs.readFileSync(htmlPath, 'utf8');
-    let sessionHistory = (0, history_service_1.loadHistory)();
+    const historyManager = new HistoryManagerService_1.HistoryManagerService(context);
+    let sessionHistory = historyManager.load();
     let settings = (0, settings_1.loadSettings)(context);
     const notify = (text) => panel.webview.postMessage({ command: 'status', text });
     async function pingAndNotify(s) {
@@ -61,6 +63,13 @@ async function initializeEucodeAgent(context) {
         const online = await (0, api_client_1.checkConnection)(endpoint, auth);
         panel.webview.postMessage({ command: 'connection_status', online });
     }
+    // Recarrega historico quando o workspace mudar
+    const workspaceListener = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        sessionHistory = historyManager.load();
+        const filtered = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+        panel.webview.postMessage({ command: 'load_history', entries: filtered });
+    });
+    context.subscriptions.push(workspaceListener);
     panel.webview.onDidReceiveMessage(async (message) => {
         if (message?.command === 'webview_ready') {
             panel.webview.postMessage({
@@ -69,7 +78,6 @@ async function initializeEucodeAgent(context) {
                 apiHost: settings.apiHost,
                 apiKey: settings.apiKey,
             });
-            // Envia historico para restaurar conversa anterior
             const history = sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
             if (history.length > 0) {
                 panel.webview.postMessage({ command: 'load_history', entries: history });
@@ -91,7 +99,7 @@ async function initializeEucodeAgent(context) {
         if (message?.command !== 'user_input' || !message.text) {
             return;
         }
-        sessionHistory = (0, history_service_1.appendEntry)(sessionHistory, {
+        sessionHistory = historyManager.append(sessionHistory, {
             role: 'user',
             content: message.text,
             timestamp: Date.now(),
@@ -105,7 +113,7 @@ async function initializeEucodeAgent(context) {
             const historySummary = (0, history_service_1.buildHistorySummary)(sessionHistory.slice(0, -1));
             const systemWithHistory = [prompt_1.SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
             response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory);
-            sessionHistory = (0, history_service_1.appendEntry)(sessionHistory, {
+            sessionHistory = historyManager.append(sessionHistory, {
                 role: 'assistant',
                 content: response,
                 timestamp: Date.now(),
@@ -121,7 +129,7 @@ async function initializeEucodeAgent(context) {
             }
             const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
             response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify);
-            sessionHistory = (0, history_service_1.appendEntry)(sessionHistory, {
+            sessionHistory = historyManager.append(sessionHistory, {
                 role: 'assistant',
                 content: response,
                 timestamp: Date.now(),

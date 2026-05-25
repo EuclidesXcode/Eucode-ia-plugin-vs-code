@@ -126,6 +126,14 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
+## Nota da versao (0.2.5)
+
+- Historico de conversa isolado por workspace: cada pasta/projeto mantem seu proprio contexto de chat
+- Ao trocar de workspace no VS Code, o historico e recarregado automaticamente para o contexto correto
+- Historico persistido via `globalState` do VS Code por chave de workspace (ex: `/home/user/meu-projeto`) — sem mistura entre projetos
+- Agente responde no idioma do usuario: portugues por padrao, mas adapta se a conversa for em outro idioma
+- Respostas mais objetivas e diretas por padrao
+
 ## Nota da versao (0.2.4)
 
 - Novo tema visual: fundo escuro profundo com accent azul (#3a7bd5)
