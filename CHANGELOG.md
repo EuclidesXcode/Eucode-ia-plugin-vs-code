@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.9
+
+- Correcao: modelo retornando vazio apos tool call agora continua o loop em vez de encerrar com "Nao foi possivel obter resposta"
+- Historico filtrado: respostas de erro nao sao mais enviadas ao modelo como contexto (evita contaminacao do comportamento)
+
 ## 0.3.8
 
 - Notificacao ao usuario quando o agente conclui a tarefa e o VS Code nao esta em foco

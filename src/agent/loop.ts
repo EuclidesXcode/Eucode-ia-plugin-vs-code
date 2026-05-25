@@ -333,6 +333,15 @@ export async function runAgentLoop(
             });
         } else if (result.responseText !== undefined) {
             const text = result.responseText || '';
+
+            // Modelo retornou vazio após uma tool call — empurra para continuar
+            if (!text && lastToolName) {
+                roundMessages.push({ role: 'assistant', content: 'continue' });
+                roundMessages.push({ role: 'user', content: 'Continue analisando e responda ao usuario com base nos dados coletados.' });
+                lastToolName = '';
+                continue;
+            }
+
             if (text && detectsPendingAction(text, autoMode)) {
                 // Modelo anunciou ou fingiu ter feito algo sem chamar a ferramenta — empurra de volta
                 roundMessages.push({ role: 'assistant', content: text });

@@ -2,7 +2,7 @@
     "name": "eucode-ia-plugin-vs-code",
     "displayName": "Eucode IA",
     "description": "Agente de IA para engenharia de software integrado ao VS Code. Roda 100% local via LM Studio — le arquivos, edita codigo, executa comandos e analisa imagens sem enviar dados para servidores externos.",
-    "version": "0.3.8",
+    "version": "0.3.9",
     "publisher": "EucodeIA",
     "license": "MIT",
     "icon": "icon.png",
