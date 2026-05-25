@@ -76,7 +76,7 @@ function detectEscapedToolCall(text) {
         return null;
     }
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, sessionHistory, onStatus) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus) {
     const historySummary = (0, history_service_1.buildHistorySummary)(sessionHistory.slice(0, -1));
     const systemContent = [prompt_1.SYSTEM_PROMPT, historySummary, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
@@ -87,7 +87,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, sess
     ];
     for (let step = 1; step <= constants_1.MAX_AGENT_STEPS; step++) {
         onStatus(`Passo ${step}/${constants_1.MAX_AGENT_STEPS} — pensando...`);
-        const result = await (0, api_client_1.callAI)(endpoint, roundMessages, tools_definition_1.TOOLS);
+        const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_1.TOOLS);
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
             if (escaped) {
@@ -97,11 +97,26 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, sess
         }
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
+            const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
                 ? await handler(args, defaultCwd, step, constants_1.MAX_AGENT_STEPS, onStatus)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
-            roundMessages.push({ role: 'tool', content: toolOutput });
+            // Sequencia correta: assistant com tool_call → tool com tool_call_id
+            roundMessages.push({
+                role: 'assistant',
+                content: null,
+                tool_calls: [{
+                        id: toolCallId,
+                        type: 'function',
+                        function: { name, arguments: JSON.stringify(args) },
+                    }],
+            });
+            roundMessages.push({
+                role: 'tool',
+                content: toolOutput,
+                tool_call_id: toolCallId,
+            });
         }
         else if (result.responseText !== undefined) {
             return result.responseText || 'Nao foi possivel obter resposta.';

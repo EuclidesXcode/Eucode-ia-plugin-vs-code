@@ -55,16 +55,32 @@ async function initializeEucodeAgent(context) {
     let sessionHistory = (0, history_service_1.loadHistory)();
     let settings = (0, settings_1.loadSettings)(context);
     const notify = (text) => panel.webview.postMessage({ command: 'status', text });
-    // Envia as configuracoes atuais para o webview assim que abre
+    async function pingAndNotify(s) {
+        const endpoint = (0, settings_1.buildApiEndpoint)(s);
+        const auth = (0, settings_1.buildAuthHeader)(s);
+        const online = await (0, api_client_1.checkConnection)(endpoint, auth);
+        panel.webview.postMessage({ command: 'connection_status', online });
+    }
     panel.webview.onDidReceiveMessage(async (message) => {
         if (message?.command === 'webview_ready') {
-            panel.webview.postMessage({ command: 'load_config', apiHost: settings.apiHost });
+            panel.webview.postMessage({
+                command: 'load_config',
+                provider: settings.provider,
+                apiHost: settings.apiHost,
+                apiKey: settings.apiKey,
+            });
+            pingAndNotify(settings);
             return;
         }
         if (message?.command === 'save_config') {
-            settings = { apiHost: message.apiHost ?? settings.apiHost };
+            settings = {
+                provider: message.provider ?? settings.provider,
+                apiHost: message.apiHost ?? settings.apiHost,
+                apiKey: message.apiKey ?? '',
+            };
             await (0, settings_1.saveSettings)(context, settings);
             panel.webview.postMessage({ command: 'config_saved' });
+            pingAndNotify(settings);
             return;
         }
         if (message?.command !== 'user_input' || !message.text) {
@@ -77,12 +93,13 @@ async function initializeEucodeAgent(context) {
             hasImage: !!message.image,
         });
         const endpoint = (0, settings_1.buildApiEndpoint)(settings);
+        const authHeaders = (0, settings_1.buildAuthHeader)(settings);
         let response;
         if (message.image?.base64) {
             notify('Analisando imagem...');
             const historySummary = (0, history_service_1.buildHistorySummary)(sessionHistory.slice(0, -1));
             const systemWithHistory = [prompt_1.SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
-            response = await (0, api_client_1.callAIWithVision)(endpoint, message.text, message.image.base64, message.image.mimeType, systemWithHistory);
+            response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory);
             sessionHistory = (0, history_service_1.appendEntry)(sessionHistory, {
                 role: 'assistant',
                 content: response,
@@ -98,7 +115,7 @@ async function initializeEucodeAgent(context) {
                 notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
             }
             const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
-            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, sessionHistory, notify);
+            response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, notify);
             sessionHistory = (0, history_service_1.appendEntry)(sessionHistory, {
                 role: 'assistant',
                 content: response,

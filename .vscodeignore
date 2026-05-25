@@ -4,6 +4,7 @@ node_modules/
 tsconfig.json
 yarn.lock
 package-lock.json
+index.html
 **/*.map
 **/*.ts
 !dist/**

@@ -44,7 +44,9 @@ const HISTORY_FILE = path.join(process.env.HOME || '/tmp', '.eucode-ia-history.j
 let saveTimer = null;
 function loadHistory() {
     try {
-        return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+        const all = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+        // Remove entradas de erro que foram persistidas em sessoes anteriores
+        return all.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
     }
     catch {
         return [];
@@ -70,7 +72,9 @@ function appendEntry(entries, entry) {
     return updated;
 }
 function buildMessagesFromHistory(entries, maxPairs = constants_1.MAX_HISTORY_PAIRS) {
-    return entries.slice(-maxPairs * 2).map(e => {
+    // Filtra entradas de erro de conexao para nao contaminar o contexto do modelo
+    const clean = entries.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+    return clean.slice(-maxPairs * 2).map(e => {
         if (e.hasImage && e.imageSummary) {
             return {
                 role: e.role,

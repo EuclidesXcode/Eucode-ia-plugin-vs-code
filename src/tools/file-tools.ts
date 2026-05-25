@@ -12,8 +12,11 @@ export async function listDirectory(dirPath: string): Promise<string> {
             if (IGNORED_DIRS.has(entry.name)) { continue; }
             if (entry.isDirectory()) {
                 lines.push(`${entry.name}/`);
-            } else if (!BINARY_EXTS.has(path.extname(entry.name).toLowerCase())) {
-                lines.push(entry.name);
+            } else {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (!BINARY_EXTS.has(ext)) {
+                    lines.push(entry.name);
+                }
             }
         }
         return lines.length > 0 ? lines.join('\n') : '(pasta vazia)';

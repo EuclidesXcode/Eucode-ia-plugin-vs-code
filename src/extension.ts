@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { callAIWithVision } from './services/api-client';
+import { callAIWithVision, checkConnection } from './services/api-client';
 import { loadHistory, appendEntry, buildHistorySummary, HistoryEntry } from './services/history-service';
 import { collectWorkspaceContext, getDefaultCwd } from './workspace/context';
 import { runAgentLoop } from './agent/loop';
 import { SYSTEM_PROMPT } from './agent/prompt';
-import { loadSettings, saveSettings, buildApiEndpoint } from './config/settings';
+import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSettings } from './config/settings';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Eucode-IA Plugin ativo.');
@@ -31,18 +31,35 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
 
     const notify = (text: string) => panel.webview.postMessage({ command: 'status', text });
 
-    // Envia as configuracoes atuais para o webview assim que abre
+    async function pingAndNotify(s: EucodeSettings) {
+        const endpoint = buildApiEndpoint(s);
+        const auth = buildAuthHeader(s);
+        const online = await checkConnection(endpoint, auth);
+        panel.webview.postMessage({ command: 'connection_status', online });
+    }
+
     panel.webview.onDidReceiveMessage(
         async (message: any) => {
             if (message?.command === 'webview_ready') {
-                panel.webview.postMessage({ command: 'load_config', apiHost: settings.apiHost });
+                panel.webview.postMessage({
+                    command: 'load_config',
+                    provider: settings.provider,
+                    apiHost: settings.apiHost,
+                    apiKey: settings.apiKey,
+                });
+                pingAndNotify(settings);
                 return;
             }
 
             if (message?.command === 'save_config') {
-                settings = { apiHost: message.apiHost ?? settings.apiHost };
+                settings = {
+                    provider: message.provider ?? settings.provider,
+                    apiHost: message.apiHost ?? settings.apiHost,
+                    apiKey: message.apiKey ?? '',
+                };
                 await saveSettings(context, settings);
                 panel.webview.postMessage({ command: 'config_saved' });
+                pingAndNotify(settings);
                 return;
             }
 
@@ -56,6 +73,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
             });
 
             const endpoint = buildApiEndpoint(settings);
+            const authHeaders = buildAuthHeader(settings);
             let response: string;
 
             if (message.image?.base64) {
@@ -64,6 +82,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                 const systemWithHistory = [SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
                 response = await callAIWithVision(
                     endpoint,
+                    authHeaders,
                     message.text,
                     message.image.base64,
                     message.image.mimeType,
@@ -88,6 +107,7 @@ async function initializeEucodeAgent(context: vscode.ExtensionContext) {
                     ctx.contextBlock,
                     defaultCwd,
                     endpoint,
+                    authHeaders,
                     sessionHistory,
                     notify
                 );

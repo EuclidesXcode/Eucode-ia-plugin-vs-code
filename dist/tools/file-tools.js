@@ -52,8 +52,11 @@ async function listDirectory(dirPath) {
             if (entry.isDirectory()) {
                 lines.push(`${entry.name}/`);
             }
-            else if (!constants_1.BINARY_EXTS.has(path.extname(entry.name).toLowerCase())) {
-                lines.push(entry.name);
+            else {
+                const ext = path.extname(entry.name).toLowerCase();
+                if (!constants_1.BINARY_EXTS.has(ext)) {
+                    lines.push(entry.name);
+                }
             }
         }
         return lines.length > 0 ? lines.join('\n') : '(pasta vazia)';

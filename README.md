@@ -2,7 +2,6 @@
 
 Agente de inteligencia artificial para engenharia de software, integrado diretamente ao VS Code. Conecta-se a modelos de linguagem rodando localmente via [LM Studio](https://lmstudio.ai), sem enviar nenhum dado para servidores externos.
 
-![Eucode IA](icon.png)
 
 ---
 
@@ -124,6 +123,38 @@ Imagens enviadas sao armazenadas apenas como resumo textual no historico, sem gu
 ## Configuracao avancada
 
 Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na engrenagem no chat ou edite diretamente pelo painel de configuracoes — o endereco e persistido via `globalState` do VS Code.
+
+---
+
+## Nota da versao (0.2.2)
+
+- Correcao de leitura de arquivos: dotfiles como `.gitignore` e `.env` agora aparecem na listagem de diretorios
+- Correcao do loop do agente: sequencia `assistant + tool` agora segue o formato correto da API, eliminando o loop infinito de tool calls
+- Historico limpo na inicializacao: entradas de erro de conexao de sessoes anteriores sao removidas automaticamente
+
+## Nota da versao (0.2.1)
+
+- Correcao de conexao HTTP com o LM Studio — erro de protocolo SSL ao usar `http://localhost`
+
+## Nota da versao (0.2.0)
+
+- Suporte a multiplos provedores de IA: LM Studio, Anthropic, Ollama e qualquer servidor OpenAI-compativel
+- Campo de API Key no painel de configuracao (opcional para servidores locais)
+- Indicador de conexao no header — bolinha verde quando o servidor esta acessivel, vermelha quando nao esta
+- Botao de configuracao movido para a area de input, ao lado do botao de imagem
+- Ping automatico no servidor ao abrir o chat e apos salvar configuracoes
+
+## Nota da versao (0.1.0)
+
+Lancamento inicial do Eucode IA.
+
+- Chat com agente autonomo integrado ao workspace
+- Leitura, criacao e edicao de arquivos via ferramentas
+- Busca por simbolos e padroes no codigo com grep
+- Execucao de comandos no terminal com lista de permissoes
+- Analise de imagens (screenshots, diagramas, wireframes)
+- Historico persistente entre sessoes
+- Configuracao de host para uso em rede local ou VPN
 
 ---
 

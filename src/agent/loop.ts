@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { callAI } from '../services/api-client';
+import { callAI, ToolCall } from '../services/api-client';
 import { HistoryEntry, buildMessagesFromHistory, buildHistorySummary } from '../services/history-service';
 import { listDirectory, readLocalFile, writeLocalFile } from '../tools/file-tools';
 import { searchInWorkspace, runCommand } from '../tools/shell-tools';
@@ -7,7 +7,7 @@ import { SYSTEM_PROMPT } from './prompt';
 import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS } from '../utils/constants';
 
-type Message = { role: string; content: string };
+type Message = { role: string; content: string | null; tool_calls?: any[]; tool_call_id?: string };
 
 const toolHandlers: Record<string, (args: Record<string, any>, cwd: string, step: number, max: number, onStatus: (s: string) => void) => Promise<string>> = {
     list_directory: async (args, _cwd, step, max, onStatus) => {
@@ -32,7 +32,7 @@ const toolHandlers: Record<string, (args: Record<string, any>, cwd: string, step
     },
 };
 
-function detectEscapedToolCall(text: string): { function: { name: string; arguments: Record<string, unknown> } } | null {
+function detectEscapedToolCall(text: string): ToolCall | null {
     const match = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
     if (!match || !TOOL_NAMES.has(match[1])) { return null; }
     try {
@@ -47,6 +47,7 @@ export async function runAgentLoop(
     contextBlock: string,
     defaultCwd: string,
     endpoint: string,
+    authHeaders: Record<string, string>,
     sessionHistory: HistoryEntry[],
     onStatus: (s: string) => void
 ): Promise<string> {
@@ -62,7 +63,7 @@ export async function runAgentLoop(
 
     for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
         onStatus(`Passo ${step}/${MAX_AGENT_STEPS} — pensando...`);
-        const result = await callAI(endpoint, roundMessages, TOOLS);
+        const result = await callAI(endpoint, authHeaders, roundMessages, TOOLS);
 
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
@@ -74,12 +75,27 @@ export async function runAgentLoop(
 
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
+            const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
                 ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS, onStatus)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
 
-            roundMessages.push({ role: 'tool', content: toolOutput });
+            // Sequencia correta: assistant com tool_call → tool com tool_call_id
+            roundMessages.push({
+                role: 'assistant',
+                content: null,
+                tool_calls: [{
+                    id: toolCallId,
+                    type: 'function',
+                    function: { name, arguments: JSON.stringify(args) },
+                }],
+            });
+            roundMessages.push({
+                role: 'tool',
+                content: toolOutput,
+                tool_call_id: toolCallId,
+            });
         } else if (result.responseText !== undefined) {
             return result.responseText || 'Nao foi possivel obter resposta.';
         } else {

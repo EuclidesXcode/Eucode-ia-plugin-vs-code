@@ -28,12 +28,15 @@
             background: #0d0d0d;
         }
 
-        #header .dot {
+        #status-dot {
             width: 7px;
             height: 7px;
             border-radius: 50%;
-            background: #22c55e;
+            background: #e05555;
+            flex-shrink: 0;
+            transition: background 0.4s;
         }
+        #status-dot.online { background: #22c55e; }
 
         #header .title {
             font-size: 11px;
@@ -41,32 +44,17 @@
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: #6b6b6b;
-            flex: 1;
         }
-
-        #config-btn {
-            background: none;
-            border: none;
-            color: #444;
-            cursor: pointer;
-            font-size: 14px;
-            padding: 2px 4px;
-            line-height: 1;
-            transition: color 0.15s;
-            border-radius: 3px;
-        }
-        #config-btn:hover { color: #13EBFF; }
 
         /* Config panel */
         #config-panel {
             display: none;
             flex-direction: column;
-            gap: 12px;
+            gap: 14px;
             padding: 16px;
             border-bottom: 1px solid #1e1e1e;
             background: #0d0d0d;
         }
-
         #config-panel.open { display: flex; }
 
         .config-label {
@@ -78,7 +66,8 @@
             margin-bottom: 6px;
         }
 
-        #config-host-input {
+        .config-select,
+        .config-input {
             width: 100%;
             background: #111;
             border: 1px solid #1e1e1e;
@@ -86,11 +75,17 @@
             padding: 8px 12px;
             color: #d4d4d4;
             font-size: 13px;
-            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-family: inherit;
             outline: none;
             transition: border-color 0.15s;
         }
-        #config-host-input:focus { border-color: #13EBFF; }
+        .config-select { cursor: pointer; }
+        .config-select:focus,
+        .config-input:focus { border-color: #13EBFF; }
+
+        .config-input.mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        }
 
         .config-hint {
             font-size: 11px;
@@ -102,6 +97,14 @@
             display: flex;
             gap: 8px;
             justify-content: flex-end;
+            align-items: center;
+        }
+
+        #config-feedback {
+            font-size: 11px;
+            color: #22c55e;
+            flex: 1;
+            height: 14px;
         }
 
         .config-save-btn {
@@ -132,13 +135,7 @@
         }
         .config-cancel-btn:hover { border-color: #333; color: #666; }
 
-        #config-feedback {
-            font-size: 11px;
-            color: #22c55e;
-            text-align: right;
-            height: 14px;
-        }
-
+        /* Chat */
         #chat-container {
             flex: 1;
             overflow-y: auto;
@@ -149,17 +146,10 @@
             scrollbar-width: thin;
             scrollbar-color: #2a2a2a transparent;
         }
-
         #chat-container::-webkit-scrollbar { width: 4px; }
         #chat-container::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
 
-        .message-row {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            max-width: 100%;
-        }
-
+        .message-row { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }
         .message-row.user { align-items: flex-end; }
         .message-row.agent { align-items: flex-start; }
 
@@ -195,10 +185,7 @@
             max-width: 100%;
         }
 
-        .agent .message-bubble.loading {
-            color: #555;
-            font-style: italic;
-        }
+        .agent .message-bubble.loading { color: #555; font-style: italic; }
 
         .message-bubble p { margin-bottom: 8px; }
         .message-bubble p:last-child { margin-bottom: 0; }
@@ -207,10 +194,7 @@
         .message-bubble ul, .message-bubble ol { padding-left: 18px; margin-bottom: 8px; }
         .message-bubble li { margin-bottom: 3px; }
         .message-bubble h1, .message-bubble h2, .message-bubble h3 {
-            color: #e2e8f0;
-            font-weight: 600;
-            margin: 12px 0 6px;
-            line-height: 1.3;
+            color: #e2e8f0; font-weight: 600; margin: 12px 0 6px; line-height: 1.3;
         }
         .message-bubble h1 { font-size: 15px; }
         .message-bubble h2 { font-size: 13px; }
@@ -226,12 +210,7 @@
             font-size: 12px;
         }
 
-        .message-bubble pre {
-            margin: 8px 0;
-            border-radius: 5px;
-            overflow: hidden;
-            border: 1px solid #2a2a2a;
-        }
+        .message-bubble pre { margin: 8px 0; border-radius: 5px; overflow: hidden; border: 1px solid #2a2a2a; }
 
         .code-header {
             background: #161616;
@@ -241,38 +220,34 @@
             align-items: center;
             border-bottom: 1px solid #2a2a2a;
         }
-
-        .code-lang {
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #555;
-        }
-
+        .code-lang { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #555; }
         .copy-btn {
-            font-size: 10px;
-            color: #555;
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 0;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            transition: color 0.15s;
+            font-size: 10px; color: #555; background: none; border: none;
+            cursor: pointer; padding: 0; letter-spacing: 0.04em; text-transform: uppercase; transition: color 0.15s;
         }
         .copy-btn:hover { color: #a0aec0; }
 
         .message-bubble pre code {
-            display: block;
-            padding: 12px;
+            display: block; padding: 12px;
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-            font-size: 12px;
-            line-height: 1.5;
-            overflow-x: auto;
-            background: #0d0d0d;
+            font-size: 12px; line-height: 1.5; overflow-x: auto; background: #0d0d0d;
         }
 
+        /* Image preview */
+        #image-preview {
+            padding: 6px 16px 0;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        #image-preview img { height: 48px; border-radius: 4px; border: 1px solid #2a2a2a; object-fit: cover; }
+        #image-preview-name { font-size: 11px; color: #555; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #image-remove { background: none; border: none; color: #444; cursor: pointer; font-size: 13px; padding: 2px 4px; transition: color 0.15s; }
+        #image-remove:hover { color: #e05555; }
+
+        .msg-image { max-width: 100%; max-height: 240px; border-radius: 5px; border: 1px solid #2a2a2a; margin-bottom: 6px; display: block; }
+
+        /* Input area */
         #input-area {
             padding: 12px 16px;
             border-top: 1px solid #1e1e1e;
@@ -280,6 +255,20 @@
             gap: 8px;
             background: #0d0d0d;
         }
+
+        .icon-btn {
+            background: none;
+            border: 1px solid #1e1e1e;
+            border-radius: 5px;
+            color: #444;
+            cursor: pointer;
+            padding: 9px 10px;
+            font-size: 14px;
+            line-height: 1;
+            align-self: flex-end;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .icon-btn:hover { border-color: #13EBFF; color: #13EBFF; }
 
         #user-input {
             flex: 1;
@@ -295,7 +284,6 @@
             line-height: 1.5;
             transition: border-color 0.15s;
         }
-
         #user-input:focus { border-color: #13EBFF; }
         #user-input::placeholder { color: #333; }
 
@@ -313,63 +301,8 @@
             white-space: nowrap;
             align-self: flex-end;
         }
-
         #send-btn:hover { background: #22225a; color: #a0b8f0; }
         #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        #image-btn {
-            background: none;
-            border: 1px solid #1e1e1e;
-            border-radius: 5px;
-            color: #444;
-            cursor: pointer;
-            padding: 9px 10px;
-            font-size: 14px;
-            line-height: 1;
-            align-self: flex-end;
-            transition: border-color 0.15s, color 0.15s;
-        }
-        #image-btn:hover { border-color: #13EBFF; color: #13EBFF; }
-
-        #image-preview {
-            padding: 6px 16px 0;
-            display: none;
-            align-items: center;
-            gap: 8px;
-        }
-        #image-preview img {
-            height: 48px;
-            border-radius: 4px;
-            border: 1px solid #2a2a2a;
-            object-fit: cover;
-        }
-        #image-preview-name {
-            font-size: 11px;
-            color: #555;
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        #image-remove {
-            background: none;
-            border: none;
-            color: #444;
-            cursor: pointer;
-            font-size: 13px;
-            padding: 2px 4px;
-            transition: color 0.15s;
-        }
-        #image-remove:hover { color: #e05555; }
-
-        .msg-image {
-            max-width: 100%;
-            max-height: 240px;
-            border-radius: 5px;
-            border: 1px solid #2a2a2a;
-            margin-bottom: 6px;
-            display: block;
-        }
 
         #status-bar {
             font-size: 11px;
@@ -389,23 +322,32 @@
 <body>
 
     <div id="header">
-        <div class="dot"></div>
+        <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
-        <button id="config-btn" title="Configuracoes">&#9881;</button>
     </div>
 
     <div id="config-panel">
         <div>
-            <div class="config-label">Host da IA</div>
-            <input id="config-host-input" type="text" placeholder="http://localhost:1234" spellcheck="false">
-            <div class="config-hint">Endereco completo com porta. Ex: http://192.168.1.10:1234</div>
+            <div class="config-label">Provedor</div>
+            <select id="config-provider" class="config-select">
+                <option value="lmstudio">LM Studio</option>
+                <option value="anthropic">Anthropic / Ollama</option>
+                <option value="ollama">Outro (OpenAI-compativel)</option>
+            </select>
         </div>
         <div>
-            <div id="config-feedback"></div>
-            <div class="config-actions">
-                <button class="config-cancel-btn" id="config-cancel-btn">Cancelar</button>
-                <button class="config-save-btn" id="config-save-btn">Salvar</button>
-            </div>
+            <div class="config-label">Host</div>
+            <input id="config-host-input" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
+            <div class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
+        </div>
+        <div>
+            <div class="config-label">API Key <span style="color:#2a2a2a;font-weight:400;text-transform:none;letter-spacing:0">(opcional — deixe vazio para LM Studio e Ollama locais)</span></div>
+            <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
+        </div>
+        <div class="config-actions">
+            <span id="config-feedback"></span>
+            <button class="config-cancel-btn" id="config-cancel-btn">Cancelar</button>
+            <button class="config-save-btn" id="config-save-btn">Salvar</button>
         </div>
     </div>
 
@@ -423,7 +365,8 @@
     </div>
 
     <div id="input-area">
-        <button id="image-btn" title="Anexar imagem">&#128247;</button>
+        <button id="config-btn" class="icon-btn" title="Configuracoes">&#9881;</button>
+        <button id="image-btn" class="icon-btn" title="Anexar imagem">&#128247;</button>
         <textarea id="user-input" rows="1" placeholder="Digite sua mensagem..."></textarea>
         <button id="send-btn">Enviar</button>
     </div>
@@ -434,6 +377,8 @@
         const chatContainer = document.getElementById('chat-container');
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
+        const statusDot = document.getElementById('status-dot');
+
         const imageBtn = document.getElementById('image-btn');
         const imageInput = document.getElementById('image-input');
         const imagePreview = document.getElementById('image-preview');
@@ -443,36 +388,44 @@
 
         const configBtn = document.getElementById('config-btn');
         const configPanel = document.getElementById('config-panel');
+        const configProvider = document.getElementById('config-provider');
         const configHostInput = document.getElementById('config-host-input');
+        const configKeyInput = document.getElementById('config-key-input');
         const configSaveBtn = document.getElementById('config-save-btn');
         const configCancelBtn = document.getElementById('config-cancel-btn');
         const configFeedback = document.getElementById('config-feedback');
 
         let pendingImage = null;
-        let savedHost = '';
+        let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '' };
 
-        // Config panel toggle
+        // Config panel
         configBtn.addEventListener('click', () => {
             const isOpen = configPanel.classList.toggle('open');
             if (isOpen) {
-                configHostInput.value = savedHost;
+                configProvider.value = savedSettings.provider;
+                configHostInput.value = savedSettings.apiHost;
+                configKeyInput.value = '';
                 configFeedback.textContent = '';
             }
         });
 
         configCancelBtn.addEventListener('click', () => {
             configPanel.classList.remove('open');
-            configHostInput.value = savedHost;
             configFeedback.textContent = '';
         });
 
         configSaveBtn.addEventListener('click', () => {
             const host = configHostInput.value.trim();
             if (!host) { return; }
-            vscode.postMessage({ command: 'save_config', apiHost: host });
+            vscode.postMessage({
+                command: 'save_config',
+                provider: configProvider.value,
+                apiHost: host,
+                apiKey: configKeyInput.value.trim(),
+            });
         });
 
-        // Image handling
+        // Image
         imageBtn.addEventListener('click', () => imageInput.click());
 
         imageInput.addEventListener('change', function() {
@@ -498,9 +451,8 @@
             imagePreviewImg.src = '';
         });
 
-        // Markdown renderer
+        // Markdown
         marked.setOptions({ breaks: true });
-
         const renderer = new marked.Renderer();
         renderer.code = function(code, lang) {
             const language = lang || 'plaintext';
@@ -522,11 +474,9 @@
         function appendMessage(text, role, isLoading = false, imageDataUrl = null) {
             const row = document.createElement('div');
             row.className = `message-row ${role}`;
-
             const label = document.createElement('div');
             label.className = 'message-label';
             label.textContent = role === 'user' ? 'Voce' : 'Eucode IA';
-
             const bubble = document.createElement('div');
             bubble.className = 'message-bubble' + (isLoading ? ' loading' : '');
 
@@ -556,43 +506,45 @@
         }
 
         window.addEventListener('message', function(event) {
-            const message = event.data;
+            const msg = event.data;
 
-            if (message.command === 'load_config') {
-                savedHost = message.apiHost;
-                configHostInput.value = savedHost;
-            } else if (message.command === 'config_saved') {
-                savedHost = configHostInput.value.trim();
+            if (msg.command === 'load_config') {
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '' };
+            } else if (msg.command === 'connection_status') {
+                statusDot.classList.toggle('online', msg.online);
+            } else if (msg.command === 'config_saved') {
+                savedSettings.provider = configProvider.value;
+                savedSettings.apiHost = configHostInput.value.trim();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
                     configPanel.classList.remove('open');
                 }, 1200);
-            } else if (message.command === 'status') {
-                updateStatus(message.text);
-            } else if (message.command === 'agent_response') {
+            } else if (msg.command === 'status') {
+                updateStatus(msg.text);
+            } else if (msg.command === 'agent_response') {
                 clearStatus();
                 const loading = chatContainer.querySelector('[data-loading="true"]');
                 if (loading) { loading.closest('.message-row').remove(); }
-                appendMessage(message.text, 'agent');
+                appendMessage(msg.text, 'agent');
                 sendBtn.disabled = false;
             }
         });
 
         function updateStatus(text) {
-            let statusEl = document.getElementById('status-bar');
-            if (!statusEl) {
-                statusEl = document.createElement('div');
-                statusEl.id = 'status-bar';
-                chatContainer.appendChild(statusEl);
+            let el = document.getElementById('status-bar');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'status-bar';
+                chatContainer.appendChild(el);
             }
-            statusEl.textContent = text;
+            el.textContent = text;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function clearStatus() {
-            const statusEl = document.getElementById('status-bar');
-            if (statusEl) { statusEl.remove(); }
+            const el = document.getElementById('status-bar');
+            if (el) { el.remove(); }
         }
 
         function sendMessage() {
@@ -601,7 +553,6 @@
 
             const imageDataUrl = pendingImage ? `data:${pendingImage.mimeType};base64,${pendingImage.base64}` : null;
             appendMessage(text, 'user', false, imageDataUrl);
-
             input.value = '';
             input.style.height = 'auto';
             sendBtn.disabled = true;
@@ -619,20 +570,14 @@
         }
 
         sendBtn.addEventListener('click', sendMessage);
-
         input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
         });
-
         input.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = Math.min(this.scrollHeight, 120) + 'px';
         });
 
-        // Avisa o extension host que o webview esta pronto para receber configs
         vscode.postMessage({ command: 'webview_ready' });
     </script>
 </body>

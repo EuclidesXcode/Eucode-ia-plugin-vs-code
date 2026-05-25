@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Eucode IA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .login-container {
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 350px;
+            text-align: center;
+        }
+
+        h2 {
+            margin-bottom: 30px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff; /* Azul padrão de botões */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Mensagens de erro/sucesso */
+        #message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none; /* Inicialmente oculto */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <h2>Login do Usuário</h2>
+        <!-- A action deve apontar para seu endpoint de backend (ex: /api/login) -->
+        <form id="loginForm" method="POST" action="/api/auth/login">
+            
+            <div class="form-group">
+                <label for="username">Nome de Usuário</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Senha</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <button type="submit">Entrar</button>
+        </form>
+
+        <div id="message"></div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            // Previne o envio padrão do formulário, que causaria um reload da página.
+            event.preventDefault(); 
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const messageElement = document.getElementById('message');
+
+            // Aqui você faria uma chamada AJAX (fetch) para o seu backend real.
+            // Exemplo simulado:
+            console.log("Tentando logar com:", { username, password });
+
+            // Simulação de validação de sucesso/falha
+            if (username === "user" && password === "pass") {
+                messageElement.style.display = 'block';
+                messageElement.style.backgroundColor = '#d4edda'; // Verde claro
+                messageElement.style.color = '#155724'; // Texto verde escuro
+                messageElement.textContent = 'Login bem-sucedido! Redirecionando...';
+
+                // Em um ambiente real: window.location.href = '/dashboard';
+            } else {
+                messageElement.style.display = 'block';
+                messageElement.style.backgroundColor = '#f8d7da'; // Vermelho claro
+                messageElement.style.color = '#721c24'; // Texto vermelho escuro
+                messageElement.textContent = 'Nome de usuário ou senha inválidos.';
+            }
+        });
+    </script>
+
+</body>
+</html>

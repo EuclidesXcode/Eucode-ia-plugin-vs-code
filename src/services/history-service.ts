@@ -16,7 +16,9 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function loadHistory(): HistoryEntry[] {
     try {
-        return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')) as HistoryEntry[];
+        const all = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')) as HistoryEntry[];
+        // Remove entradas de erro que foram persistidas em sessoes anteriores
+        return all.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
     } catch {
         return [];
     }
@@ -44,7 +46,9 @@ export function buildMessagesFromHistory(
     entries: HistoryEntry[],
     maxPairs: number = MAX_HISTORY_PAIRS
 ): { role: string; content: string }[] {
-    return entries.slice(-maxPairs * 2).map(e => {
+    // Filtra entradas de erro de conexao para nao contaminar o contexto do modelo
+    const clean = entries.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+    return clean.slice(-maxPairs * 2).map(e => {
         if (e.hasImage && e.imageSummary) {
             return {
                 role: e.role,
