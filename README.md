@@ -139,13 +139,13 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 - Syntax highlight no diff com as cores exatas do tema VS Code dark (keywords, strings, comentarios, tipos)
 - Agente sempre escreve o arquivo diretamente via ferramenta — nunca mais exibe codigo no chat pedindo para o usuario aplicar manualmente
 - Respostas sem raciocinio interno exposto: analises, estrategias e propostas proativas removidas das respostas
-- Terminal em tempo real no lugar certo: bloco de terminal inserido antes da bolha de loading, eliminando o problema de quebra de layout
+- Terminal em tempo real com bloco fixo e status-bar fora do scroll, eliminando quebra de layout
 
 ## Nota da versao (0.2.9)
 
-- Terminal em tempo real no chat: ao executar comandos, a saida aparece linha a linha diretamente no chat, sem esperar o processo terminar
+- Terminal em tempo real no chat: saida aparece linha a linha diretamente no chat via streaming com `spawn`
 - Bloco de terminal com estilo proprio (fundo escuro, texto claro) separado visualmente da resposta do agente
-- Saida de stdout e stderr transmitida via streaming com `spawn`, substituindo a abordagem anterior que acumulava tudo e exibia so no final
+- Agente auto-continua quando detecta que o modelo anunciou uma acao sem executar ("vou criar", "agora vou", etc.)
 
 ## Nota da versao (0.2.8)
 
@@ -153,74 +153,9 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 - Se o campo ficar vazio, o servidor usa o modelo padrao que estiver carregado
 - Modelo configuravel funciona com LM Studio, Ollama e qualquer provedor OpenAI-compativel
 
-## Nota da versao (0.2.7)
+---
 
-- Icones Material Symbols Rounded em toda a interface: configuracoes, camera, enviar, fechar, historico, copiar codigo, aceitar/rejeitar arquivos
-- Botao de envio agora exibe icone de seta + texto
-- Avatar do agente substituido por ícone `robot` (ícone de robô)
-- Avatar do usuário exibido com um ícone de pessoa (`person`)
-
-## Nota da versao (0.2.6)
-
-- Aprovacao de edicao de arquivos: antes de gravar qualquer arquivo, o agente exibe um card no chat com o conteudo antes e depois (diff visual) — o usuario aceita ou rejeita com um clique
-- Arquivos novos mostram badge "Novo" em verde; arquivos editados mostram badge "Editar" em amarelo
-- Se rejeitado, o agente recebe feedback e pode tentar uma abordagem diferente
-- Respostas mais rapidas: limite de passos reduzido de 15 para 10, historico enviado ao modelo reduzido de 8 para 5 pares
-- Historico removido do bloco de sistema (era enviado em duplicata) — agora so os pares de mensagens estruturadas sao usados como contexto
-
-## Nota da versao (0.2.5)
-
-- Historico de conversa isolado por workspace: cada pasta/projeto mantem seu proprio contexto de chat
-- Ao trocar de workspace no VS Code, o historico e recarregado automaticamente para o contexto correto
-- Historico persistido via `globalState` do VS Code por chave de workspace (ex: `/home/user/meu-projeto`) — sem mistura entre projetos
-- Agente responde no idioma do usuario: portugues por padrao, mas adapta se a conversa for em outro idioma
-- Respostas mais objetivas e diretas por padrao
-
-## Nota da versao (0.2.4)
-
-- Novo tema visual: fundo escuro profundo com accent azul (#3a7bd5)
-- Avatares de mensagem: "EI" para o agente, "VC" para o usuario — identidade visual clara
-- Bubbles de usuario com gradiente azul-escuro e borda destacada
-- Animacao de carregamento com tres pontos em bounce
-- Status dot com brilho verde ao conectar e pulso azul na barra de status
-- Blocos de codigo redesenhados com label de linguagem em azul e fundo mais escuro
-- Focus rings azuis nos campos de entrada e selects
-
-## Nota da versao (0.2.3)
-
-- Botao "Retomar conversa" no header: ao reabrir o chat, o historico da sessao anterior e restaurado com um clique
-- Chat nao reinicia mais ao mudar de aba no VS Code (`retainContextWhenHidden`)
-- Timeout de resposta aumentado para 10 minutos para acomodar modelos com reasoning longo
-
-## Nota da versao (0.2.2)
-
-- Correcao de leitura de arquivos: dotfiles como `.gitignore` e `.env` agora aparecem na listagem de diretorios
-- Correcao do loop do agente: sequencia `assistant + tool` agora segue o formato correto da API, eliminando o loop infinito de tool calls
-- Historico limpo na inicializacao: entradas de erro de conexao de sessoes anteriores sao removidas automaticamente
-
-## Nota da versao (0.2.1)
-
-- Correcao de conexao HTTP com o LM Studio — erro de protocolo SSL ao usar `http://localhost`
-
-## Nota da versao (0.2.0)
-
-- Suporte a multiplos provedores de IA: LM Studio, Anthropic, Ollama e qualquer servidor OpenAI-compativel
-- Campo de API Key no painel de configuracao (opcional para servidores locais)
-- Indicador de conexao no header — bolinha verde quando o servidor esta acessivel, vermelha quando nao esta
-- Botao de configuracao movido para a area de input, ao lado do botao de imagem
-- Ping automatico no servidor ao abrir o chat e apos salvar configuracoes
-
-## Nota da versao (0.1.0)
-
-Lancamento inicial do Eucode IA.
-
-- Chat com agente autonomo integrado ao workspace
-- Leitura, criacao e edicao de arquivos via ferramentas
-- Busca por simbolos e padroes no codigo com grep
-- Execucao de comandos no terminal com lista de permissoes
-- Analise de imagens (screenshots, diagramas, wireframes)
-- Historico persistente entre sessoes
-- Configuracao de host para uso em rede local ou VPN
+Historico completo de versoes em [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
