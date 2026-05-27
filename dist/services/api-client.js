@@ -276,9 +276,7 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             return { responseText: '__ABORTED__' };
         }
         console.error('[API] Falha ao chamar o LLM:', error);
-        return {
-            responseText: `ERRO DE CONEXAO: Nao foi possivel conectar com a IA em ${endpoint}. Verifique se o servico esta rodando. Detalhe: ${error instanceof Error ? error.message : String(error)}`,
-        };
+        return { responseText: '__INFRA_ERROR__' };
     }
 }
 async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk) {
@@ -377,9 +375,7 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk) 
             return { responseText: '__ABORTED__' };
         }
         console.error('[API Anthropic] Falha:', error);
-        return {
-            responseText: `ERRO DE CONEXAO: Não foi possível conectar com a API Anthropic. Verifique sua API key. Detalhe: ${error instanceof Error ? error.message : String(error)}`,
-        };
+        return { responseText: '__INFRA_ERROR__' };
     }
 }
 async function callAIWithVision(endpoint, authHeaders, userText, imageBase64, imageMimeType, systemContent, model) {

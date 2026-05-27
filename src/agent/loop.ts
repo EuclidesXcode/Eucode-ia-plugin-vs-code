@@ -474,6 +474,10 @@ export async function runAgentLoop(
             return '[INTERRUPTED] Execution cancelled by user.';
         }
 
+        if (result.responseText === '__INFRA_ERROR__') {
+            return 'Erro de conexao com o modelo. Verifique se o LM Studio esta rodando e se o modelo tem memoria suficiente para ser carregado.';
+        }
+
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
             if (escaped) {
