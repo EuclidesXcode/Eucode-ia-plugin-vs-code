@@ -83,6 +83,12 @@
             transition: border-color 0.15s, background 0.15s;
         }
         .header-btn:hover { border-color: #3a7bd5; background: #0d1a2e; }
+        .header-btn.auto-active {
+            border-color: #22c55e;
+            color: #22c55e;
+            background: #0a1a0f;
+        }
+        .header-btn.auto-active:hover { background: #0d2212; }
 
         /* ── Sessions panel ── */
         #sessions-panel {
@@ -452,7 +458,7 @@
             border-top: 1px solid #13131f;
             display: flex;
             gap: 8px;
-            align-items: flex-end;
+            align-items: center;
             background: #0d0d1a;
         }
 
@@ -492,10 +498,7 @@
         }
         #user-input::placeholder { color: #2a3a4a; }
 
-        #send-btn {
-            background: #1a2a4a;
-            border: 1px solid #3a7bd5;
-            color: #3a7bd5;
+        #send-btn, #stop-btn {
             border-radius: 8px;
             padding: 7px 14px;
             font-size: 12px;
@@ -503,15 +506,50 @@
             letter-spacing: 0.06em;
             text-transform: uppercase;
             cursor: pointer;
-            transition: background 0.15s, color 0.15s;
             white-space: nowrap;
             flex-shrink: 0;
             display: inline-flex;
             align-items: center;
             gap: 5px;
+            transition: background 0.15s, color 0.15s;
+        }
+        #send-btn {
+            background: #1a2a4a;
+            border: 1px solid #3a7bd5;
+            color: #3a7bd5;
         }
         #send-btn:hover { background: #3a7bd5; color: #fff; }
         #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        #stop-btn {
+            background: #1a0a0a;
+            border: 1px solid #c0392b;
+            color: #e05555;
+            display: none;
+        }
+        #stop-btn:hover { background: #c0392b; color: #fff; }
+
+        /* ── Context files bar ── */
+        #context-bar {
+            display: none;
+            padding: 5px 14px;
+            gap: 6px;
+            flex-wrap: wrap;
+            border-top: 1px solid #13131f;
+            background: #0a0a15;
+        }
+        #context-bar.has-files { display: flex; }
+        .context-file {
+            font-size: 10px;
+            color: #3a5080;
+            background: #0d0d1a;
+            border: 1px solid #1a1a2e;
+            border-radius: 4px;
+            padding: 2px 7px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .context-file .mi { font-size: 11px; }
 
         /* ── Terminal output ── */
         .terminal-output {
@@ -790,6 +828,7 @@
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
+        <button id="auto-btn" class="header-btn" title="Modo automatico: escreve, testa e corrige sem pedir aprovacao"><span class="mi" style="font-size:14px">bolt</span>Auto <span style="font-size:8px;opacity:0.7;letter-spacing:0.04em">BETA</span></button>
         <button id="sessions-btn" class="header-btn"><span class="mi" style="font-size:14px">forum</span>Sessoes</button>
         <button id="new-session-btn" class="header-btn"><span class="mi" style="font-size:14px">add</span>Novo chat</button>
     </div>
@@ -847,10 +886,12 @@
         <button id="image-remove" title="Remover"><span class="mi" style="font-size:16px">close</span></button>
     </div>
 
+    <div id="context-bar"></div>
     <div id="input-area">
         <button id="config-btn" class="icon-btn" title="Configuracoes"><span class="mi">settings</span></button>
         <button id="image-btn" class="icon-btn" title="Anexar imagem"><span class="mi">add_photo_alternate</span></button>
         <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa..."></textarea>
+        <button id="stop-btn"><span class="mi" style="font-size:16px">stop_circle</span>Stop</button>
         <button id="send-btn"><span class="mi" style="font-size:16px">send</span>Enviar</button>
     </div>
     <input type="file" id="image-input" accept="image/*" style="display:none">
@@ -888,6 +929,48 @@
         let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '', model: '' };
         let pendingHistory = null;
         let currentSessionId = null;
+        let autoMode = false;
+        let agentRunning = false;
+
+        const stopBtn = document.getElementById('stop-btn');
+        const contextBar = document.getElementById('context-bar');
+        stopBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'stop' });
+        });
+
+        function updateContextBar(files) {
+            contextBar.innerHTML = '';
+            if (!files || files.length === 0) {
+                contextBar.classList.remove('has-files');
+                return;
+            }
+            contextBar.classList.add('has-files');
+            files.forEach(f => {
+                const chip = document.createElement('span');
+                chip.className = 'context-file';
+                chip.innerHTML = `<span class="mi">description</span>${f.name}`;
+                chip.title = f.path;
+                contextBar.appendChild(chip);
+            });
+        }
+
+        function setAgentRunning(running) {
+            agentRunning = running;
+            stopBtn.style.display = running ? 'inline-flex' : 'none';
+            sendBtn.innerHTML = running
+                ? '<span class="mi" style="font-size:16px">send</span>Injetar'
+                : '<span class="mi" style="font-size:16px">send</span>Enviar';
+        }
+
+        // ── Auto mode toggle ──
+        const autoBtn = document.getElementById('auto-btn');
+        autoBtn.addEventListener('click', () => {
+            autoMode = !autoMode;
+            autoBtn.classList.toggle('auto-active', autoMode);
+            autoBtn.title = autoMode
+                ? 'Modo automatico ATIVO — clique para desativar'
+                : 'Modo automatico: escreve, testa e corrige sem pedir aprovacao';
+        });
 
         // ── Sessions panel ──
         sessionsBtn.addEventListener('click', () => sessionsPanel.classList.toggle('open'));
@@ -1391,9 +1474,14 @@
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
+            } else if (msg.command === 'open_files') {
+                updateContextBar(msg.files);
+            } else if (msg.command === 'agent_running') {
+                setAgentRunning(msg.running);
             } else if (msg.command === 'agent_response') {
                 clearStatus();
                 finalizeTerminal();
+                setAgentRunning(false);
                 const loading = chatContainer.querySelector('[data-loading="true"]');
                 if (loading) { loading.closest('.message-row').remove(); }
                 appendMessage(msg.text, 'agent');
@@ -1460,16 +1548,24 @@
         function finalizeTerminal() {
             activeTerminal = null;
             activeTerminalWrapper = null;
+            // Remove o bloco anterior do DOM — só mantém um terminal por vez
             const el = document.getElementById('active-terminal');
-            if (el) { el.removeAttribute('id'); }
-            const body = document.getElementById('active-terminal-body');
-            if (body) { body.removeAttribute('id'); }
+            if (el) { el.remove(); }
         }
 
         // ── Send ──
         function sendMessage() {
             const text = input.value.trim();
             if (!text && !pendingImage) { return; }
+
+            // Se o agente está rodando, injeta a mensagem na execução em curso
+            if (agentRunning) {
+                appendMessage(text, 'user');
+                input.value = '';
+                input.style.height = 'auto';
+                vscode.postMessage({ command: 'inject_message', text });
+                return;
+            }
 
             const imageDataUrl = pendingImage ? `data:${pendingImage.mimeType};base64,${pendingImage.base64}` : null;
             appendMessage(text, 'user', false, imageDataUrl);
@@ -1482,6 +1578,7 @@
                 command: 'user_input',
                 text: text || '(analise esta imagem)',
                 image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
+                autoMode,
             });
 
             pendingImage = null;

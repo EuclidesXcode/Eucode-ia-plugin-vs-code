@@ -1,25 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TOOL_NAMES = exports.TOOLS = exports.runCommandTool = void 0;
-const child_process_1 = require("child_process"); // Usando spawn para streaming
-const events_1 = require("events"); // Importando EventEmitter
-// ... (Mantendo as outras definições de ferramentas)
-/**
- * Função refatorada para usar spawn e emitir eventos de streaming em vez de retornar um Promise resolvido.
- * O executor do agente DEVE ser adaptado para ouvir os eventos deste objeto EventEmitter,
- * tratando o stream como a resposta da ferramenta.
- * @param command O comando a ser executado.
- * @param cwd Diretório de trabalho.
- * @returns Um EventEmitter que emite 'stdout', 'stderr', e 'done' ao final do processo.
- */
-// Padrões que indicam que o servidor subiu e está aguardando conexões
+const child_process_1 = require("child_process");
+const events_1 = require("events");
 const SERVER_READY_PATTERNS = [
     /listening on/i, /server running/i, /started on/i, /ready on/i,
     /running at/i, /localhost:/i, /127\.0\.0\.1:/i, /0\.0\.0\.0:/i,
     /started server/i, /app running/i, /serving on/i, /devserver/i,
     /compiled successfully/i, /ready in/i, /vite v/i,
 ];
-// Comandos que tipicamente não terminam (servidores, watchers)
 const LONG_RUNNING_PREFIXES = [
     'npm start', 'npm run start', 'npm run dev', 'npm run watch',
     'yarn start', 'yarn dev', 'yarn watch',
@@ -31,8 +20,6 @@ const runCommandTool = (command, cwd) => {
     let outputBuffer = '';
     let resolved = false;
     const isLongRunning = LONG_RUNNING_PREFIXES.some(p => command.trim().startsWith(p));
-    // Para processos longos: resolve após detectar que o servidor subiu
-    // ou após 8s de output sem fechar, para não travar o agente
     let longRunningTimer = null;
     if (isLongRunning) {
         longRunningTimer = setTimeout(() => {
@@ -88,6 +75,52 @@ const runCommandTool = (command, cwd) => {
 };
 exports.runCommandTool = runCommandTool;
 exports.TOOLS = [
+    {
+        name: 'list_directory',
+        description: 'Lista arquivos e pastas de um diretorio. Use para entender a estrutura do projeto antes de qualquer acao.',
+        parameters: {
+            type: 'object',
+            properties: {
+                dirPath: { type: 'string', description: 'Caminho absoluto do diretorio a listar.' },
+            },
+            required: ['dirPath'],
+        },
+    },
+    {
+        name: 'read_local_file',
+        description: 'Le o conteudo completo de um arquivo. Use antes de editar qualquer arquivo existente.',
+        parameters: {
+            type: 'object',
+            properties: {
+                filePath: { type: 'string', description: 'Caminho absoluto do arquivo a ler.' },
+            },
+            required: ['filePath'],
+        },
+    },
+    {
+        name: 'write_local_file',
+        description: 'Cria ou sobrescreve um arquivo com o conteudo fornecido. Sempre use caminhos absolutos.',
+        parameters: {
+            type: 'object',
+            properties: {
+                filePath: { type: 'string', description: 'Caminho absoluto do arquivo a criar ou editar.' },
+                content: { type: 'string', description: 'Conteudo completo do arquivo.' },
+            },
+            required: ['filePath', 'content'],
+        },
+    },
+    {
+        name: 'search_in_workspace',
+        description: 'Busca um termo, funcao, classe ou padrao em todos os arquivos do projeto.',
+        parameters: {
+            type: 'object',
+            properties: {
+                query: { type: 'string', description: 'Termo ou padrao a buscar.' },
+                dirPath: { type: 'string', description: 'Diretorio onde buscar. Se omitido, busca na raiz do workspace.' },
+            },
+            required: ['query'],
+        },
+    },
     {
         name: 'run_command',
         description: 'Executa um comando no terminal. Use para compilar, instalar dependencias, rodar testes, iniciar servidores (npm start, node app.js, python main.py, etc) ou qualquer script. O resultado e transmitido em tempo real. Processos longos como servidores sao detectados automaticamente e o agente continua apos o servidor subir.',

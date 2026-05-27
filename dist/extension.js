@@ -51,6 +51,8 @@ class EucodeViewProvider {
         this._context = _context;
         this._sessionHistory = [];
         this._pendingConfirms = new Map();
+        this._abortController = null;
+        this._injectMessage = null;
         this._historyManager = new HistoryManagerService_1.HistoryManagerService(_context);
         this._sessionHistory = this._historyManager.load();
         this._settings = (0, settings_1.loadSettings)(_context);
@@ -77,6 +79,12 @@ class EucodeViewProvider {
             const filtered = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
             webviewView.webview.postMessage({ command: 'load_history', entries: filtered });
         }));
+        const sendOpenFiles = () => {
+            const ctx = (0, context_1.collectWorkspaceContext)();
+            webviewView.webview.postMessage({ command: 'open_files', files: ctx.openFiles });
+        };
+        // Atualiza arquivos abertos quando o usuário troca de aba
+        this._context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()), vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles()));
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message?.command === 'webview_ready') {
                 webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model });
@@ -84,6 +92,7 @@ class EucodeViewProvider {
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
                 pingAndNotify(this._settings);
+                sendOpenFiles();
                 return;
             }
             if (message?.command === 'new_session') {
@@ -119,6 +128,14 @@ class EucodeViewProvider {
                 }
                 return;
             }
+            if (message?.command === 'stop') {
+                this._abortController?.abort();
+                return;
+            }
+            if (message?.command === 'inject_message' && message.text) {
+                this._injectMessage?.(message.text);
+                return;
+            }
             if (message?.command !== 'user_input' || !message.text) {
                 return;
             }
@@ -143,7 +160,13 @@ class EucodeViewProvider {
                 const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
                 const notifyCommandStart = (cmd) => webviewView.webview.postMessage({ command: 'command_start', cmd });
                 const notifyCommandOutput = (chunk) => webviewView.webview.postMessage({ command: 'command_output', chunk });
-                response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel);
+                this._abortController = new AbortController();
+                this._injectMessage = null;
+                webviewView.webview.postMessage({ command: 'agent_running', running: true });
+                response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; });
+                this._abortController = null;
+                this._injectMessage = null;
+                webviewView.webview.postMessage({ command: 'agent_running', running: false });
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
             }
             webviewView.webview.postMessage({ command: 'agent_response', text: response });

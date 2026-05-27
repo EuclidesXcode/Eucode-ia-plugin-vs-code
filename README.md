@@ -107,7 +107,11 @@ O agente tem acesso a cinco ferramentas que usa de forma autonoma conforme neces
 | `write_local_file` | Cria ou sobrescreve arquivos com o conteudo gerado |
 | `run_command` | Executa comandos no terminal com lista de comandos permitidos |
 
-O agente executa ate 15 passos por resposta, o suficiente para tarefas complexas como refatorar multiplos arquivos ou configurar um projeto do zero.
+O agente executa ate 20 passos por resposta, o suficiente para tarefas complexas como refatorar multiplos arquivos ou configurar um projeto do zero.
+
+### Modo Automatico (Beta)
+
+Ative o botao **Auto (Beta)** no header do chat para que o agente escreva arquivos diretamente, rode os testes automaticamente apos cada edicao e corrija falhas sem interromper para pedir aprovacao. Ideal para tarefas longas de refatoracao ou criacao de testes.
 
 ---
 
@@ -133,41 +137,28 @@ Por padrao o plugin conecta em `http://localhost:1234`. Para alterar, clique na 
 
 ---
 
-## Nota da versao (0.3.2)
+## Nota da versao (0.3.7)
 
-- Icone [E] na Activity Bar: acesso rapido ao chat sem precisar digitar comando
-- Chat registrado como WebviewView — abre como aba no painel lateral, pode ser arrastado para qualquer posicao
-- Icone SVG monocromatico [E] otimizado com proporcoes balanceadas
+- Barra de contexto acima do input mostra os arquivos abertos no editor em tempo real
+- Botao Stop para abortar execucao e Injetar para enviar mensagem durante execucao
+- Protecao contra remocao acidental de codigo: agente verifica referencias antes de remover simbolos
 
-## Nota da versao (0.3.1)
+## Nota da versao (0.3.5)
 
-- Multiplas sessoes de chat com titulo gerado automaticamente da primeira mensagem
-- Painel de sessoes no header: lista conversas anteriores, permite carregar ou excluir
-- Botao "Novo chat" inicia sessao limpa sem perder o historico anterior
-- Card de aprovacao de arquivo some do chat apos aceitar ou rejeitar
-- Agente auto-continua ao detectar mais padroes de acao pendente ("vou refatorar", "vou corrigir", "enquanto isso", etc.)
-- Limite de passos do agente aumentado de 10 para 20
-- Status contextual exibido diretamente na bolha de loading ao lado das 3 bolinhas
+- Modo Automatico (Beta): escreve arquivos sem aprovacao, roda testes apos cada edicao e corrige falhas automaticamente
+- Deteccao ampliada de acoes nao executadas: modelo nao consegue mais fingir que fez algo sem chamar a ferramenta
+- Botao Auto (Beta) no header com indicador visual verde quando ativo
 
-## Nota da versao (0.3.0)
+## Nota da versao (0.3.4)
 
-- Diff estilo VS Code no card de aprovacao: algoritmo Myers com diff real linha a linha, numeros de linha antes/depois em colunas separadas, contexto de 3 linhas ao redor das alteracoes e separador de hunk entre blocos distantes
-- Syntax highlight no diff com as cores exatas do tema VS Code dark (keywords, strings, comentarios, tipos)
-- Agente sempre escreve o arquivo diretamente via ferramenta — nunca mais exibe codigo no chat pedindo para o usuario aplicar manualmente
-- Respostas sem raciocinio interno exposto: analises, estrategias e propostas proativas removidas das respostas
-- Terminal em tempo real com bloco fixo e status-bar fora do scroll, eliminando quebra de layout
+- Prompt reescrito: agente explora o workspace com ferramentas antes de responder perguntas sobre o projeto
+- Ferramentas list_directory, read_local_file, write_local_file e search_in_workspace restauradas na lista enviada ao modelo
+- Analise de imagem mais direta: filtro remove raciocinio interno exposto por modelos locais
 
-## Nota da versao (0.2.9)
+## Nota da versao (0.3.3)
 
-- Terminal em tempo real no chat: saida aparece linha a linha diretamente no chat via streaming com `spawn`
-- Bloco de terminal com estilo proprio (fundo escuro, texto claro) separado visualmente da resposta do agente
-- Agente auto-continua quando detecta que o modelo anunciou uma acao sem executar ("vou criar", "agora vou", etc.)
-
-## Nota da versao (0.2.8)
-
-- Campo **Modelo** no painel de configuracoes: o usuario especifica o nome exato do modelo carregado (ex: `google/gemma-4-e4b`, `qwen2.5-coder:14b`, `llama3.1:8b`)
-- Se o campo ficar vazio, o servidor usa o modelo padrao que estiver carregado
-- Modelo configuravel funciona com LM Studio, Ollama e qualquer provedor OpenAI-compativel
+- Correcao de workspace: ignora raiz do sistema operacional quando nenhum projeto valido esta aberto
+- Aviso claro ao usuario quando nenhuma pasta de projeto esta aberta no VS Code
 
 ---
 

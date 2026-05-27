@@ -16,6 +16,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
     private _sessionHistory: HistoryEntry[] = [];
     private _settings: EucodeSettings;
     private _pendingConfirms = new Map<string, (approved: boolean) => void>();
+    private _abortController: AbortController | null = null;
+    private _injectMessage: ((msg: string) => void) | null = null;
 
     constructor(private readonly _context: vscode.ExtensionContext) {
         this._historyManager = new HistoryManagerService(_context);
@@ -58,6 +60,17 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             })
         );
 
+        const sendOpenFiles = () => {
+            const ctx = collectWorkspaceContext();
+            webviewView.webview.postMessage({ command: 'open_files', files: ctx.openFiles });
+        };
+
+        // Atualiza arquivos abertos quando o usuário troca de aba
+        this._context.subscriptions.push(
+            vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()),
+            vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles())
+        );
+
         webviewView.webview.onDidReceiveMessage(async (message: any) => {
             if (message?.command === 'webview_ready') {
                 webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model });
@@ -65,6 +78,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
                 pingAndNotify(this._settings);
+                sendOpenFiles();
                 return;
             }
 
@@ -103,6 +117,16 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 return;
             }
 
+            if (message?.command === 'stop') {
+                this._abortController?.abort();
+                return;
+            }
+
+            if (message?.command === 'inject_message' && message.text) {
+                this._injectMessage?.(message.text);
+                return;
+            }
+
             if (message?.command !== 'user_input' || !message.text) { return; }
 
             this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image });
@@ -126,7 +150,20 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 const notifyCommandStart = (cmd: string) => webviewView.webview.postMessage({ command: 'command_start', cmd });
                 const notifyCommandOutput = (chunk: string) => webviewView.webview.postMessage({ command: 'command_output', chunk });
 
-                response = await runAgentLoop(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel);
+                this._abortController = new AbortController();
+                this._injectMessage = null;
+                webviewView.webview.postMessage({ command: 'agent_running', running: true });
+
+                response = await runAgentLoop(
+                    message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders,
+                    this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput,
+                    makeConfirmWrite(), activeModel, !!message.autoMode,
+                    this._abortController.signal,
+                    (handler) => { this._injectMessage = handler; }
+                );
+                this._abortController = null;
+                this._injectMessage = null;
+                webviewView.webview.postMessage({ command: 'agent_running', running: false });
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
             }
 
