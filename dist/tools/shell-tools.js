@@ -34,18 +34,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.searchInWorkspace = searchInWorkspace;
+exports.isCommandBlocked = isCommandBlocked;
 exports.runCommand = runCommand;
+exports.isGitReadOnly = isGitReadOnly;
+exports.runGit = runGit;
 const child_process_1 = require("child_process");
 const path = __importStar(require("path"));
-const ALLOWED_PREFIXES = [
-    'python', 'python3', 'node', 'npm', 'npx', 'yarn',
-    'tsc', 'eslint', 'prettier', 'jest', 'vitest', 'mocha',
-    'git status', 'git log', 'git diff', 'git branch',
-    'ls', 'cat', 'find', 'grep', 'mkdir', 'cp', 'mv',
-    'echo', 'pwd', 'which',
-];
-const BLOCKED_PATTERNS = [
-    /rm\s+-rf/i, /rm\s+-r/i,
+const ALWAYS_BLOCKED = [
+    /rm\s+-rf/i, /rm\s+-r\s/i,
     /sudo/i,
     />\s*\/dev\/(sd|hd|nvme)/i,
     /mkfs/i, /fdisk/i, /parted/i,
@@ -53,7 +49,15 @@ const BLOCKED_PATTERNS = [
     /wget\s+.*\|\s*(bash|sh|zsh)/i,
     /chmod\s+777/i,
     /:\(\)\{.*\}/i,
+    /git\s+push\s+.*--force/i,
+    /git\s+reset\s+--hard/i,
+    /git\s+clean\s+-f/i,
 ];
+// Subcomandos git que apenas leem — aprovados sem confirmacao do usuario
+const GIT_READ_ONLY = new Set([
+    'status', 'log', 'diff', 'branch', 'show', 'stash', 'remote', 'tag',
+    'shortlog', 'describe', 'rev-parse', 'ls-files', 'blame',
+]);
 function runAsync(command, cwd, timeoutMs) {
     return new Promise(resolve => {
         const child = (0, child_process_1.spawn)('sh', ['-c', command], { cwd, timeout: timeoutMs });
@@ -77,24 +81,53 @@ function runAsync(command, cwd, timeoutMs) {
         child.on('error', (e) => resolve(`[ERRO] ${e.message}`));
     });
 }
+function isRgAvailable() {
+    return new Promise(resolve => {
+        const child = (0, child_process_1.spawn)('rg', ['--version'], {});
+        child.on('error', () => resolve(false));
+        child.on('close', (code) => resolve(code === 0));
+    });
+}
 async function searchInWorkspace(query, dirPath) {
     const escaped = query.replace(/'/g, "'\\''");
+    const rgAvailable = await isRgAvailable();
+    if (rgAvailable) {
+        const cmd = `rg -n --max-count=3 -e '${escaped}' --type-add 'src:*.{ts,tsx,js,jsx,py,go,rs,java,dart,c,cpp,cs,rb,php,swift,kt}' -t src ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
+        const result = await runAsync(cmd, '/', 10000);
+        if (result !== '[OK] Comando executado sem saida.' && !result.startsWith('[ERRO]')) {
+            return result;
+        }
+    }
+    // fallback: grep
     const cmd = `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.py" --include="*.go" --include="*.rs" --include="*.java" --include="*.dart" -e '${escaped}' ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
     const result = await runAsync(cmd, '/', 10000);
     return result === '[OK] Comando executado sem saida.'
         ? `Nenhum resultado para "${query}" em ${dirPath}`
         : result;
 }
+function isCommandBlocked(command) {
+    return ALWAYS_BLOCKED.some(p => p.test(command));
+}
 async function runCommand(command, cwd) {
     const trimmed = command.trim();
-    for (const pattern of BLOCKED_PATTERNS) {
-        if (pattern.test(trimmed)) {
-            return `[BLOQUEADO] Comando recusado por politica de seguranca: "${trimmed}"`;
-        }
-    }
-    if (!ALLOWED_PREFIXES.some(prefix => trimmed.startsWith(prefix))) {
-        return `[BLOQUEADO] Comando nao permitido: "${trimmed}". Permitidos: ${ALLOWED_PREFIXES.join(', ')}`;
+    if (isCommandBlocked(trimmed)) {
+        return `[BLOCKED] Command refused by security policy: "${trimmed}"`;
     }
     const workDir = cwd ? path.resolve(cwd) : process.cwd();
     return runAsync(trimmed, workDir, 30000);
+}
+function isGitReadOnly(subcommand) {
+    const first = subcommand.trim().split(/\s+/)[0];
+    return GIT_READ_ONLY.has(first);
+}
+async function runGit(subcommand, cwd) {
+    const trimmed = subcommand.trim();
+    if (!trimmed) {
+        return '[ERRO] Subcomando git vazio.';
+    }
+    // Bloqueados absolutamente (mesmo com confirmacao)
+    if (/push\s+.*--force/i.test(trimmed) || /reset\s+--hard/i.test(trimmed) || /clean\s+-f/i.test(trimmed)) {
+        return `[BLOCKED] Destructive git operation not allowed: "git ${trimmed}". If necessary, instruct the user to run it manually.`;
+    }
+    return runAsync(`git ${trimmed}`, cwd, 30000);
 }

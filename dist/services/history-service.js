@@ -72,8 +72,9 @@ function appendEntry(entries, entry) {
     return updated;
 }
 function buildMessagesFromHistory(entries, maxPairs = constants_1.MAX_HISTORY_PAIRS) {
-    // Filtra entradas de erro de conexao para nao contaminar o contexto do modelo
-    const clean = entries.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
+    // Filtra entradas de erro para nao contaminar o contexto do modelo
+    const BAD_PREFIXES = ['ERRO DE CONEXAO', 'Nao foi possivel obter resposta', 'O agente atingiu o limite'];
+    const clean = entries.filter(e => !BAD_PREFIXES.some(p => e.content.startsWith(p)));
     return clean.slice(-maxPairs * 2).map(e => {
         if (e.hasImage && e.imageSummary) {
             return {

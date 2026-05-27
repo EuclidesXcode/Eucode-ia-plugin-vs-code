@@ -20,6 +20,9 @@ export interface ToolCall {
     };
 }
 
+export const ANTHROPIC_API_BASE = 'https://api.anthropic.com';
+export const ANTHROPIC_VERSION = '2023-06-01';
+
 function request(url: string, method: string, body: unknown, headers: Record<string, string>, timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
     return new Promise((resolve, reject) => {
         if (signal?.aborted) { return reject(new Error('ABORTED')); }
@@ -44,12 +47,19 @@ function request(url: string, method: string, body: unknown, headers: Record<str
             const chunks: Buffer[] = [];
             res.on('data', (chunk: Buffer) => chunks.push(chunk));
             res.on('end', () => {
+                const raw = Buffer.concat(chunks).toString('utf8');
                 if (res.statusCode && res.statusCode >= 400) {
-                    reject(new Error(`API retornou ${res.statusCode}: ${res.statusMessage}`));
+                    try {
+                        const body = JSON.parse(raw);
+                        const detail = body?.error?.message || body?.message || raw.slice(0, 200);
+                        reject(new Error(`API retornou ${res.statusCode}: ${detail}`));
+                    } catch {
+                        reject(new Error(`API retornou ${res.statusCode}: ${res.statusMessage}`));
+                    }
                     return;
                 }
                 try {
-                    resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                    resolve(JSON.parse(raw));
                 } catch (e) {
                     reject(new Error('Resposta nao e JSON valido.'));
                 }
@@ -58,6 +68,68 @@ function request(url: string, method: string, body: unknown, headers: Record<str
 
         signal?.addEventListener('abort', () => { req.destroy(); reject(new Error('ABORTED')); });
         req.on('timeout', () => { req.destroy(); reject(new Error('Timeout ao conectar.')); });
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+function requestStream(
+    url: string,
+    body: unknown,
+    headers: Record<string, string>,
+    signal: AbortSignal | undefined,
+    onLine: (line: string) => void
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) { return reject(new Error('ABORTED')); }
+
+        const parsed = new URL(url);
+        const payload = JSON.stringify(body);
+        const options = {
+            hostname: parsed.hostname,
+            port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+            path: parsed.pathname + parsed.search,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload),
+                ...headers,
+            },
+        };
+
+        const transport = url.startsWith('https://') ? https : http;
+        const req = transport.request(options, (res) => {
+            if (res.statusCode && res.statusCode >= 400) {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => {
+                    const raw = Buffer.concat(chunks).toString('utf8');
+                    try {
+                        const parsed = JSON.parse(raw);
+                        const detail = parsed?.error?.message || parsed?.message || raw.slice(0, 200);
+                        reject(new Error(`API retornou ${res.statusCode}: ${detail}`));
+                    } catch {
+                        reject(new Error(`API retornou ${res.statusCode}: ${res.statusMessage}`));
+                    }
+                });
+                return;
+            }
+
+            let buf = '';
+            res.on('data', (chunk: Buffer) => {
+                buf += chunk.toString('utf8');
+                const lines = buf.split('\n');
+                buf = lines.pop() ?? '';
+                for (const line of lines) { onLine(line); }
+            });
+            res.on('end', () => {
+                if (buf) { onLine(buf); }
+                resolve();
+            });
+        });
+
+        signal?.addEventListener('abort', () => { req.destroy(); reject(new Error('ABORTED')); });
         req.on('error', reject);
         req.write(payload);
         req.end();
@@ -96,13 +168,27 @@ export async function checkConnection(endpoint: string, authHeaders: Record<stri
     }
 }
 
+export async function checkAnthropicConnection(apiKey: string): Promise<boolean> {
+    if (!apiKey) { return false; }
+    try {
+        const status = await get(`${ANTHROPIC_API_BASE}/v1/models`, {
+            'x-api-key': apiKey,
+            'anthropic-version': ANTHROPIC_VERSION,
+        }, 8000);
+        return status === 200;
+    } catch {
+        return false;
+    }
+}
+
 export async function callAI(
     endpoint: string,
     authHeaders: Record<string, string>,
     messages: { role: string; content: unknown }[],
     tools: ToolDefinition[],
     model: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
 ): Promise<AIResponse> {
     const formattedTools = tools.map(t => ({
         type: 'function',
@@ -110,22 +196,63 @@ export async function callAI(
     }));
 
     try {
-        const data = await request(endpoint, 'POST', {
-            model, messages, tools: formattedTools, tool_choice: 'auto',
-        }, authHeaders, 600000, signal) as any;
+        if (onChunk) {
+            // ── Streaming path ──
+            let textAcc = '';
+            // tool call accumulation
+            let toolId = '';
+            let toolName = '';
+            let toolArgsRaw = '';
 
-        const message = data?.choices?.[0]?.message;
-        if (!message) { throw new Error('Resposta inesperada da API.'); }
+            await requestStream(endpoint, {
+                model, messages, tools: formattedTools, tool_choice: 'auto', stream: true,
+            }, authHeaders, signal, (line) => {
+                if (!line.startsWith('data: ')) { return; }
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') { return; }
+                try {
+                    const evt = JSON.parse(data);
+                    const delta = evt?.choices?.[0]?.delta;
+                    if (!delta) { return; }
 
-        if (message.tool_calls?.length > 0) {
-            const raw = message.tool_calls[0];
-            const args = typeof raw.function.arguments === 'string'
-                ? JSON.parse(raw.function.arguments)
-                : raw.function.arguments;
-            return { responseText: '', toolCall: { id: raw.id, function: { name: raw.function.name, arguments: args } } };
+                    if (delta.content) {
+                        textAcc += delta.content;
+                        onChunk(delta.content);
+                    }
+
+                    if (delta.tool_calls?.length > 0) {
+                        const tc = delta.tool_calls[0];
+                        if (tc.id) { toolId = tc.id; }
+                        if (tc.function?.name) { toolName += tc.function.name; }
+                        if (tc.function?.arguments) { toolArgsRaw += tc.function.arguments; }
+                    }
+                } catch { /* malformed chunk */ }
+            });
+
+            if (toolName) {
+                const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
+                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+            }
+            return { responseText: textAcc.trim() };
+
+        } else {
+            // ── Non-streaming path (fallback) ──
+            const data = await request(endpoint, 'POST', {
+                model, messages, tools: formattedTools, tool_choice: 'auto',
+            }, authHeaders, 600000, signal) as any;
+
+            const message = data?.choices?.[0]?.message;
+            if (!message) { throw new Error('Resposta inesperada da API.'); }
+
+            if (message.tool_calls?.length > 0) {
+                const raw = message.tool_calls[0];
+                const args = typeof raw.function.arguments === 'string'
+                    ? JSON.parse(raw.function.arguments)
+                    : raw.function.arguments;
+                return { responseText: '', toolCall: { id: raw.id, function: { name: raw.function.name, arguments: args } } };
+            }
+            return { responseText: (message.content || '').trim() };
         }
-
-        return { responseText: message.content || 'Nao foi possivel obter resposta.' };
     } catch (error) {
         if (error instanceof Error && error.message === 'ABORTED') {
             return { responseText: '__ABORTED__' };
@@ -133,6 +260,115 @@ export async function callAI(
         console.error('[API] Falha ao chamar o LLM:', error);
         return {
             responseText: `ERRO DE CONEXAO: Nao foi possivel conectar com a IA em ${endpoint}. Verifique se o servico esta rodando. Detalhe: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+}
+
+export async function callAnthropicAI(
+    apiKey: string,
+    messages: { role: string; content: unknown }[],
+    tools: ToolDefinition[],
+    model: string,
+    signal?: AbortSignal,
+    onChunk?: (text: string) => void
+): Promise<AIResponse> {
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = typeof systemMessage?.content === 'string' ? systemMessage.content : undefined;
+    const chatMessages = messages
+        .filter(m => m.role !== 'system')
+        .map(m => {
+            if (m.role === 'tool') {
+                const msg = m as any;
+                return {
+                    role: 'user',
+                    content: [{
+                        type: 'tool_result',
+                        tool_use_id: msg.tool_call_id,
+                        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+                    }],
+                };
+            }
+            if (m.role === 'assistant' && (m as any).tool_calls?.length > 0) {
+                const tc = (m as any).tool_calls[0];
+                const args = typeof tc.function.arguments === 'string'
+                    ? JSON.parse(tc.function.arguments)
+                    : tc.function.arguments;
+                return {
+                    role: 'assistant',
+                    content: [{ type: 'tool_use', id: tc.id, name: tc.function.name, input: args }],
+                };
+            }
+            const content = (m as any).content ?? '';
+            return { role: m.role, content };
+        });
+
+    const anthropicTools = tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.parameters,
+    }));
+
+    const body: Record<string, unknown> = {
+        model,
+        max_tokens: 8192,
+        messages: chatMessages,
+        tools: anthropicTools,
+        tool_choice: { type: 'auto' },
+        stream: true,
+    };
+    if (systemContent) { body.system = systemContent; }
+
+    const headers: Record<string, string> = {
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+    };
+
+    try {
+        let textAcc = '';
+        let toolId = '';
+        let toolName = '';
+        let toolArgsRaw = '';
+        // track which block index is a tool_use vs text
+        let currentBlockType = '';
+
+        await requestStream(`${ANTHROPIC_API_BASE}/v1/messages`, body, headers, signal, (line) => {
+            if (!line.startsWith('data: ')) { return; }
+            const data = line.slice(6).trim();
+            try {
+                const evt = JSON.parse(data);
+                const type: string = evt?.type ?? '';
+
+                if (type === 'content_block_start') {
+                    currentBlockType = evt.content_block?.type ?? '';
+                    if (currentBlockType === 'tool_use') {
+                        toolId = evt.content_block.id ?? '';
+                        toolName = evt.content_block.name ?? '';
+                    }
+                } else if (type === 'content_block_delta') {
+                    const delta = evt.delta ?? {};
+                    if (delta.type === 'text_delta' && delta.text) {
+                        textAcc += delta.text;
+                        onChunk?.(delta.text);
+                    } else if (delta.type === 'input_json_delta' && delta.partial_json) {
+                        toolArgsRaw += delta.partial_json;
+                    }
+                }
+            } catch { /* malformed chunk */ }
+        });
+
+        if (toolName) {
+            const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
+            return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+        }
+        return { responseText: textAcc.trim() };
+
+    } catch (error) {
+        if (error instanceof Error && error.message === 'ABORTED') {
+            return { responseText: '__ABORTED__' };
+        }
+        console.error('[API Anthropic] Falha:', error);
+        return {
+            responseText: `ERRO DE CONEXAO: Não foi possível conectar com a API Anthropic. Verifique sua API key. Detalhe: ${error instanceof Error ? error.message : String(error)}`,
         };
     }
 }
@@ -164,7 +400,6 @@ export async function callAIWithVision(
 
         const content = data?.choices?.[0]?.message?.content || '';
 
-        // Remove blocos de raciocinio interno que alguns modelos locais expõem
         const cleaned = content
             .replace(/^(minha resposta|vou descrever|vou analisar|como sou|devo responder|meu papel)[^\n]*\n?/gim, '')
             .replace(/^(note que|observa[cç][aã]o|an[aá]lise|estrat[eé]gia)[^\n]*\n?/gim, '')

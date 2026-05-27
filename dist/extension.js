@@ -51,6 +51,7 @@ class EucodeViewProvider {
         this._context = _context;
         this._sessionHistory = [];
         this._pendingConfirms = new Map();
+        this._pendingCommandConfirms = new Map();
         this._abortController = null;
         this._injectMessage = null;
         this._windowFocused = true;
@@ -66,7 +67,6 @@ class EucodeViewProvider {
         const htmlPath = path.join(this._context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
         webviewView.webview.html = fs.readFileSync(htmlPath, 'utf8');
         const notify = (text) => webviewView.webview.postMessage({ command: 'status', text });
-        // Rastreia foco real: onDidChangeWindowState dispara quando o usuario alterna janelas
         this._windowFocused = vscode.window.state.focused;
         this._context.subscriptions.push(vscode.window.onDidChangeWindowState(state => { this._windowFocused = state.focused; }));
         const notifyUser = (message, actions = []) => {
@@ -76,6 +76,11 @@ class EucodeViewProvider {
                         webviewView.show(true);
                     }
                 });
+                // Notificacao nativa do sistema operacional (macOS)
+                if (process.platform === 'darwin') {
+                    const safe = message.replace(/"/g, '\\"');
+                    require('child_process').exec(`osascript -e 'display notification "${safe}" with title "Eucode IA"'`);
+                }
             }
         };
         const makeConfirmWrite = () => (req) => new Promise((resolve) => {
@@ -84,8 +89,20 @@ class EucodeViewProvider {
             webviewView.webview.postMessage({ command: 'confirm_write', id, filePath: req.filePath, before: req.before, after: req.after });
             notifyUser(`Aguardando aprovacao para editar "${path.basename(req.filePath)}"`, ['Abrir chat']);
         });
+        const makeConfirmCommand = () => (req) => new Promise((resolve) => {
+            const id = `cmd_${Date.now()}`;
+            this._pendingCommandConfirms.set(id, resolve);
+            webviewView.webview.postMessage({ command: 'confirm_command', id, cmd: req.command, cwd: req.cwd });
+            notifyUser(`Aguardando aprovacao para executar comando`, ['Abrir chat']);
+        });
+        const getDiagnostics = () => (0, context_1.collectDiagnostics)();
+        const makeTodoUpdate = () => (todos) => {
+            webviewView.webview.postMessage({ command: 'todo_update', todos });
+        };
         const pingAndNotify = async (s) => {
-            const online = await (0, api_client_1.checkConnection)((0, settings_1.buildApiEndpoint)(s), (0, settings_1.buildAuthHeader)(s));
+            const online = s.provider === 'anthropic'
+                ? await (0, api_client_1.checkAnthropicConnection)(s.apiKey)
+                : await (0, api_client_1.checkConnection)((0, settings_1.buildApiEndpoint)(s), (0, settings_1.buildAuthHeader)(s));
             webviewView.webview.postMessage({ command: 'connection_status', online });
         };
         this._context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
@@ -97,11 +114,10 @@ class EucodeViewProvider {
             const ctx = (0, context_1.collectWorkspaceContext)();
             webviewView.webview.postMessage({ command: 'open_files', files: ctx.openFiles });
         };
-        // Atualiza arquivos abertos quando o usuário troca de aba
         this._context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()), vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles()));
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message?.command === 'webview_ready') {
-                webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model });
+                webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model, enabledTools: this._settings.enabledTools });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
@@ -128,7 +144,7 @@ class EucodeViewProvider {
                 return;
             }
             if (message?.command === 'save_config') {
-                this._settings = { provider: message.provider ?? this._settings.provider, apiHost: message.apiHost ?? this._settings.apiHost, apiKey: message.apiKey ?? '', model: message.model ?? '' };
+                this._settings = { provider: message.provider ?? this._settings.provider, apiHost: message.apiHost ?? this._settings.apiHost, apiKey: message.apiKey ?? '', model: message.model ?? '', enabledTools: message.enabledTools ?? this._settings.enabledTools };
                 await (0, settings_1.saveSettings)(this._context, this._settings);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
@@ -139,6 +155,14 @@ class EucodeViewProvider {
                 if (resolve) {
                     this._pendingConfirms.delete(message.id);
                     resolve(message.approved === true);
+                }
+                return;
+            }
+            if (message?.command === 'confirm_command_response') {
+                const resolve = this._pendingCommandConfirms.get(message.id);
+                if (resolve) {
+                    this._pendingCommandConfirms.delete(message.id);
+                    resolve(message.decision ?? 'block');
                 }
                 return;
             }
@@ -171,9 +195,13 @@ class EucodeViewProvider {
                 if (ctx.openFiles.length > 0) {
                     notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
                 }
+                // Inclui diagnósticos do editor no bloco de contexto quando houver
+                const diagnosticsBlock = (0, context_1.collectDiagnostics)();
+                const fullContextBlock = [ctx.contextBlock, diagnosticsBlock].filter(Boolean).join('\n\n');
                 const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
                 const notifyCommandStart = (cmd) => webviewView.webview.postMessage({ command: 'command_start', cmd });
                 const notifyCommandOutput = (chunk) => webviewView.webview.postMessage({ command: 'command_output', chunk });
+                const notifyCommandEnd = (exitCode) => webviewView.webview.postMessage({ command: 'command_end', exitCode });
                 const notifyStatus = (s) => {
                     notify(s);
                     if (s.toLowerCase().includes('aguardando sua resposta')) {
@@ -183,14 +211,17 @@ class EucodeViewProvider {
                 this._abortController = new AbortController();
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: true });
-                response = await (0, loop_1.runAgentLoop)(message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, makeConfirmWrite(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; });
+                const notifyStreamChunk = (text) => webviewView.webview.postMessage({ command: 'stream_chunk', text });
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk);
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
                 if (response && !response.startsWith('[INTERROMPIDO]')) {
                     notifyUser('Tarefa concluida', ['Abrir chat']);
                 }
-                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
+                // Truncate long responses before saving to history to avoid inflating future prompts.
+                const historySummary = response.length > 400 ? response.slice(0, 400) + '...' : response;
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: historySummary, timestamp: Date.now() });
             }
             webviewView.webview.postMessage({ command: 'agent_response', text: response });
         }, undefined, this._context.subscriptions);

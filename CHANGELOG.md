@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.6.3
+
+- Timeline persistente: texto do LM permanece visivel ao iniciar nova tool call — convertido em markdown fixo em vez de sumido
+- Timeline nao fecha ao finalizar: a bolha do agente permanece no chat com toda a timeline visivel para o usuario ler no seu tempo
+- Correcao de ID duplicado: cada rodada do agente tem sua propria timeline isolada, evitando que status e texto fossem para a rodada errada
+- Recuperacao automatica de contexto em ambos os modos (normal e Auto): resposta vazia ou truncada dispara poda progressiva e retry silencioso sem mostrar erro ao usuario
+- Poda preventiva calibrada para 2048 tokens: limites de output de ferramentas ajustados, historico reduzido para 1 par
+- Notificacao nativa do macOS via osascript quando o VS Code nao esta em foco
+- Timeline colorida por resultado: itens ficam vermelhos quando o comando falha (exit code != 0), verdes quando bem-sucedido
+- Nome de arquivo destacado em amarelo dentro dos itens da timeline
+- System prompt compactado (~50% menor) para preservar tokens para o trabalho do agente
+
+## 0.6.2
+
+- Timeline colorida por tipo de acao: leituras de arquivo em azul, escritas/edicoes em amarelo, comandos/git/busca em verde-azulado
+- Classificacao automatica de itens da timeline pelo prefixo do status (Reading, Writing, Editing, Running, git, Searching)
+- Cores aplicadas ao completar o item (done), mantendo branco enquanto ativo para nao distrair durante execucao
+
+## 0.6.1
+
+- Suporte nativo a API Anthropic (Claude): provider dedicado com endpoint `/v1/messages`, headers `x-api-key` e `anthropic-version`, conversao automatica do historico para o formato Anthropic (tool_use, tool_result)
+- Streaming de respostas em tempo real: tokens aparecem no chat conforme sao gerados, para todos os provedores (SSE para OpenAI-compat e Anthropic)
+- Terminal separado da bolha de resposta: output de comandos exibido em row propria acima do texto gerado, sem mistura de conteudo
+- Texto streaming em branco puro com `white-space: pre-wrap`; markdown renderizado apenas na resposta final completa
+- Controle granular de ferramentas: painel no config com toggle liga/desliga por ferramenta (explorar diretorios, ler, editar, escrever, buscar, diagnosticos, terminal, git, web search, checklist)
+- Modelos Claude sugeridos como chips clicaveis no config quando provider e Anthropic (Opus 4.7, Sonnet 4.6, Haiku 4.5)
+- Campo Host ocultado automaticamente ao selecionar Anthropic; API Key torna-se obrigatoria
+- Verificacao de conexao Anthropic via `GET /v1/models` (leve, sem custo de token)
+- Erros da API propagados com mensagem detalhada (body JSON do erro exposto ao usuario)
+
+## 0.5.0
+
+- Edicao cirurgica com `edit_file`: substitui apenas o trecho exato do arquivo sem sobrescrever o restante — ferramenta preferencial para edicoes parciais
+- Integracao git completa com `run_git`: operacoes read-only (status, log, diff, branch) executam direto; operacoes que modificam estado (commit, push, checkout) exigem confirmacao; destrutivas (reset --hard, push --force) sao bloqueadas
+- Diagnosticos do editor com `get_diagnostics`: agente consulta erros e warnings do VS Code diretamente, sem pedir para o usuario copiar mensagens de erro
+- Busca avancada com ripgrep: `search_in_workspace` usa `rg` quando disponivel (mais rapido, com contexto por arquivo), com fallback automatico para grep
+- Permissoes dinamicas de comandos: whitelist fixa removida; cada comando exibe dialog com tres opcoes — Bloquear, Permitir uma vez, Permitir na sessao
+- Web search com `web_search`: busca via DuckDuckGo Instant Answer API sem chave de API, com fallback para scraping HTML
+- Checklist de tarefas na UI: agente pode atualizar um painel de progresso ao vivo dentro da bolha de loading durante tarefas multi-step (`todo_update`)
+- System prompt e todas as instrucoes para o LLM reescritos em ingles para melhor desempenho com modelos locais
+- Integracao git: `run_command` para git substituido por ferramenta dedicada `run_git` com controle de seguranca por categoria de operacao
+
 ## 0.4.1
 
 - Protecao contra perda de conteudo em edicoes: write_local_file em arquivo existente exige read_local_file previo na mesma rodada
