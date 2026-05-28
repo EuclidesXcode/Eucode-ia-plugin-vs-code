@@ -324,6 +324,15 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.7.4
+- Detector de arquivo errado em modo AUTO: agente para de "corrigir" o arquivo errado quando o erro aponta para outro
+- Stack trace destacado nos nudges de erro: arquivos + mensagem extraidos da saida do comando
+- Runtime errors em dev servers (TypeError, 500) detectados em processos long-running
+- Botao "Tentar mais 5 vezes" quando o modo AUTO pausa
+- Status visivel para retry de resposta vazia
+- Status "Compactando contexto..." removido (ruido)
+- Recomendacao de modelo premium no README: Ministral 3 14B Reasoning com requisitos por SO
+
 ### 0.7.3
 - Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro
 

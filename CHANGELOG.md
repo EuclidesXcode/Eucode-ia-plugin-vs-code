@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.4
+
+- Parser de stack trace na saida de comandos: extrai caminhos file.ext:line:col e popula counters.lastErrorFiles
+- Detector de arquivo errado em modo AUTO: se o erro aponta para arquivo A mas o modelo editou arquivo B, nudge especifico avisa "WRONG FILE. You edited X but the error is in Y"
+- run_command detecta runtime errors em processos long-running: server inicia mas joga TypeError/500 nao e mais reportado como sucesso
+- Bloco ERROR LOCATION incluido em todos os nudges de comando falho com paths + summary destacados
+- Status visivel para resposta vazia: "Modelo retornou vazio — recarregando contexto (tentativa N/3)" substitui itens silenciosos com bullet
+- Botao "Tentar mais 5 vezes" no chat quando [AUTO PAUSADO]: click reenvia mensagem de continuacao sem o usuario reescrever prompt
+- Status "Compactando contexto..." removido da timeline (ruido — pruning continua acontecendo em silencio)
+- Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro
+- README: tabela de modelos por tipo de tarefa (<7B, 7B-13B, 30B+) com limitacoes praticas
+- README: recomendacao do Ministral 3 14B Reasoning para hardware potente, com requisitos minimos por SO (macOS Apple Silicon, Windows/Linux com GPU NVIDIA/AMD, CPU-only) e configuracao de sampling especifica
+- README: nota explicita sobre comecar com Context Length 4096 antes de subir para 256k
+
 ## 0.7.3
 
 - Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro: listas como "Abertos no editor: a.ts, b.tsx, c.json" agora tem cada arquivo pintado individualmente para identificacao rapida
