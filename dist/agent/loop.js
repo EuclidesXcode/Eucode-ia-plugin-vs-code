@@ -595,12 +595,14 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             if (autoMode && filesReadThisRound.size > 0) {
                 await new Promise(r => setTimeout(r, 2000));
                 const diag = onGetDiagnostics();
-                if (diag && diag.trim().length > 0) {
+                // Only block on actual errors — warnings are ignored in auto mode
+                const hasErrors = diag && /\[ERROR\]/.test(diag);
+                if (hasErrors) {
                     onStatus('Erros detectados — corrigindo...');
                     roundMessages.push({ role: 'assistant', content: text });
                     roundMessages.push({
                         role: 'user',
-                        content: `The editor found errors in the files you wrote. Fix all of them now using edit_file:\n\n${diag}`,
+                        content: `The editor found TypeScript/build errors in the files you wrote. Fix all [ERROR] items now using edit_file. Ignore any [WARNING] lines.\n\n${diag}`,
                     });
                     lastToolName = '';
                     continue;

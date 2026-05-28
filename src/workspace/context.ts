@@ -53,18 +53,15 @@ export function collectDiagnostics(): string {
     for (const [uri, diags] of all) {
         const rel = vscode.workspace.asRelativePath(uri.fsPath);
         for (const d of diags) {
-            if (d.severity !== vscode.DiagnosticSeverity.Error && d.severity !== vscode.DiagnosticSeverity.Warning) {
-                continue;
-            }
-            const sev = d.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' : 'WARNING';
+            if (d.severity !== vscode.DiagnosticSeverity.Error) { continue; }
             const line = d.range.start.line + 1;
             const col = d.range.start.character + 1;
-            lines.push(`[${sev}] ${rel}:${line}:${col} — ${d.message}`);
-            if (lines.length >= 30) { break; }
+            lines.push(`[ERROR] ${rel}:${line}:${col} — ${d.message}`);
+            if (lines.length >= 20) { break; }
         }
-        if (lines.length >= 30) { break; }
+        if (lines.length >= 20) { break; }
     }
 
     if (lines.length === 0) { return ''; }
-    return `# EDITOR DIAGNOSTICS\n${lines.join('\n')}`;
+    return `# EDITOR ERRORS\n${lines.join('\n')}`;
 }
