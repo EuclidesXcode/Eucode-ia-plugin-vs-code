@@ -298,6 +298,11 @@ function detectsPendingAction(text: string, autoMode = false): boolean {
 }
 
 function detectEscapedToolCall(text: string): ToolCall | null {
+    // Fast reject: if there's nothing that looks like a tool call, skip parsing.
+    if (!text.includes('"function"') && !text.includes('tool_call') && !text.includes('{')) {
+        return null;
+    }
+
     const simple = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
     if (simple && TOOL_NAMES.has(simple[1])) {
         try { return { function: { name: simple[1], arguments: JSON.parse(`{${simple[2]}}`) } }; } catch {}
@@ -305,6 +310,8 @@ function detectEscapedToolCall(text: string): ToolCall | null {
 
     const jsonBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = jsonBlock ? jsonBlock[1] : text;
+    // Skip JSON.parse on very long text — almost never valid JSON in full.
+    if (!jsonBlock && jsonStr.length > 4000) { return null; }
     try {
         const parsed = JSON.parse(jsonStr.trim());
         const tc = parsed?.tool_calls?.[0];
@@ -423,9 +430,11 @@ export async function runAgentLoop(
         { role: 'user', content: userPrompt },
     ];
 
-    let injectedMessage: string | null = null;
+    // Queue (not single slot) so multiple user messages sent during a slow
+    // API call are all preserved instead of last-write-wins.
+    const injectedMessages: string[] = [];
     if (onInjectMessage) {
-        onInjectMessage((msg) => { injectedMessage = msg; });
+        onInjectMessage((msg) => { injectedMessages.push(msg); });
     }
 
     const filesReadThisRound = new Set<string>();
@@ -455,19 +464,33 @@ export async function runAgentLoop(
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
-    let filesWrittenThisRound = 0;
+    // Tracks repeated identical tool calls (tool name + args). If the model
+    // keeps calling the same thing, we nudge it to do something else.
+    const toolCallSignatures = new Map<string, number>();
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
     const sessionStart = Date.now();
 
-    while (++step <= maxSteps) {
-        if (signal?.aborted) { return '[INTERRUPTED] Execution cancelled by user.'; }
+    const emitTelemetry = () => {
+        if (!onTelemetry) { return; }
+        if (totalCompletionTokens === 0 && totalElapsedMs === 0) { return; }
+        const elapsedSec = totalElapsedMs / 1000;
+        const tokensPerSec = elapsedSec > 0 ? Math.round(totalCompletionTokens / elapsedSec) : 0;
+        onTelemetry({
+            promptTokens: totalPromptTokens,
+            completionTokens: totalCompletionTokens,
+            tokensPerSec,
+            elapsedMs: Date.now() - sessionStart,
+        });
+    };
 
-        if (injectedMessage) {
-            const msg = injectedMessage;
-            injectedMessage = null;
-            roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${msg}` });
+    while (++step <= maxSteps) {
+        if (signal?.aborted) { emitTelemetry(); return '[INTERRUPTED] Execution cancelled by user.'; }
+
+        if (injectedMessages.length > 0) {
+            const combined = injectedMessages.splice(0).join('\n');
+            roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${combined}` });
             lastToolName = '';
         }
 
@@ -528,10 +551,12 @@ export async function runAgentLoop(
         }
 
         if (result.responseText === '__ABORTED__') {
+            emitTelemetry();
             return '[INTERRUPTED] Execution cancelled by user.';
         }
 
         if (result.responseText === '__INFRA_ERROR__') {
+            emitTelemetry();
             return 'Erro de conexao com o modelo. Verifique se o LM Studio esta rodando e se o modelo tem memoria suficiente para ser carregado.';
         }
 
@@ -555,6 +580,29 @@ export async function runAgentLoop(
             lastToolName = name;
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
+
+            // Loop guard: if the model calls the same tool with the same args
+            // 3+ times in a row, inject a corrective message instead of running
+            // it again. Skips for run_command (legitimately retried) and
+            // todo_update (whole list is the arg, changes per call).
+            const sig = `${name}:${JSON.stringify(args)}`;
+            const sigCount = (toolCallSignatures.get(sig) || 0) + 1;
+            toolCallSignatures.set(sig, sigCount);
+            if (sigCount >= 3 && name !== 'run_command' && name !== 'todo_update') {
+                roundMessages.push({
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [{ id: toolCallId, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+                });
+                roundMessages.push({
+                    role: 'tool',
+                    content: `[LOOP DETECTED] You have called ${name} with the same arguments ${sigCount} times. The result has not changed. Stop repeating this call. Either: (a) use a different tool, (b) use different arguments, or (c) act on the information you already have.`,
+                    tool_call_id: toolCallId,
+                });
+                lastToolName = name;
+                continue;
+            }
+
             const toolOutput = handler
                 ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
@@ -603,6 +651,7 @@ export async function runAgentLoop(
                 emptyResponseStreak++;
                 onStatus('Compactando contexto...');
                 if (emptyResponseStreak >= 3) {
+                    emitTelemetry();
                     return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
                 }
                 // Progressive pruning: each retry removes more pairs
@@ -626,6 +675,7 @@ export async function runAgentLoop(
                 pendingActionStreak++;
                 if (pendingActionStreak >= 3) {
                     pendingActionStreak = 0;
+                    emitTelemetry();
                     return text;
                 }
                 roundMessages.push({ role: 'assistant', content: text });
@@ -641,9 +691,9 @@ export async function runAgentLoop(
             pendingActionStreak = 0;
 
             // In auto mode: before returning, check editor diagnostics.
-            // If there are errors in files written this round, the model must fix them.
+            // Only relevant if the model actually wrote/edited files this round.
             // Wait 2s for the TypeScript language server to process the new files.
-            if (autoMode && filesReadThisRound.size > 0) {
+            if (autoMode && counters.filesWritten > 0) {
                 await new Promise(r => setTimeout(r, 2000));
                 const diag = onGetDiagnostics();
                 // Only block on actual errors — warnings are ignored in auto mode
@@ -660,17 +710,16 @@ export async function runAgentLoop(
                 }
             }
 
-            // Emit telemetry before returning
-            if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {
-                const elapsedSec = totalElapsedMs / 1000;
-                const tokensPerSec = elapsedSec > 0 ? Math.round(totalCompletionTokens / elapsedSec) : 0;
-                onTelemetry({ promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, tokensPerSec, elapsedMs: Date.now() - sessionStart });
-            }
+            emitTelemetry();
             return text;
         } else {
-            break;
+            // result.responseText is undefined and no toolCall — API returned
+            // an unexpected shape. Treat as infra issue, don't loop silently.
+            emitTelemetry();
+            return 'Resposta inesperada do modelo. Tente novamente.';
         }
     }
 
-    return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
+    emitTelemetry();
+    return 'Limite de passos atingido. A tarefa pode estar muito grande — tente dividir em pedidos menores.';
 }

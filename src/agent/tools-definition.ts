@@ -15,6 +15,11 @@ const LONG_RUNNING_PREFIXES = [
     'npx nodemon', 'npx ts-node-dev', 'node ', 'python ', 'python3 ',
 ];
 
+// Hard timeout for any command. The plugin runs LM locally so build/test
+// times vary with hardware — 5 min is a generous ceiling. After this we kill
+// the child to prevent the agent loop from hanging forever.
+const COMMAND_HARD_TIMEOUT_MS = 5 * 60 * 1000;
+
 export const runCommandTool = (command: string, cwd: string): EventEmitter => {
     const emitter = new EventEmitter();
     const processChild = spawn(command, [], { cwd: cwd || process.cwd(), shell: true });
@@ -34,10 +39,22 @@ export const runCommandTool = (command: string, cwd: string): EventEmitter => {
         }, 8000);
     }
 
+    // Hard timeout — kills the process if it never exits.
+    const hardTimer = setTimeout(() => {
+        if (resolved) { return; }
+        resolved = true;
+        try { processChild.kill('SIGTERM'); } catch {}
+        setTimeout(() => { try { processChild.kill('SIGKILL'); } catch {} }, 2000);
+        if (longRunningTimer) { clearTimeout(longRunningTimer); }
+        emitter.emit('exit_code', 124);
+        emitter.emit('done', `${outputBuffer}\n[TIMEOUT] Command exceeded ${COMMAND_HARD_TIMEOUT_MS / 1000}s and was terminated. If this was a build on a slow machine, simplify the task or run it manually.`);
+    }, COMMAND_HARD_TIMEOUT_MS);
+
     function checkServerReady(chunk: string) {
         if (!resolved && isLongRunning && SERVER_READY_PATTERNS.some(p => p.test(chunk))) {
             resolved = true;
             if (longRunningTimer) { clearTimeout(longRunningTimer); }
+            clearTimeout(hardTimer);
             emitter.emit('long_running');
             setTimeout(() => emitter.emit('done', outputBuffer), 300);
         }
@@ -59,6 +76,7 @@ export const runCommandTool = (command: string, cwd: string): EventEmitter => {
 
     processChild.on('close', (code) => {
         if (longRunningTimer) { clearTimeout(longRunningTimer); }
+        clearTimeout(hardTimer);
         if (!resolved) {
             resolved = true;
             emitter.emit('exit_code', code ?? 0);
@@ -68,6 +86,7 @@ export const runCommandTool = (command: string, cwd: string): EventEmitter => {
 
     processChild.on('error', (err) => {
         if (longRunningTimer) { clearTimeout(longRunningTimer); }
+        clearTimeout(hardTimer);
         if (!resolved) {
             resolved = true;
             emitter.emit('exit_code', 1);
