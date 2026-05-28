@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.3
+
+- Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro: listas como "Abertos no editor: a.ts, b.tsx, c.json" agora tem cada arquivo pintado individualmente para identificacao rapida
+
 ## 0.7.2
 
 - Arquivo criado/editado abre automaticamente em evidencia no editor (preview: false, preserveFocus: true), com throttle de 1.5s por path

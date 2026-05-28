@@ -276,6 +276,9 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.7.3
+- Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro
+
 ### 0.7.2
 - Arquivos criados ou editados pelo agente abrem automaticamente em evidencia no editor
 - Modo AUTO nao desiste mais ao receber erro de comando: continua corrigindo ate o build passar com exit code 0
