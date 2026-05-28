@@ -198,7 +198,7 @@ async function checkAnthropicConnection(apiKey) {
         return false;
     }
 }
-async function callAI(endpoint, authHeaders, messages, tools, model, signal, onChunk) {
+async function callAI(endpoint, authHeaders, messages, tools, model, signal, onChunk, onLiveTelemetry) {
     const formattedTools = tools.map(t => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters },
@@ -212,6 +212,7 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             let toolArgsRaw = '';
             let promptTokens = 0;
             let completionTokens = 0;
+            let liveTokens = 0;
             const t0 = Date.now();
             await requestStream(endpoint, {
                 model, messages, tools: formattedTools, tool_choice: 'auto', stream: true,
@@ -237,6 +238,12 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
                     if (delta.content) {
                         textAcc += delta.content;
                         onChunk(delta.content);
+                        liveTokens++;
+                        if (onLiveTelemetry) {
+                            const elapsedMs = Date.now() - t0;
+                            const tokensPerSec = elapsedMs > 0 ? Math.round(liveTokens / (elapsedMs / 1000)) : 0;
+                            onLiveTelemetry(liveTokens, tokensPerSec, elapsedMs);
+                        }
                     }
                     if (delta.tool_calls?.length > 0) {
                         const tc = delta.tool_calls[0];
@@ -287,7 +294,7 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
         return { responseText: '__INFRA_ERROR__' };
     }
 }
-async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk) {
+async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, onLiveTelemetry) {
     const systemMessage = messages.find(m => m.role === 'system');
     const systemContent = typeof systemMessage?.content === 'string' ? systemMessage.content : undefined;
     const chatMessages = messages
@@ -342,8 +349,9 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk) 
         let toolId = '';
         let toolName = '';
         let toolArgsRaw = '';
-        // track which block index is a tool_use vs text
         let currentBlockType = '';
+        let liveTokens = 0;
+        const t0 = Date.now();
         await requestStream(`${exports.ANTHROPIC_API_BASE}/v1/messages`, body, headers, signal, (line) => {
             if (!line.startsWith('data: ')) {
                 return;
@@ -364,6 +372,12 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk) 
                     if (delta.type === 'text_delta' && delta.text) {
                         textAcc += delta.text;
                         onChunk?.(delta.text);
+                        liveTokens++;
+                        if (onLiveTelemetry) {
+                            const elapsedMs = Date.now() - t0;
+                            const tokensPerSec = elapsedMs > 0 ? Math.round(liveTokens / (elapsedMs / 1000)) : 0;
+                            onLiveTelemetry(liveTokens, tokensPerSec, elapsedMs);
+                        }
                     }
                     else if (delta.type === 'input_json_delta' && delta.partial_json) {
                         toolArgsRaw += delta.partial_json;

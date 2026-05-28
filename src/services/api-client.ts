@@ -189,7 +189,8 @@ export async function callAI(
     tools: ToolDefinition[],
     model: string,
     signal?: AbortSignal,
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void
 ): Promise<AIResponse> {
     const formattedTools = tools.map(t => ({
         type: 'function',
@@ -205,6 +206,7 @@ export async function callAI(
             let toolArgsRaw = '';
             let promptTokens = 0;
             let completionTokens = 0;
+            let liveTokens = 0;
             const t0 = Date.now();
 
             await requestStream(endpoint, {
@@ -226,6 +228,12 @@ export async function callAI(
                     if (delta.content) {
                         textAcc += delta.content;
                         onChunk(delta.content);
+                        liveTokens++;
+                        if (onLiveTelemetry) {
+                            const elapsedMs = Date.now() - t0;
+                            const tokensPerSec = elapsedMs > 0 ? Math.round(liveTokens / (elapsedMs / 1000)) : 0;
+                            onLiveTelemetry(liveTokens, tokensPerSec, elapsedMs);
+                        }
                     }
 
                     if (delta.tool_calls?.length > 0) {
@@ -277,7 +285,8 @@ export async function callAnthropicAI(
     tools: ToolDefinition[],
     model: string,
     signal?: AbortSignal,
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void
 ): Promise<AIResponse> {
     const systemMessage = messages.find(m => m.role === 'system');
     const systemContent = typeof systemMessage?.content === 'string' ? systemMessage.content : undefined;
@@ -335,8 +344,9 @@ export async function callAnthropicAI(
         let toolId = '';
         let toolName = '';
         let toolArgsRaw = '';
-        // track which block index is a tool_use vs text
         let currentBlockType = '';
+        let liveTokens = 0;
+        const t0 = Date.now();
 
         await requestStream(`${ANTHROPIC_API_BASE}/v1/messages`, body, headers, signal, (line) => {
             if (!line.startsWith('data: ')) { return; }
@@ -356,6 +366,12 @@ export async function callAnthropicAI(
                     if (delta.type === 'text_delta' && delta.text) {
                         textAcc += delta.text;
                         onChunk?.(delta.text);
+                        liveTokens++;
+                        if (onLiveTelemetry) {
+                            const elapsedMs = Date.now() - t0;
+                            const tokensPerSec = elapsedMs > 0 ? Math.round(liveTokens / (elapsedMs / 1000)) : 0;
+                            onLiveTelemetry(liveTokens, tokensPerSec, elapsedMs);
+                        }
                     } else if (delta.type === 'input_json_delta' && delta.partial_json) {
                         toolArgsRaw += delta.partial_json;
                     }

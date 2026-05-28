@@ -369,7 +369,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry) {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE: Execute the user's task completely without asking for confirmation. Write files directly, run tests after each change, fix failures and retry until done. When the task is fully complete, respond with a short summary of what was done and stop — do not keep exploring or looping.`
         : '';
@@ -471,8 +471,8 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             ? (text) => { streamedSoFar += text; onStreamChunk(text); }
             : undefined;
         const result = provider === 'anthropic' && anthropicApiKey
-            ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk)
-            : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk);
+            ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
+            : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
         // If the model called a tool, the streamed text was reasoning/preamble —
         // tell the UI to discard it so the bubble doesn't show stale content.
         if (result.toolCall && streamedSoFar) {

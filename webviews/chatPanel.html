@@ -1972,8 +1972,10 @@
                 appendConfirmCommandCard(msg.id, msg.cmd, msg.cwd);
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
+            } else if (msg.command === 'live_telemetry') {
+                updateLiveTelemetry(msg.tokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'telemetry') {
-                addTelemetryItem(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
+                finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
                 if (!msg.running) { currentTodoCard = null; }
@@ -2002,6 +2004,11 @@
                     streamBubble = null;
                     streamText = '';
                     streamRafPending = false;
+                    // Remove o item de telemetria ao vivo — foi preamble de tool call
+                    if (liveTelemetryItem) { liveTelemetryItem.remove(); }
+                    liveTelemetryItem = null;
+                    liveTelemetryChips = null;
+                    liveTelemetryPending = null;
                     return;
                 }
                 streamText += msg.text;
@@ -2164,7 +2171,14 @@
             if (active) { active.classList.replace('active', 'done'); }
         }
 
-        function addTelemetryItem(promptTokens, completionTokens, tokensPerSec, elapsedMs) {
+        let liveTelemetryItem = null;
+        let liveTelemetryChips = null;
+        // Throttle live updates to ~10fps to avoid layout thrashing
+        let liveTelemetryRaf = false;
+        let liveTelemetryPending = null;
+
+        function getOrCreateLiveTelemetryItem() {
+            if (liveTelemetryItem) { return; }
             const tl = getTimeline();
             if (!tl) { return; }
             const item = document.createElement('div');
@@ -2175,27 +2189,61 @@
             body.className = 'tl-body';
             const label = document.createElement('span');
             label.className = 'tl-text';
-            label.textContent = 'Telemetria';
+            label.textContent = 'Gerando';
             const chips = document.createElement('div');
             chips.className = 'tl-telemetry-chips';
-            const elapsedSec = (elapsedMs / 1000).toFixed(1);
-            const data = [
-                promptTokens   > 0 ? `Prompt <span>${promptTokens}t</span>`       : null,
-                completionTokens > 0 ? `Gerado <span>${completionTokens}t</span>` : null,
-                tokensPerSec   > 0 ? `<span>${tokensPerSec} t/s</span>`           : null,
-                `Tempo <span>${elapsedSec}s</span>`,
-            ].filter(Boolean);
-            data.forEach(html => {
-                const chip = document.createElement('span');
-                chip.className = 'tl-chip';
-                chip.innerHTML = html;
-                chips.appendChild(chip);
-            });
             body.appendChild(label);
             body.appendChild(chips);
             item.appendChild(dot);
             item.appendChild(body);
             tl.appendChild(item);
+            liveTelemetryItem = item;
+            liveTelemetryChips = chips;
+        }
+
+        function renderTelemetryChips(chips, data) {
+            chips.innerHTML = '';
+            data.filter(Boolean).forEach(html => {
+                const chip = document.createElement('span');
+                chip.className = 'tl-chip';
+                chip.innerHTML = html;
+                chips.appendChild(chip);
+            });
+        }
+
+        function updateLiveTelemetry(tokens, tokensPerSec, elapsedMs) {
+            getOrCreateLiveTelemetryItem();
+            if (!liveTelemetryChips) { return; }
+            liveTelemetryPending = { tokens, tokensPerSec, elapsedMs };
+            if (liveTelemetryRaf) { return; }
+            liveTelemetryRaf = true;
+            requestAnimationFrame(() => {
+                liveTelemetryRaf = false;
+                if (!liveTelemetryPending || !liveTelemetryChips) { return; }
+                const { tokens: t, tokensPerSec: tps, elapsedMs: ms } = liveTelemetryPending;
+                liveTelemetryPending = null;
+                renderTelemetryChips(liveTelemetryChips, [
+                    `Gerado <span>${t}t</span>`,
+                    tps > 0 ? `<span>${tps} t/s</span>` : null,
+                    `<span>${(ms / 1000).toFixed(1)}s</span>`,
+                ]);
+            });
+        }
+
+        function finalizeTelemetry(promptTokens, completionTokens, tokensPerSec, elapsedMs) {
+            getOrCreateLiveTelemetryItem();
+            if (!liveTelemetryItem || !liveTelemetryChips) { return; }
+            // Update label
+            liveTelemetryItem.querySelector('.tl-text').textContent = 'Telemetria';
+            const elapsedSec = (elapsedMs / 1000).toFixed(1);
+            renderTelemetryChips(liveTelemetryChips, [
+                promptTokens > 0 ? `Prompt <span>${promptTokens}t</span>` : null,
+                completionTokens > 0 ? `Gerado <span>${completionTokens}t</span>` : null,
+                tokensPerSec > 0 ? `<span>${tokensPerSec} t/s</span>` : null,
+                `Tempo <span>${elapsedSec}s</span>`,
+            ]);
+            liveTelemetryItem = null;
+            liveTelemetryChips = null;
         }
 
         let activeTerminal = null;
@@ -2306,6 +2354,9 @@
             streamBubble = null;
             streamText = '';
             streamRafPending = false;
+            liveTelemetryItem = null;
+            liveTelemetryChips = null;
+            liveTelemetryPending = null;
             // Sela a timeline anterior removendo o id para que getTimeline()
             // sempre retorne a nova, evitando que dois elementos tenham o mesmo id
             const oldTimeline = document.getElementById('agent-timeline');

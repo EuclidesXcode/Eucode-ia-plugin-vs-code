@@ -219,6 +219,9 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 const notifyTelemetry = (metrics: { promptTokens: number; completionTokens: number; tokensPerSec: number; elapsedMs: number }) =>
                     webviewView.webview.postMessage({ command: 'telemetry', ...metrics });
 
+                const notifyLiveTelemetry = (tokens: number, tokensPerSec: number, elapsedMs: number) =>
+                    webviewView.webview.postMessage({ command: 'live_telemetry', tokens, tokensPerSec, elapsedMs });
+
                 response = await runAgentLoop(
                     message.text, fullContextBlock, defaultCwd, endpoint, authHeaders,
                     this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd,
@@ -233,7 +236,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     notifyStreamChunk,
                     notifyTelemetry,
                     this._settings.ragEnabled ? this._settings.ragEndpoint : undefined,
-                    this._settings.ragEnabled ? this._settings.ragCollection : undefined
+                    this._settings.ragEnabled ? this._settings.ragCollection : undefined,
+                    notifyLiveTelemetry
                 );
                 this._abortController = null;
                 this._injectMessage = null;

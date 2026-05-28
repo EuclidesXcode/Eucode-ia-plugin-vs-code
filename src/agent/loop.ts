@@ -390,7 +390,8 @@ export async function runAgentLoop(
     onStreamChunk?: (text: string) => void,
     onTelemetry?: (metrics: { promptTokens: number; completionTokens: number; tokensPerSec: number; elapsedMs: number }) => void,
     ragEndpoint?: string,
-    ragCollection?: string
+    ragCollection?: string,
+    onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void
 ): Promise<string> {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE: Execute the user's task completely without asking for confirmation. Write files directly, run tests after each change, fix failures and retry until done. When the task is fully complete, respond with a short summary of what was done and stop — do not keep exploring or looping.`
@@ -509,8 +510,8 @@ export async function runAgentLoop(
             : undefined;
 
         const result = provider === 'anthropic' && anthropicApiKey
-            ? await callAnthropicAI(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk)
-            : await callAI(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk);
+            ? await callAnthropicAI(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
+            : await callAI(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
 
         // If the model called a tool, the streamed text was reasoning/preamble —
         // tell the UI to discard it so the bubble doesn't show stale content.
