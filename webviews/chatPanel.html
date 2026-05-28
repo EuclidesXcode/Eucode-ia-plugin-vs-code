@@ -1998,7 +1998,17 @@
                 finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
-                if (!msg.running) { currentTodoCard = null; }
+                if (!msg.running) {
+                    currentTodoCard = null;
+                    // Failsafe: ao parar a execucao (stop pelo usuario ou fim
+                    // do loop), garante que nenhum item de status fique girando.
+                    const tl = getTimeline();
+                    if (tl) {
+                        tl.querySelectorAll('.tl-item.active:not(.tl-response)').forEach(el => {
+                            el.classList.replace('active', 'done');
+                        });
+                    }
+                }
             } else if (msg.command === 'stream_chunk') {
                 if (msg.text === '\x00CLEAR') {
                     // Tool call iniciou — congela o texto ja escrito como markdown fixo,
@@ -2074,6 +2084,16 @@
                 // Pode ser o item ativo de resposta (se ainda nao foi congelado pelo CLEAR)
                 const activeResponse = tl?.querySelector('.tl-item.active.tl-response');
                 const loadingBubble = chatContainer.querySelector('[data-loading]');
+
+                // SEMPRE finalizar qualquer item ativo de status que NAO seja
+                // a resposta em streaming. Cobre o caso onde o loop retorna sem
+                // novo texto e o ultimo "Analyzing project structure..." ficaria
+                // com a animacao girando para sempre.
+                if (tl) {
+                    tl.querySelectorAll('.tl-item.active:not(.tl-response)').forEach(el => {
+                        el.classList.replace('active', 'done');
+                    });
+                }
 
                 // Detecta o sentinel [CONTINUE_BUTTON] colocado pelo loop quando
                 // o modo AUTO desistiu. Remove do texto e adiciona um botao real.
