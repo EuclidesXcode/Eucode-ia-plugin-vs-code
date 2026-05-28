@@ -369,7 +369,7 @@ export async function runAgentLoop(
     ragCollection?: string
 ): Promise<string> {
     const autoBlock = autoMode
-        ? `\nAUTO MODE ACTIVE: Write files directly without asking for confirmation. After each write, run the project tests automatically with run_command. If tests fail, fix the code and run again. Keep fixing until it works.`
+        ? `\nAUTO MODE ACTIVE: Execute the user's task completely without asking for confirmation. Write files directly, run tests after each change, fix failures and retry until done. When the task is fully complete, respond with a short summary of what was done and stop — do not keep exploring or looping.`
         : '';
 
     // Optional RAG: query vector DB and prepend relevant context
@@ -380,9 +380,13 @@ export async function runAgentLoop(
     }
 
     const systemContent = [SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
-    // In auto mode skip session history entirely — the round's own tool chain
-    // grows large enough; including prior turns would quickly overflow the context.
-    const priorMessages = autoMode ? [] : buildMessagesFromHistory(sessionHistory.slice(0, -1));
+    // In auto mode include only the last 1 history pair so the model knows what
+    // the user was working on — skipping history entirely left it context-blind.
+    // The round's own tool chain still grows large, so keep it to 1 pair max.
+    const historySlice = sessionHistory.slice(0, -1);
+    const priorMessages = autoMode
+        ? buildMessagesFromHistory(historySlice.slice(-2))  // last user+assistant pair
+        : buildMessagesFromHistory(historySlice);
     const roundMessages: Message[] = [
         { role: 'system', content: systemContent },
         ...priorMessages,
@@ -413,9 +417,10 @@ export async function runAgentLoop(
     ];
 
     let lastToolName = '';
-    const maxSteps = autoMode ? 200 : MAX_AGENT_STEPS;
+    const maxSteps = autoMode ? 40 : MAX_AGENT_STEPS;
     let step = 0;
     let emptyResponseStreak = 0;
+    let pendingActionStreak = 0;
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
@@ -512,7 +517,6 @@ export async function runAgentLoop(
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
             lastToolName = name;
-            if (autoMode) { step = 1; }
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
@@ -583,6 +587,12 @@ export async function runAgentLoop(
             emptyResponseStreak = 0;
 
             if (detectsPendingAction(text, autoMode)) {
+                pendingActionStreak++;
+                if (pendingActionStreak >= 3) {
+                    // Model keeps describing but not acting — return what it said
+                    pendingActionStreak = 0;
+                    return text;
+                }
                 roundMessages.push({ role: 'assistant', content: text });
                 roundMessages.push({
                     role: 'user',
@@ -593,6 +603,7 @@ export async function runAgentLoop(
                 lastToolName = '';
                 continue;
             }
+            pendingActionStreak = 0;
 
             // Emit telemetry before returning
             if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {

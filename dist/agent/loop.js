@@ -349,7 +349,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
 }
 async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection) {
     const autoBlock = autoMode
-        ? `\nAUTO MODE ACTIVE: Write files directly without asking for confirmation. After each write, run the project tests automatically with run_command. If tests fail, fix the code and run again. Keep fixing until it works.`
+        ? `\nAUTO MODE ACTIVE: Execute the user's task completely without asking for confirmation. Write files directly, run tests after each change, fix failures and retry until done. When the task is fully complete, respond with a short summary of what was done and stop — do not keep exploring or looping.`
         : '';
     // Optional RAG: query vector DB and prepend relevant context
     let ragContext = '';
@@ -358,9 +358,13 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         ragContext = (0, rag_client_1.formatRagContext)(ragResults);
     }
     const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
-    // In auto mode skip session history entirely — the round's own tool chain
-    // grows large enough; including prior turns would quickly overflow the context.
-    const priorMessages = autoMode ? [] : (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
+    // In auto mode include only the last 1 history pair so the model knows what
+    // the user was working on — skipping history entirely left it context-blind.
+    // The round's own tool chain still grows large, so keep it to 1 pair max.
+    const historySlice = sessionHistory.slice(0, -1);
+    const priorMessages = autoMode
+        ? (0, history_service_1.buildMessagesFromHistory)(historySlice.slice(-2)) // last user+assistant pair
+        : (0, history_service_1.buildMessagesFromHistory)(historySlice);
     const roundMessages = [
         { role: 'system', content: systemContent },
         ...priorMessages,
@@ -383,9 +387,10 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         'Generating response...',
     ];
     let lastToolName = '';
-    const maxSteps = autoMode ? 200 : constants_2.MAX_AGENT_STEPS;
+    const maxSteps = autoMode ? 40 : constants_2.MAX_AGENT_STEPS;
     let step = 0;
     let emptyResponseStreak = 0;
+    let pendingActionStreak = 0;
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
@@ -471,9 +476,6 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
             lastToolName = name;
-            if (autoMode) {
-                step = 1;
-            }
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
@@ -540,6 +542,12 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             }
             emptyResponseStreak = 0;
             if (detectsPendingAction(text, autoMode)) {
+                pendingActionStreak++;
+                if (pendingActionStreak >= 3) {
+                    // Model keeps describing but not acting — return what it said
+                    pendingActionStreak = 0;
+                    return text;
+                }
                 roundMessages.push({ role: 'assistant', content: text });
                 roundMessages.push({
                     role: 'user',
@@ -550,6 +558,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 lastToolName = '';
                 continue;
             }
+            pendingActionStreak = 0;
             // Emit telemetry before returning
             if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {
                 const elapsedSec = totalElapsedMs / 1000;
