@@ -529,7 +529,6 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             }, 0);
             const estimatedTokens = Math.floor(totalChars / 4);
             if (estimatedTokens > 1200) {
-                onStatus('Compactando contexto...');
                 // Keep more pairs in auto mode so model doesn't lose what it just read
                 pruneRoundToolMessages(roundMessages, autoMode ? 3 : 2);
             }
@@ -639,7 +638,6 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             // Short responses are legitimate (model may say "Ok." then call a tool).
             if (!text) {
                 emptyResponseStreak++;
-                onStatus('Compactando contexto...');
                 if (emptyResponseStreak >= 3) {
                     emitTelemetry();
                     return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
