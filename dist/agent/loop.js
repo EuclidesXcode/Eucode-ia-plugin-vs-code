@@ -85,18 +85,32 @@ async function checkRemovedSymbols(before, after, cwd) {
     }
     return warnings;
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache) {
     return {
         list_directory: async (args, cwd) => {
-            const dir = args.dirPath || args.path || cwd;
+            const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
+            if (dirCache.has(dir)) {
+                onStatus(`Reading structure: ${path.basename(dir)} (cached)`);
+                return dirCache.get(dir);
+            }
             onStatus(`Reading structure: ${path.basename(dir)}`);
-            return (0, file_tools_1.listDirectory)(dir, cwd);
+            const result = await (0, file_tools_1.listDirectory)(dir, cwd);
+            dirCache.set(dir, result);
+            return result;
         },
         read_local_file: async (args, cwd) => {
             const fp = args.filePath || '';
+            const fullPath = path.resolve(cwd, fp);
+            if (fileCache.has(fullPath)) {
+                onStatus(`Reading file: ${path.basename(fp)} (cached)`);
+                filesReadThisRound.add(fullPath);
+                return fileCache.get(fullPath);
+            }
             onStatus(`Reading file: ${path.basename(fp)}`);
-            filesReadThisRound.add(path.resolve(cwd, fp));
-            return (0, file_tools_1.readLocalFile)(fp, cwd);
+            const result = await (0, file_tools_1.readLocalFile)(fp, cwd);
+            fileCache.set(fullPath, result);
+            filesReadThisRound.add(fullPath);
+            return result;
         },
         edit_file: async (args, cwd) => {
             const filePath = args.filePath || '';
@@ -119,14 +133,18 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const after = before ? before.replace(oldString, newString) : newString;
             if (autoMode) {
                 onStatus(`Editing: ${path.basename(filePath)}`);
-                return (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
+                const editResult = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
+                fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                return editResult;
             }
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
             const approved = await onConfirmWrite({ filePath, before, after });
             if (!approved) {
                 return '[CANCELLED] User rejected the file change.';
             }
-            return (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
+            const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
+            fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+            return editResult2;
         },
         search_in_workspace: async (args, cwd) => {
             onStatus(`Searching project: "${args.query}"`);
@@ -161,14 +179,18 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }
             if (autoMode) {
                 onStatus(`Writing: ${path.basename(filePath)}`);
-                return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+                const writeResult = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+                fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                return writeResult;
             }
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved) {
+            const approved2 = await onConfirmWrite({ filePath, before, after: content });
+            if (!approved2) {
                 return '[CANCELLED] User rejected the file change.';
             }
-            return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+            const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+            fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+            return writeResult2;
         },
         run_command: async (args, cwd) => {
             const cmd = args.command || '';
@@ -376,7 +398,9 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     }
     const filesReadThisRound = new Set();
     const sessionApprovedCommands = new Set();
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands);
+    const fileCache = new Map();
+    const dirCache = new Map();
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',

@@ -78,19 +78,35 @@ function buildToolHandlers(
     onTodoUpdate: (todos: TodoItem[]) => void,
     autoMode: boolean,
     filesReadThisRound: Set<string>,
-    sessionApprovedCommands: Set<string>
+    sessionApprovedCommands: Set<string>,
+    fileCache: Map<string, string>,
+    dirCache: Map<string, string>
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
         list_directory: async (args, cwd) => {
-            const dir = args.dirPath || args.path || cwd;
+            const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
+            if (dirCache.has(dir)) {
+                onStatus(`Reading structure: ${path.basename(dir)} (cached)`);
+                return dirCache.get(dir)!;
+            }
             onStatus(`Reading structure: ${path.basename(dir)}`);
-            return listDirectory(dir, cwd);
+            const result = await listDirectory(dir, cwd);
+            dirCache.set(dir, result);
+            return result;
         },
         read_local_file: async (args, cwd) => {
             const fp: string = args.filePath || '';
+            const fullPath = path.resolve(cwd, fp);
+            if (fileCache.has(fullPath)) {
+                onStatus(`Reading file: ${path.basename(fp)} (cached)`);
+                filesReadThisRound.add(fullPath);
+                return fileCache.get(fullPath)!;
+            }
             onStatus(`Reading file: ${path.basename(fp)}`);
-            filesReadThisRound.add(path.resolve(cwd, fp));
-            return readLocalFile(fp, cwd);
+            const result = await readLocalFile(fp, cwd);
+            fileCache.set(fullPath, result);
+            filesReadThisRound.add(fullPath);
+            return result;
         },
         edit_file: async (args, cwd) => {
             const filePath: string = args.filePath || '';
@@ -110,13 +126,17 @@ function buildToolHandlers(
 
             if (autoMode) {
                 onStatus(`Editing: ${path.basename(filePath)}`);
-                return editLocalFile(filePath, oldString, newString, cwd);
+                const editResult = editLocalFile(filePath, oldString, newString, cwd);
+                fileCache.delete(resolveFilePath(filePath, cwd));
+                return editResult;
             }
 
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
             const approved = await onConfirmWrite({ filePath, before, after });
             if (!approved) { return '[CANCELLED] User rejected the file change.'; }
-            return editLocalFile(filePath, oldString, newString, cwd);
+            const editResult2 = editLocalFile(filePath, oldString, newString, cwd);
+            fileCache.delete(resolveFilePath(filePath, cwd));
+            return editResult2;
         },
         search_in_workspace: async (args, cwd) => {
             onStatus(`Searching project: "${args.query}"`);
@@ -152,13 +172,17 @@ function buildToolHandlers(
 
             if (autoMode) {
                 onStatus(`Writing: ${path.basename(filePath)}`);
-                return writeLocalFile(filePath, content, cwd);
+                const writeResult = writeLocalFile(filePath, content, cwd);
+                fileCache.delete(resolveFilePath(filePath, cwd));
+                return writeResult;
             }
 
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved) { return '[CANCELLED] User rejected the file change.'; }
-            return writeLocalFile(filePath, content, cwd);
+            const approved2 = await onConfirmWrite({ filePath, before, after: content });
+            if (!approved2) { return '[CANCELLED] User rejected the file change.'; }
+            const writeResult2 = writeLocalFile(filePath, content, cwd);
+            fileCache.delete(resolveFilePath(filePath, cwd));
+            return writeResult2;
         },
         run_command: async (args, cwd) => {
             const cmd: string = args.command || '';
@@ -400,10 +424,13 @@ export async function runAgentLoop(
 
     const filesReadThisRound = new Set<string>();
     const sessionApprovedCommands = new Set<string>();
+    const fileCache = new Map<string, string>();
+    const dirCache = new Map<string, string>();
     const toolHandlers = buildToolHandlers(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
-        onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands
+        onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands,
+        fileCache, dirCache
     );
 
     const thinkingStatus = [
