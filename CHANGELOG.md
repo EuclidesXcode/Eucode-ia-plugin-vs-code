@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.1
+
+- Modo AUTO: cache de leituras por round — read_local_file e list_directory retornam resultado cacheado, eliminando releituras repetidas do mesmo arquivo
+- Modo AUTO: loop infinito de leitura eliminado — isGarbage agora so dispara em respostas completamente vazias, nao em respostas curtas legitimas
+- Modo AUTO: pruning preventivo aumentado para keepPairs=3, evitando que o modelo perca o contexto dos resultados das ferramentas recentes
+- Modo AUTO: modelo forcado a agir quando retorna texto sem ter escrito nenhum arquivo (Stop planning — act now)
+- Modo AUTO: verificacao automatica de erros do editor apos resposta final — agente continua corrigindo ate os erros de TypeScript/build desaparecerem
+- Modo AUTO: warnings do VS Code ignorados — somente [ERROR] bloqueia o loop; avisos de schema do editor nao causam mais travamento
+- Modo AUTO: historico do ultimo par incluido para o modelo nao perder contexto da conversa anterior
+- Modo AUTO: maxSteps reduzido de 200 para 40; instrucao clara de finalizacao no system prompt
+- Modo AUTO: pendingActionStreak limita a 3 tentativas de descricao sem acao antes de retornar
+- Telemetria ao vivo durante streaming: contador de tokens e tokens/s atualizados em tempo real na timeline via requestAnimationFrame
+- Telemetria: item "Gerando" criado ao primeiro chunk, atualizado continuamente, finalizado com dados definitivos do servidor ao concluir
+- Telemetria: item live removido automaticamente se o stream for interrompido por tool call (era preamble, nao resposta final)
+
+## 0.7.0
+
+- Suporte a RAG opcional via Chroma — banco vetorial local configuravel nas settings (toggle + endpoint + collection)
+- RAG injeta contexto semantico relevante no system prompt antes de cada resposta; timeout de 5s, nunca bloqueia o chat
+- .eucodeIgnore: arquivo de filtro gitignore-style na raiz do workspace para excluir arquivos/pastas do contexto do agente
+- Telemetria de desempenho na timeline: chips com tokens/s, prompt tokens e tempo total de resposta ao final de cada rodada
+- Distincao entre erro de infraestrutura (OOM, conexao) e contexto cheio — sentinel __INFRA_ERROR__ retorna mensagem direta sem retry
+- Sentinel __ABORTED__ para cancelamento pelo usuario, separado de outros erros
+- Notificacao nativa macOS via osascript quando VS Code nao esta em foco
+
 ## 0.6.3
 
 - Timeline persistente: texto do LM permanece visivel ao iniciar nova tool call — convertido em markdown fixo em vez de sumido
