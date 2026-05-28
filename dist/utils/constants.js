@@ -12,6 +12,6 @@ exports.BINARY_EXTS = new Set([
     '.zip', '.gz', '.pdf', '.lock',
 ]);
 exports.IGNORED_DIRS = new Set([
-    'node_modules', '.git', 'dist', 'out', 'build',
+    'node_modules', 'dist', 'out', 'build',
     '.next', '.cache', '__pycache__', '.vscode',
 ]);

@@ -85,6 +85,42 @@ async function checkRemovedSymbols(before, after, cwd) {
     }
     return warnings;
 }
+// Parses command output looking for error locations: "path/to/file.ext:LINE:COL"
+// or "path/to/file.ext:LINE". Returns unique file paths in order of appearance
+// plus a short summary line (first error message found).
+function parseErrorLocations(output) {
+    const seen = new Set();
+    const files = [];
+    let summary = '';
+    // file.ext:line:col or file.ext:line — common across tsc, eslint, jest, node
+    const locationRe = /([A-Za-z0-9_\-./\\]+\.[A-Za-z0-9]{1,8})(?::(\d+))(?::(\d+))?/g;
+    let m;
+    while ((m = locationRe.exec(output)) !== null) {
+        const file = m[1];
+        // skip node_modules, dist, common non-source paths
+        if (/node_modules|\bdist\/|\.next\/|coverage\//.test(file)) {
+            continue;
+        }
+        // skip common false positives (URLs, version strings)
+        if (file.startsWith('http') || /\.(?:js|ts|tsx|jsx|css|scss|json|html|vue|svelte|py|rs|go|java|md)$/i.test(file) === false) {
+            continue;
+        }
+        if (!seen.has(file)) {
+            seen.add(file);
+            files.push(file);
+        }
+        if (files.length >= 5) {
+            break;
+        }
+    }
+    // First line that looks like an error message
+    const errorLineRe = /^.*(?:error|Error|ERROR|TypeError|ReferenceError|SyntaxError|Cannot|Failed|failed|undefined).*$/m;
+    const errMatch = output.match(errorLineRe);
+    if (errMatch) {
+        summary = errMatch[0].trim().slice(0, 200);
+    }
+    return { files, summary };
+}
 function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched) {
     return {
         list_directory: async (args, cwd) => {
@@ -149,6 +185,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 const editResult = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
                 fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
                 counters.filesWritten++;
+                counters.lastEditedFile = filePath;
                 onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return editResult;
             }
@@ -160,6 +197,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
             counters.filesWritten++;
+            counters.lastEditedFile = filePath;
             onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
             return editResult2;
         },
@@ -199,6 +237,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 const writeResult = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
                 fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
                 counters.filesWritten++;
+                counters.lastEditedFile = filePath;
                 onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return writeResult;
             }
@@ -210,6 +249,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
             counters.filesWritten++;
+            counters.lastEditedFile = filePath;
             onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
             return writeResult2;
         },
@@ -244,19 +284,39 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                     onCommandEnd(exitCode);
                     const looksLikeBuild = /\b(build|test|tsc|compile|lint|jest|vitest|pytest|cargo build|go build|mvn|gradle)\b/i.test(cmd);
                     if (isLongRunning) {
-                        onStatus('Process running — awaiting your response...');
-                        counters.lastCommandFailed = false;
-                        resolve(`[PROCESS STARTED] Command "${cmd}" is running in the background. Output so far:\n${output}\nThe server is up. Inform the user they can interact.`);
+                        // Long-running processes (dev servers, watchers) often emit runtime
+                        // errors AFTER startup — capture them so the model gets oriented.
+                        const parsedRuntime = parseErrorLocations(output);
+                        counters.lastErrorFiles = parsedRuntime.files;
+                        counters.lastErrorSummary = parsedRuntime.summary;
+                        // Heuristic: if output contains "error" keywords AFTER ready markers,
+                        // treat as a failure to fix even though the process is "running".
+                        const hasRuntimeError = /\b(TypeError|ReferenceError|SyntaxError|Cannot read|Uncaught|500\b)/i.test(output);
+                        onStatus(hasRuntimeError ? 'Runtime errors detected — fixing...' : 'Process running — awaiting your response...');
+                        counters.lastCommandFailed = hasRuntimeError;
+                        if (looksLikeBuild && !hasRuntimeError) {
+                            counters.lastBuildPassed = true;
+                        }
+                        const prefix = hasRuntimeError ? '[RUNTIME ERROR]' : '[PROCESS STARTED]';
+                        resolve(`${prefix} Command "${cmd}". Output:\n${output}${hasRuntimeError ? '\nThe server started but is throwing errors. Fix the root cause in the file listed above.' : '\nThe server is up.'}`);
                     }
                     else if (exitCode !== 0) {
+                        const parsed = parseErrorLocations(output);
                         counters.lastCommandFailed = true;
+                        counters.lastErrorFiles = parsed.files;
+                        counters.lastErrorSummary = parsed.summary;
                         if (looksLikeBuild) {
                             counters.lastBuildPassed = false;
                         }
-                        resolve(`[FAILED exit=${exitCode}] Command "${cmd}" failed. You MUST diagnose and fix the underlying issue, then re-run. Do not give up. Output:\n${output || '(no output)'}`);
+                        const hint = parsed.files.length > 0
+                            ? `\n\n[ERROR LOCATIONS] Fix these files (in order):\n${parsed.files.map(f => `  - ${f}`).join('\n')}`
+                            : '';
+                        resolve(`[FAILED exit=${exitCode}] Command "${cmd}" failed. You MUST diagnose and fix the underlying issue, then re-run. Do not give up. Output:\n${output || '(no output)'}${hint}`);
                     }
                     else {
                         counters.lastCommandFailed = false;
+                        counters.lastErrorFiles = [];
+                        counters.lastErrorSummary = '';
                         if (looksLikeBuild) {
                             counters.lastBuildPassed = true;
                         }
@@ -450,7 +510,14 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     const sessionApprovedCommands = new Set();
     const fileCache = new Map();
     const dirCache = new Map();
-    const counters = { filesWritten: 0, lastCommandFailed: false, lastBuildPassed: false };
+    const counters = {
+        filesWritten: 0,
+        lastCommandFailed: false,
+        lastBuildPassed: false,
+        lastErrorFiles: [],
+        lastErrorSummary: '',
+        lastEditedFile: '',
+    };
     const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched);
     const thinkingStatus = [
         'Analyzing your request...',
@@ -638,6 +705,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             // Short responses are legitimate (model may say "Ok." then call a tool).
             if (!text) {
                 emptyResponseStreak++;
+                onStatus(`Modelo retornou vazio — recarregando contexto (tentativa ${emptyResponseStreak}/3)`);
                 if (emptyResponseStreak >= 3) {
                     emitTelemetry();
                     return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
@@ -688,17 +756,29 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                             : !counters.lastBuildPassed && counters.filesWritten > 0
                                 ? 'O build ainda nao passou apos varias tentativas.'
                                 : 'O modelo descreveu acoes mas nao executou.';
-                    return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}`;
+                    return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}\n\n[CONTINUE_BUTTON]`;
                 }
+                // Detector: model is editing the wrong file.
+                // If the error points to a file but the model just edited a
+                // different file, alert it explicitly with both paths.
+                const wrongFileEdit = lastCommandFailed
+                    && counters.lastErrorFiles.length > 0
+                    && counters.lastEditedFile
+                    && !counters.lastErrorFiles.some(f => counters.lastEditedFile.endsWith(f) || f.endsWith(path.basename(counters.lastEditedFile)));
+                const errorContext = (lastCommandFailed && counters.lastErrorFiles.length > 0)
+                    ? `\n\nERROR LOCATION (focus here):\n  Files: ${counters.lastErrorFiles.join(', ')}\n  Message: ${counters.lastErrorSummary || '(see command output)'}`
+                    : '';
                 const nudge = dumpedInsteadOfWriting
                     ? 'You wrote code in the chat instead of saving it to a file. The user cannot use code in the chat. Use write_local_file (for new/full-rewrite) or edit_file (for partial edits) NOW to save that code to disk. Do not paste code in your reply — call the tool.'
-                    : lastCommandFailed
-                        ? 'The last command failed. Read the error output carefully, identify the root cause, and use edit_file or write_local_file to fix it. Then re-run the command. Do not stop or ask the user — fix and retry.'
-                        : buildNotYetPassed
-                            ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                            : autoMode
-                                ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
-                                : 'continue';
+                    : wrongFileEdit
+                        ? `WRONG FILE. You edited "${counters.lastEditedFile}" but the error is in "${counters.lastErrorFiles[0]}". Read "${counters.lastErrorFiles[0]}" now and fix THAT file. The bug is not where you were looking.${errorContext}`
+                        : lastCommandFailed
+                            ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
+                            : buildNotYetPassed
+                                ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
+                                : autoMode
+                                    ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
+                                    : 'continue';
                 roundMessages.push({ role: 'assistant', content: text });
                 roundMessages.push({ role: 'user', content: nudge });
                 lastToolName = '';

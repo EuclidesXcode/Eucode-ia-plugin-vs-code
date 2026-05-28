@@ -743,6 +743,26 @@
         .tl-chip { background: #13131f; border: 1px solid #222; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #4a5568; }
         .tl-chip span { color: #6a7f99; }
 
+        .continue-btn {
+            margin-top: 10px;
+            background: #0d1a2e;
+            border: 1px solid #3a7bd5;
+            border-radius: 4px;
+            color: #3a7bd5;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .continue-btn:hover:not(:disabled) { background: #3a7bd5; color: #fff; }
+        .continue-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
         /* ── Streaming text inside timeline ── */
         .tl-stream {
             margin-top: 8px;
@@ -2055,18 +2075,38 @@
                 const activeResponse = tl?.querySelector('.tl-item.active.tl-response');
                 const loadingBubble = chatContainer.querySelector('[data-loading]');
 
+                // Detecta o sentinel [CONTINUE_BUTTON] colocado pelo loop quando
+                // o modo AUTO desistiu. Remove do texto e adiciona um botao real.
+                const hasContinueBtn = msg.text && msg.text.includes('[CONTINUE_BUTTON]');
+                const cleanText = hasContinueBtn
+                    ? msg.text.replace(/\[CONTINUE_BUTTON\]\s*$/, '').trim()
+                    : msg.text;
+
+                const appendContinueButton = (container) => {
+                    if (!hasContinueBtn) { return; }
+                    const btn = document.createElement('button');
+                    btn.className = 'continue-btn';
+                    btn.innerHTML = '<span class="mi" style="font-size:14px">replay</span>Tentar mais 5 vezes';
+                    btn.addEventListener('click', () => {
+                        btn.disabled = true;
+                        vscode.postMessage({ command: 'user_input', text: 'Continue a tarefa de onde parou. Voce nao terminou — execute as proximas etapas ate o build passar com sucesso.', autoMode: true });
+                    });
+                    container.appendChild(btn);
+                };
+
                 if (activeResponse) {
                     // Tinha streaming ativo — renderiza markdown final e para animacao
                     const body = activeResponse.querySelector('.tl-body');
                     const pre = activeResponse.querySelector('.tl-stream');
                     if (pre) { pre.remove(); }
-                    if (msg.text || streamText) {
+                    if (cleanText || streamText) {
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(msg.text || streamText);
+                        md.innerHTML = marked.parse(cleanText || streamText);
                         body.appendChild(md);
+                        appendContinueButton(body);
                     }
                     activeResponse.classList.remove('active');
-                } else if (!streamText && msg.text) {
+                } else if (!streamText && cleanText) {
                     // Sem streaming: adiciona item de resposta na timeline ao inves de nova bolha
                     if (tl) {
                         const prev = tl.querySelector('.tl-item.active');
@@ -2078,8 +2118,9 @@
                         const body = document.createElement('div');
                         body.className = 'tl-body';
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(msg.text);
+                        md.innerHTML = marked.parse(cleanText);
                         body.appendChild(md);
+                        appendContinueButton(body);
                         item.appendChild(dot);
                         item.appendChild(body);
                         tl.appendChild(item);

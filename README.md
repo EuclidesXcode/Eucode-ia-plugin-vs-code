@@ -206,6 +206,18 @@ As configuracoes abaixo foram validadas com o **Gemma 4 E4B** rodando em um **Ma
 >
 > **Nota sobre Context Length:** o Eucode IA esta calibrado para janelas de 2048 tokens com o Gemma 4 E4B. Se usar um modelo com contexto maior (ex: 8192), os limites internos de poda do plugin sao conservadores mas funcionam — nao e necessario ajustar nada no plugin.
 
+### Escolha de modelo por tipo de tarefa
+
+A capacidade de raciocinio do agente em modo automatico depende diretamente do tamanho do modelo. Recomendacoes baseadas em uso real:
+
+| Tamanho do modelo | Bom para | Limitacao |
+|---|---|---|
+| **< 7B** (Gemma 4 E4B, Phi-3-mini, Llama 3.2 3B) | Tarefas pontuais: corrigir um erro especifico, refatorar uma funcao, adicionar um endpoint, edicoes locais com contexto claro | Projetos multi-arquivo: tendem a perder o fio em tarefas que exigem raciocinio causal entre 3+ arquivos. Modo AUTO pode entrar em loop tentando corrigir o arquivo errado |
+| **7B-13B** (Qwen 2.5 Coder 7B, DeepSeek Coder V2, CodeLlama 13B) | Projetos pequenos e medios: criar features completas (login + dashboard), refatorar modulos, debug com stack trace | Tarefas muito ambiciosas em uma rodada (ex: "construa um SaaS inteiro") ainda pedem intervencao humana |
+| **30B+** (Qwen 2.5 Coder 32B, DeepSeek V3) ou **Claude API** | Projetos grandes, refatoracoes amplas, modo AUTO confiavel por longas execucoes | Recursos: 30B local exige 32GB+ de RAM. Claude API tem custo por token |
+
+> **Dica pratica:** se o modo AUTO ficar pausando com `[AUTO PAUSADO]` repetidamente para tarefas que voce considera simples, o modelo provavelmente esta abaixo da capacidade necessaria. Suba uma faixa de tamanho ou divida a tarefa em pedidos menores.
+
 ---
 
 ## Contexto vetorial com RAG (opcional)
