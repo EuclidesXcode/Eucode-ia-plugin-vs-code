@@ -633,6 +633,24 @@ export async function runAgentLoop(
             }
             pendingActionStreak = 0;
 
+            // In auto mode: before returning, check editor diagnostics.
+            // If there are errors in files written this round, the model must fix them.
+            // Wait 2s for the TypeScript language server to process the new files.
+            if (autoMode && filesReadThisRound.size > 0) {
+                await new Promise(r => setTimeout(r, 2000));
+                const diag = onGetDiagnostics();
+                if (diag && diag.trim().length > 0) {
+                    onStatus('Erros detectados — corrigindo...');
+                    roundMessages.push({ role: 'assistant', content: text });
+                    roundMessages.push({
+                        role: 'user',
+                        content: `The editor found errors in the files you wrote. Fix all of them now using edit_file:\n\n${diag}`,
+                    });
+                    lastToolName = '';
+                    continue;
+                }
+            }
+
             // Emit telemetry before returning
             if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {
                 const elapsedSec = totalElapsedMs / 1000;
