@@ -276,6 +276,15 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.7.2
+- Arquivos criados ou editados pelo agente abrem automaticamente em evidencia no editor
+- Modo AUTO nao desiste mais ao receber erro de comando: continua corrigindo ate o build passar com exit code 0
+- Detector de codigo dumped no chat: forca o modelo a salvar codigo via tool em vez de colar no chat
+- edit_file mais tolerante: old_string vazio cria arquivo novo automaticamente; mensagens de erro didaticas guiam o modelo a se autocorrigir
+- Hard timeout de 5 min em comandos: evita travamento do loop em comandos pendurados
+- Loop guard de tool repetida: 3 chamadas identicas disparam correcao forcando mudanca de abordagem
+- [AUTO PAUSADO] com diagnostico especifico quando o agente nao consegue concluir
+
 ### 0.7.1
 - Modo AUTO: eliminado loop infinito de leitura repetida (modelo ficava relendo package.json indefinidamente)
 - Modo AUTO: cache de leituras por round — read_local_file e list_directory retornam resultado cacheado sem custo de contexto

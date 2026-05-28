@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.2
+
+- Arquivo criado/editado abre automaticamente em evidencia no editor (preview: false, preserveFocus: true), com throttle de 1.5s por path
+- Modo AUTO nao desiste mais ao receber erro de comando: novos counters lastCommandFailed e lastBuildPassed forcam continuacao ate o build passar com exit code 0
+- run_command sinaliza falhas explicitas ao modelo com prefixo [FAILED exit=N] e instrucao "diagnose and fix"
+- Detector de codigo dumped no chat: se o modelo escrever bloco de codigo grande (>200 chars) sem chamar tool, loop em AUTO injeta correcao forcando uso de write_local_file/edit_file
+- edit_file com old_string vazio nao falha mais com erro terminal: cria arquivo novo automaticamente ou retorna mensagem explicativa com opcoes acionaveis
+- Erro "old_string not found" agora inclui preview do arquivo e instrucao para chamar read_local_file primeiro
+- System prompt do AUTO reescrito com regras estritas e exemplos negativos (proibido terminar com "vou tentar")
+- [AUTO PAUSADO] retorna motivo especifico do bloqueio quando atinge cap de 5 tentativas
+- Hard timeout de 5 min em run_command: SIGTERM + SIGKILL apos 2s, exit code 124 (convencao GNU timeout)
+- Loop guard de tool repetida: 3+ chamadas identicas disparam [LOOP DETECTED] forcando mudanca de abordagem
+- Fila de mensagens injetadas durante chamadas lentas (substitui slot unico last-write-wins)
+- emitTelemetry helper extraido: telemetria sempre emitida em todos os pontos de saida do loop
+- Diagnostics check usa counters.filesWritten em vez de filesReadThisRound (correto para detectar erros em arquivos modificados)
+- Guard rapido em detectEscapedToolCall: evita CPU spike em respostas longas sem hints de tool call
+- Remocao de variavel morta filesWrittenThisRound
+
 ## 0.7.1
 
 - Modo AUTO: cache de leituras por round — read_local_file e list_directory retornam resultado cacheado, eliminando releituras repetidas do mesmo arquivo
