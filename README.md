@@ -161,6 +161,27 @@ Clique na engrenagem no header do chat para abrir o painel de configuracoes.
 - **API Key** — obrigatoria para Anthropic (`sk-ant-...`), opcional para servidores locais
 - **Ferramentas** — toggles liga/desliga para cada ferramenta disponivel
 
+### .eucodeIgnore — filtrar arquivos do contexto
+
+Crie um arquivo `.eucodeIgnore` na raiz do workspace para excluir arquivos e pastas que o agente nao deve ler ou listar. A sintaxe e identica ao `.gitignore`:
+
+```
+# Ignorar pastas de build e dependencias
+dist/
+node_modules/
+.cache/
+
+# Ignorar arquivos gerados
+*.min.js
+coverage/
+
+# Ignorar segredos e configs locais
+.env
+*.local
+```
+
+O plugin ja ignora automaticamente `node_modules`, `dist`, `.git`, `.next`, `__pycache__` e similares. O `.eucodeIgnore` e para regras adicionais especificas do seu projeto.
+
 ### LM Studio em rede local
 
 No LM Studio, va em **Server Settings** e habilite **"Servir na Rede Local"**. Depois configure o host no Eucode IA com o IP da maquina onde o LM Studio esta rodando.
@@ -187,7 +208,79 @@ As configuracoes abaixo foram validadas com o **Gemma 4 E4B** rodando em um **Ma
 
 ---
 
+## Contexto vetorial com RAG (opcional)
+
+O Eucode IA suporta consulta a um banco vetorial local antes de cada resposta. Quando habilitado, ele busca trechos relevantes do seu projeto (documentacao, codigo indexado, notas tecnicas) e os injeta automaticamente como contexto adicional — sem que voce precise colar nada manualmente.
+
+**Quando usar:** projetos grandes onde o agente precisa conhecer convencoes especificas, APIs internas, arquitetura ou documentacao que nao esta no workspace aberto.
+
+**Suporte atual:** [Chroma](https://www.trychroma.com) via API v1 (`/api/v1/collections/{name}/query`).
+
+### Como configurar
+
+#### 1. Instale o Chroma
+
+```bash
+pip install chromadb
+```
+
+#### 2. Inicie o servidor local
+
+```bash
+chroma run --host localhost --port 8000
+```
+
+#### 3. Indexe seu projeto
+
+Crie um script Python para indexar os arquivos que quiser disponibilizar como contexto:
+
+```python
+import chromadb
+import os
+
+client = chromadb.HttpClient(host="localhost", port=8000)
+collection = client.get_or_create_collection("eucode")
+
+docs, ids, metas = [], [], []
+for root, _, files in os.walk("./src"):
+    for f in files:
+        if f.endswith((".ts", ".py", ".md", ".json")):
+            path = os.path.join(root, f)
+            with open(path, encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()
+            if content.strip():
+                docs.append(content[:2000])  # limite por chunk
+                ids.append(path)
+                metas.append({"source": path})
+
+collection.upsert(documents=docs, ids=ids, metadatas=metas)
+print(f"{len(docs)} arquivos indexados.")
+```
+
+Execute com `python index.py` a partir da raiz do projeto. Re-execute sempre que o codigo mudar.
+
+#### 4. Ative nas configuracoes do plugin
+
+Abra o painel de configuracoes (engrenagem no header do chat):
+
+- Ative o toggle **RAG (Contexto Vetorial)**
+- Configure o **Endpoint**: `http://localhost:8000` (padrao)
+- Configure o **Collection**: nome da colecao criada (ex: `eucode`)
+- Salve
+
+O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recuperando os trechos mais relevantes e injetando-os no contexto antes da resposta. A consulta tem timeout de 5 segundos e nunca bloqueia o chat se o servidor estiver fora.
+
+> **Dica:** se voce tem multiplos projetos, crie uma collection separada para cada um e altere o nome no config conforme troca de projeto.
+
+---
+
 ## Ultimas versoes
+
+### 0.7.0
+- Suporte a RAG opcional via Chroma — banco vetorial local configuravel nas settings
+- `.eucodeIgnore`: arquivo de filtro gitignore-style para excluir arquivos/pastas do contexto do agente
+- Telemetria de desempenho na timeline: tokens/s, prompt tokens e tempo total de resposta
+- Distincao entre erro de infraestrutura (OOM, conexao) e contexto cheio — recuperacao automatica sem mensagem de erro para o usuario
 
 ### 0.6.3
 - Timeline persistente: texto do LM permanece visivel ao iniciar nova tool call e ao finalizar a tarefa
