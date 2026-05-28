@@ -218,6 +218,42 @@ A capacidade de raciocinio do agente em modo automatico depende diretamente do t
 
 > **Dica pratica:** se o modo AUTO ficar pausando com `[AUTO PAUSADO]` repetidamente para tarefas que voce considera simples, o modelo provavelmente esta abaixo da capacidade necessaria. Suba uma faixa de tamanho ou divida a tarefa em pedidos menores.
 
+### Recomendacao premium: Ministral 3 14B Reasoning (hardware potente)
+
+Para usuarios com hardware mais potente, este modelo entrega uma experiencia significativamente superior em modo AUTO. E um modelo treinado especificamente para raciocinio passo-a-passo, com tool use nativo e janela de contexto de 256k tokens — o que resolve quase todos os problemas de pruning agressivo que afetam modelos menores.
+
+**Por que vale a pena:**
+- **Tool calling robusto:** chama as ferramentas com consistencia muito maior que modelos < 7B
+- **Raciocinio causal entre arquivos:** entende fluxo de dados entre componentes, reduzindo drasticamente o cenario "modelo edita arquivo errado"
+- **Contexto gigante (256k):** o agente lembra do projeto inteiro entre rodadas
+- **Faixa doce 14B:** suficiente para projetos reais sem exigir 32GB+ de RAM
+
+**Requisitos minimos por sistema operacional:**
+
+| Sistema | RAM unificada / VRAM | Armazenamento | Observacao |
+|---|---|---|---|
+| **macOS (Apple Silicon)** | 16 GB minimo, 24 GB+ recomendado | 10 GB livres | M2/M3/M4 com GPU integrada. No M-series base de 16 GB feche Chrome e outros apps pesados durante uso |
+| **macOS (Intel)** | Nao recomendado | — | Performance inviavel sem GPU dedicada |
+| **Windows / Linux com GPU NVIDIA** | 12 GB VRAM minimo (ex: RTX 3060 12GB, RTX 4070+) | 10 GB livres | Full GPU offload garante velocidade aceitavel (15+ t/s) |
+| **Windows / Linux com GPU AMD** | 16 GB VRAM (ex: RX 7900 XT) | 10 GB livres | Suporte via ROCm/Vulkan no LM Studio; performance varia |
+| **Windows / Linux CPU-only** | 32 GB RAM | 10 GB livres | Funcional mas lento (3-5 t/s) — use apenas para tarefas pontuais |
+
+**Configuracao recomendada no LM Studio:**
+
+| Parametro | Valor |
+|---|---|
+| **Context Length** | `4096` para comecar; suba para `8192` se a maquina aguentar |
+| **Temperature** | `0.5` (equilibrio entre coding preciso e reasoning) |
+| **Top K Sampling** | `40` |
+| **Top P Sampling** | `0.95` |
+| **Min P Sampling** | `0.05` |
+| **Repeat Penalty** | `1.05` (mais leve que para Gemma) |
+| **Limit Response Length** | `2048` (reasoning models precisam de espaco para "pensar") |
+| **Context Overflow** | `Rolling Window` |
+| **CPU Threads** | Numero de nucleos performance da CPU (4-8 dependendo do chip) |
+
+> **Aviso:** comece com Context Length de 4096. Nao habilite 256k de cara — vai consumir RAM em excesso e cair drasticamente a velocidade por token. Suba gradualmente conforme valida a estabilidade na sua maquina.
+
 ---
 
 ## Contexto vetorial com RAG (opcional)
