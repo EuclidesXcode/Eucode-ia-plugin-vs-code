@@ -5,7 +5,7 @@ exports.API_ENDPOINT = 'http://localhost:1234/v1/chat/completions';
 exports.DEFAULT_MODEL = 'google/gemma-4-e4b';
 exports.MAX_AGENT_STEPS = 20;
 exports.MAX_HISTORY_ENTRIES = 60;
-exports.MAX_HISTORY_PAIRS = 5;
+exports.MAX_HISTORY_PAIRS = 1;
 exports.BINARY_EXTS = new Set([
     '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
     '.woff', '.woff2', '.ttf', '.eot',

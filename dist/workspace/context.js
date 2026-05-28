@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.collectWorkspaceContext = collectWorkspaceContext;
 exports.getDefaultCwd = getDefaultCwd;
+exports.collectDiagnostics = collectDiagnostics;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const constants_1 = require("../utils/constants");
@@ -60,19 +61,43 @@ function collectWorkspaceContext() {
     const defaultRoot = validRoots[0] ?? roots[0] ?? '/tmp';
     let contextBlock = '';
     if (validRoots.length === 0) {
-        contextBlock = `# WORKSPACE\nNenhum projeto aberto no VS Code. Informe o usuario que ele precisa abrir uma pasta de projeto (File > Open Folder) antes de continuar.`;
+        contextBlock = `# WORKSPACE\nNo project open in VS Code. Tell the user they need to open a project folder (File > Open Folder) before continuing.`;
     }
     else {
-        contextBlock = `# WORKSPACE\nPastas raiz: ${validRoots.join(', ')}\n`;
+        contextBlock = `# WORKSPACE\nRoot folders: ${validRoots.join(', ')}\n`;
         if (openFiles.length > 0) {
-            contextBlock += `Arquivos abertos: ${openFiles.map(f => f.path).join(', ')}\n`;
+            contextBlock += `Open files: ${openFiles.map(f => f.path).join(', ')}\n`;
         }
-        contextBlock += `\nRegras para criar/editar arquivos:\n- Sempre use caminhos ABSOLUTOS no filePath, ex: ${defaultRoot}/nome.ts\n- Nunca use caminhos relativos ou vazios.\n- Para entender a estrutura: use list_directory, read_local_file, search_in_workspace.`;
+        contextBlock += `\nRules for creating/editing files:\n- Always use ABSOLUTE paths in filePath, e.g.: ${defaultRoot}/name.ts\n- Never use relative or empty paths.\n- To understand the structure: use list_directory, read_local_file, search_in_workspace.`;
     }
     return { roots, openFiles, contextBlock };
 }
 function getDefaultCwd(roots) {
-    // Ignora raiz do sistema operacional — só aceita pastas reais de projeto
     const valid = roots.filter(r => r !== '/' && r !== 'C:\\' && r.length > 3);
     return valid[0] ?? roots[0] ?? '/tmp';
+}
+function collectDiagnostics() {
+    const all = vscode.languages.getDiagnostics();
+    const lines = [];
+    for (const [uri, diags] of all) {
+        const rel = vscode.workspace.asRelativePath(uri.fsPath);
+        for (const d of diags) {
+            if (d.severity !== vscode.DiagnosticSeverity.Error) {
+                continue;
+            }
+            const line = d.range.start.line + 1;
+            const col = d.range.start.character + 1;
+            lines.push(`[ERROR] ${rel}:${line}:${col} — ${d.message}`);
+            if (lines.length >= 20) {
+                break;
+            }
+        }
+        if (lines.length >= 20) {
+            break;
+        }
+    }
+    if (lines.length === 0) {
+        return '';
+    }
+    return `# EDITOR ERRORS\n${lines.join('\n')}`;
 }

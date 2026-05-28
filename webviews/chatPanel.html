@@ -196,6 +196,64 @@
         .config-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
 
         .config-hint { font-size: 11px; color: #2a3a4a; margin-top: 5px; }
+        .claude-model-chip {
+            font-size: 10px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            background: #0d1a2e; border: 1px solid #1e2a3a; border-radius: 4px;
+            color: #3a7bd5; padding: 3px 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+        }
+        .claude-model-chip:hover { border-color: #3a7bd5; background: #0d2040; }
+
+        /* ── Tools toggles ── */
+        .tools-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .tool-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 10px;
+            background: #0a0a15;
+            border: 1px solid #1a1a2e;
+            border-radius: 6px;
+            transition: border-color 0.15s;
+        }
+        .tool-row:has(.tool-toggle:checked) { border-color: #1a3a1a; }
+        .tool-row-info { display: flex; flex-direction: column; gap: 2px; }
+        .tool-row-name { font-size: 12px; font-weight: 600; color: #c9d1d9; }
+        .tool-row-desc { font-size: 10px; color: #3a5080; }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            transition: .3s;
+            border-radius: 22px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #3a5080;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        .switch input:checked + .slider { background-color: #0d2a0d; border-color: #22c55e; }
+        .switch input:checked + .slider:before { background-color: #22c55e; transform: translateX(16px); }
 
         .config-actions {
             display: flex;
@@ -319,23 +377,91 @@
             gap: 8px;
         }
 
-        .loading-dots {
-            display: inline-flex;
-            gap: 4px;
+        /* ── Timeline de ações ── */
+        .agent-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            padding: 2px 0;
         }
-        .loading-dots span {
+        .tl-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            position: relative;
+            padding: 3px 0;
+        }
+        /* vertical connector between items */
+        .tl-item:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 6px;
+            top: 18px;
+            bottom: -3px;
+            width: 1px;
+            background: #1e2a3a;
+        }
+        .tl-dot {
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tl-item.done .tl-dot {
+            background: #0d2a0d;
+            border: 1.5px solid #22c55e;
+        }
+        .tl-item.done .tl-dot::after {
+            content: '';
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #22c55e;
+        }
+        .tl-item.active .tl-dot {
+            background: #0d1a2e;
+            border: 1.5px solid #3a7bd5;
+            animation: tl-pulse 1.4s ease-in-out infinite;
+        }
+        .tl-item.active .tl-dot::after {
+            content: '';
             width: 5px;
             height: 5px;
             border-radius: 50%;
             background: #3a7bd5;
-            animation: bounce 1.2s ease-in-out infinite;
+            animation: tl-pulse 1.4s ease-in-out infinite;
         }
-        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes tl-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+        .tl-text {
+            font-size: 12px;
+            line-height: 1.5;
+            padding-top: 0;
+        }
+        .tl-item.active .tl-text { color: #c9d1d9; }
+        /* sucesso — verde */
+        .tl-item.done .tl-text { color: #2a6a2a; }
+        .tl-item.done .tl-dot  { background: #001400; border-color: #1a7a1a; }
+        .tl-item.done .tl-dot::after { background: #22b022; }
+        /* erro — vermelho */
+        .tl-item.error .tl-text { color: #8a1a1a; }
+        .tl-item.error .tl-dot  { background: #1a0000; border-color: #9a2020; }
+        .tl-item.error .tl-dot::after { background: #cc3030; }
+        /* nome de arquivo — amarelo */
+        .tl-filename { color: #c9a020; }
 
-        @keyframes bounce {
-            0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-            40% { transform: scale(1); opacity: 1; }
+        /* items that contain a terminal or stream expand vertically */
+        .tl-item .tl-body {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 0;
         }
 
         /* Markdown */
@@ -551,41 +677,80 @@
         }
         .context-file .mi { font-size: 11px; }
 
-        /* ── Terminal output ── */
-        .terminal-output {
-            background: #0d1117;
-            border: 1px solid #1e3a1e;
+        /* ── Terminal inside timeline ── */
+        .tl-terminal {
+            margin-top: 6px;
+            background: #0a0e14;
+            border: 1px solid #1a3020;
             border-radius: 6px;
-            padding: 8px 10px;
-            margin: 8px 0 0 0;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            color: #7ee787;
-            white-space: pre-wrap;
-            word-break: break-all;
-            max-height: 320px;
-            overflow-y: auto;
-            line-height: 1.5;
-            flex-basis: 100%;
-            box-sizing: border-box;
+            overflow: hidden;
+            width: 100%;
         }
-        .terminal-output .terminal-label {
-            color: #58a6ff;
-            font-size: 10px;
-            margin-bottom: 4px;
+        .tl-terminal-header {
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 6px;
+            padding: 5px 10px;
+            background: #0d1117;
+            border-bottom: 1px solid #1a3020;
+            cursor: pointer;
+            user-select: none;
         }
-        .terminal-output .terminal-label::before {
-            content: '▶';
-            color: #3fb950;
+        .tl-terminal-header .tl-terminal-cmd {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 10px;
+            color: #58a6ff;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
-        .terminal-output .terminal-body {
+        .tl-terminal-toggle {
+            font-size: 10px;
+            color: #3a5080;
+            transition: transform 0.2s;
+        }
+        .tl-terminal.collapsed .tl-terminal-toggle { transform: rotate(-90deg); }
+        .tl-terminal-body {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 11px;
             color: #e6edf3;
+            white-space: pre-wrap;
+            word-break: break-all;
+            padding: 8px 10px;
+            max-height: 220px;
+            overflow-y: auto;
+            line-height: 1.5;
         }
-        .terminal-output .stderr-chunk {
-            color: #f85149;
+        .tl-terminal.collapsed .tl-terminal-body { display: none; }
+        .tl-stderr { color: #f85149; }
+
+        /* ── Resposta final do modelo na timeline ── */
+        .tl-item.tl-response .tl-text { color: #c9d1d9 !important; font-style: normal; }
+        .tl-item.tl-response .tl-dot { background: #0d1117 !important; border-color: #3a7bd5 !important; }
+        .tl-item.tl-response .tl-dot::after { background: #3a7bd5 !important; }
+        .tl-item.tl-response .tl-body > div { color: #c9d1d9; font-size: 13px; line-height: 1.7; }
+        .tl-item.tl-response .tl-body > div p { margin: 0 0 8px; }
+        .tl-item.tl-response .tl-body > div p:last-child { margin-bottom: 0; }
+        .tl-item.tl-response .tl-body > div code { background: #161b22; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
+        .tl-item.tl-response .tl-body > div pre { background: #161b22; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+
+        /* ── Telemetry item ── */
+        .tl-item.tl-telemetry .tl-dot { background: #0d1117 !important; border-color: #444 !important; }
+        .tl-item.tl-telemetry .tl-dot::after { background: #555 !important; }
+        .tl-item.tl-telemetry .tl-text { color: #555e6b !important; font-size: 11px; font-style: normal; letter-spacing: 0.02em; }
+        .tl-telemetry-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+        .tl-chip { background: #13131f; border: 1px solid #222; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #4a5568; }
+        .tl-chip span { color: #6a7f99; }
+
+        /* ── Streaming text inside timeline ── */
+        .tl-stream {
+            margin-top: 8px;
+            color: #c9d1d9;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            line-height: 1.6;
         }
 
         @keyframes pulse-dot {
@@ -803,6 +968,62 @@
         .confirm-decided.accepted { color: #22c55e; }
         .confirm-decided.rejected { color: #e05555; }
 
+        /* ── Todo list ── */
+        .todo-card {
+            border: 1px solid #1a2a3a;
+            border-radius: 8px;
+            background: #080c14;
+            overflow: hidden;
+            width: 100%;
+            margin-top: 4px;
+        }
+        .todo-header {
+            padding: 7px 12px;
+            background: #0d1525;
+            border-bottom: 1px solid #1a2a4a;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #3a5080;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .todo-list { padding: 6px 0; }
+        .todo-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .todo-icon {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+        }
+        .todo-item.pending .todo-icon   { border: 1.5px solid #2a3a4a; color: transparent; }
+        .todo-item.in_progress .todo-icon { border: 1.5px solid #3a7bd5; background: #0d1a2e; }
+        .todo-item.completed .todo-icon { background: #22c55e; border: 1.5px solid #22c55e; }
+        .todo-item.pending   .todo-text { color: #3a5080; }
+        .todo-item.in_progress .todo-text { color: #c9d1d9; font-weight: 600; }
+        .todo-item.completed .todo-text { color: #3a6a3a; text-decoration: line-through; }
+        .todo-spinner {
+            width: 8px; height: 8px;
+            border: 1.5px solid #3a7bd5;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
         /* ── Divider de data ── */
         .day-divider {
             display: flex;
@@ -845,11 +1066,11 @@
             <div class="config-label">Provedor</div>
             <select id="config-provider" class="config-select">
                 <option value="lmstudio">LM Studio</option>
-                <option value="anthropic">Anthropic / Ollama</option>
+                <option value="anthropic">Anthropic (Claude)</option>
                 <option value="ollama">Outro (OpenAI-compativel)</option>
             </select>
         </div>
-        <div>
+        <div id="config-host-row">
             <div class="config-label">Host</div>
             <input id="config-host-input" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
             <div class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
@@ -857,11 +1078,30 @@
         <div>
             <div class="config-label">Modelo</div>
             <input id="config-model-input" class="config-input mono" type="text" placeholder="google/gemma-4-e4b" spellcheck="false" autocomplete="off">
-            <div class="config-hint">Nome exato do modelo carregado. Vazio usa o padrao do servidor.</div>
+            <div id="config-model-hint" class="config-hint">Nome exato do modelo carregado. Vazio usa o padrao do servidor.</div>
+            <div id="config-claude-models" style="display:none;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
         </div>
         <div>
-            <div class="config-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
+            <div class="config-label" id="config-key-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
             <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
+        </div>
+        <div>
+            <div class="config-label">Ferramentas disponíveis</div>
+            <div class="tools-grid" id="tools-grid"></div>
+        </div>
+        <div>
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;">
+                RAG (Contexto Vetorial)
+                <label class="switch" style="margin-left:auto">
+                    <input type="checkbox" id="config-rag-enabled">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div id="config-rag-rows" style="display:none;margin-top:8px;gap:6px;flex-direction:column;">
+                <input id="config-rag-endpoint" class="config-input mono" type="text" placeholder="http://localhost:8000" spellcheck="false">
+                <input id="config-rag-collection" class="config-input mono" type="text" placeholder="eucode" spellcheck="false">
+                <div class="config-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
+            </div>
         </div>
         <div class="config-actions">
             <span id="config-feedback"></span>
@@ -925,12 +1165,55 @@
         const sessionsPanel = document.getElementById('sessions-panel');
         const sessionsList = document.getElementById('sessions-list');
 
+        const ALL_TOOLS = [
+            { name: 'list_directory',    label: 'Explorar diretórios',  desc: 'Listar arquivos e pastas do projeto' },
+            { name: 'read_local_file',   label: 'Ler arquivos',         desc: 'Abrir e ler conteúdo de qualquer arquivo' },
+            { name: 'edit_file',         label: 'Editar arquivos',      desc: 'Substituição cirúrgica de trechos de código' },
+            { name: 'write_local_file',  label: 'Criar/sobrescrever',   desc: 'Criar novos arquivos ou reescrever por completo' },
+            { name: 'search_in_workspace', label: 'Buscar no projeto',  desc: 'Pesquisar termos, funções e padrões no código' },
+            { name: 'get_diagnostics',   label: 'Diagnósticos do editor', desc: 'Ler erros e warnings do VS Code em tempo real' },
+            { name: 'run_command',       label: 'Terminal',             desc: 'Executar comandos: build, testes, servidores...' },
+            { name: 'run_git',           label: 'Git',                  desc: 'Operações git: status, commit, push, diff...' },
+            { name: 'web_search',        label: 'Busca na web',         desc: 'Pesquisar documentação e soluções no DuckDuckGo' },
+            { name: 'todo_update',       label: 'Lista de tarefas',     desc: 'Exibir checklist de progresso no chat' },
+        ];
+
+        const toolsGrid = document.getElementById('tools-grid');
+
+        function renderToolsGrid(enabledTools) {
+            toolsGrid.innerHTML = '';
+            ALL_TOOLS.forEach(tool => {
+                const enabled = enabledTools.includes(tool.name);
+                const row = document.createElement('div');
+                row.className = 'tool-row';
+                row.innerHTML = `
+                    <div class="tool-row-info">
+                        <span class="tool-row-name">${tool.label}</span>
+                        <span class="tool-row-desc">${tool.desc}</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" class="tool-toggle" data-tool="${tool.name}"${enabled ? ' checked' : ''}>
+                        <span class="slider"></span>
+                    </label>`;
+                toolsGrid.appendChild(row);
+            });
+        }
+
+        function getEnabledTools() {
+            return Array.from(toolsGrid.querySelectorAll('.tool-toggle'))
+                .filter(cb => cb.checked)
+                .map(cb => cb.dataset.tool);
+        }
+
         let pendingImage = null;
-        let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '', model: '' };
+        let savedSettings = { provider: 'lmstudio', apiHost: '', apiKey: '', model: '', enabledTools: ALL_TOOLS.map(t => t.name) };
         let pendingHistory = null;
         let currentSessionId = null;
         let autoMode = false;
         let agentRunning = false;
+        let streamBubble = null;
+        let streamText = '';
+        let streamRafPending = false;
 
         const stopBtn = document.getElementById('stop-btn');
         const contextBar = document.getElementById('context-bar');
@@ -1036,6 +1319,54 @@
         }
 
         // ── Config ──
+        const CLAUDE_MODELS = [
+            'claude-opus-4-7',
+            'claude-sonnet-4-6',
+            'claude-haiku-4-5-20251001',
+        ];
+
+        const configHostRow = document.getElementById('config-host-row');
+        const configModelHint = document.getElementById('config-model-hint');
+        const configClaudeModels = document.getElementById('config-claude-models');
+        const configKeyLabel = document.getElementById('config-key-label');
+        const configRagEnabled = document.getElementById('config-rag-enabled');
+        const configRagRows = document.getElementById('config-rag-rows');
+        const configRagEndpoint = document.getElementById('config-rag-endpoint');
+        const configRagCollection = document.getElementById('config-rag-collection');
+
+        configRagEnabled.addEventListener('change', () => {
+            configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
+        });
+
+        function updateConfigUI(provider) {
+            const isAnthropic = provider === 'anthropic';
+            configHostRow.style.display = isAnthropic ? 'none' : '';
+            configKeyLabel.innerHTML = isAnthropic
+                ? 'API Key'
+                : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
+            configKeyInput.placeholder = isAnthropic ? 'sk-ant-...' : 'sk-...';
+            configModelHint.textContent = isAnthropic
+                ? 'Modelo Claude a usar. Clique num atalho abaixo ou digite o ID.'
+                : 'Nome exato do modelo carregado. Vazio usa o padrao do servidor.';
+            configModelInput.placeholder = isAnthropic ? 'claude-sonnet-4-6' : 'google/gemma-4-e4b';
+
+            if (isAnthropic) {
+                configClaudeModels.style.display = 'flex';
+                configClaudeModels.innerHTML = '';
+                CLAUDE_MODELS.forEach(m => {
+                    const chip = document.createElement('button');
+                    chip.className = 'claude-model-chip';
+                    chip.textContent = m;
+                    chip.addEventListener('click', () => { configModelInput.value = m; });
+                    configClaudeModels.appendChild(chip);
+                });
+            } else {
+                configClaudeModels.style.display = 'none';
+            }
+        }
+
+        configProvider.addEventListener('change', () => updateConfigUI(configProvider.value));
+
         configBtn.addEventListener('click', () => {
             const isOpen = configPanel.classList.toggle('open');
             if (isOpen) {
@@ -1044,6 +1375,12 @@
                 configModelInput.value = savedSettings.model || '';
                 configKeyInput.value = '';
                 configFeedback.textContent = '';
+                updateConfigUI(savedSettings.provider);
+                renderToolsGrid(savedSettings.enabledTools || ALL_TOOLS.map(t => t.name));
+                configRagEnabled.checked = !!savedSettings.ragEnabled;
+                configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
+                configRagCollection.value = savedSettings.ragCollection || 'eucode';
+                configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
             }
         });
 
@@ -1053,14 +1390,19 @@
         });
 
         configSaveBtn.addEventListener('click', () => {
-            const host = configHostInput.value.trim();
-            if (!host) { return; }
+            const isAnthropic = configProvider.value === 'anthropic';
+            const host = isAnthropic ? 'https://api.anthropic.com' : configHostInput.value.trim();
+            if (!isAnthropic && !host) { return; }
             vscode.postMessage({
                 command: 'save_config',
                 provider: configProvider.value,
                 apiHost: host,
                 model: configModelInput.value.trim(),
                 apiKey: configKeyInput.value.trim(),
+                enabledTools: getEnabledTools(),
+                ragEnabled: configRagEnabled.checked,
+                ragEndpoint: configRagEndpoint.value.trim(),
+                ragCollection: configRagCollection.value.trim(),
             });
         });
 
@@ -1163,15 +1505,12 @@
             }
 
             if (isLoading) {
-                const dots = document.createElement('div');
-                dots.className = 'loading-dots';
-                dots.innerHTML = '<span></span><span></span><span></span>';
-                const statusText = document.createElement('span');
-                statusText.id = 'loading-status-text';
-                statusText.textContent = 'Analisando sua solicitacao...';
-                bubble.appendChild(statusText);
-                bubble.appendChild(dots);
+                const timeline = document.createElement('div');
+                timeline.className = 'agent-timeline';
+                timeline.id = 'agent-timeline';
+                bubble.appendChild(timeline);
                 bubble.dataset.loading = 'true';
+                addTimelineItem('Analisando sua solicitacao...', timeline);
             } else if (role === 'agent') {
                 const md = document.createElement('div');
                 md.innerHTML = marked.parse(text);
@@ -1350,6 +1689,152 @@
             return map[ext] || null;
         }
 
+        // Renders or updates the live todo checklist inside the current loading bubble
+        let currentTodoCard = null;
+
+        function renderTodoList(todos) {
+            if (!todos || todos.length === 0) { return; }
+
+            // Reuse existing card if present (update in place)
+            if (currentTodoCard && chatContainer.contains(currentTodoCard)) {
+                updateTodoCard(currentTodoCard, todos);
+                return;
+            }
+
+            // Find the current loading bubble to attach the card to
+            const loadingBubble = chatContainer.querySelector('[data-loading]');
+            if (!loadingBubble) { return; }
+
+            const card = document.createElement('div');
+            card.className = 'todo-card';
+            updateTodoCard(card, todos);
+
+            loadingBubble.appendChild(card);
+            currentTodoCard = card;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function updateTodoCard(card, todos) {
+            card.innerHTML = '';
+            const header = document.createElement('div');
+            header.className = 'todo-header';
+            header.innerHTML = '<span class="mi" style="font-size:12px">checklist</span>Tasks';
+            card.appendChild(header);
+
+            const list = document.createElement('div');
+            list.className = 'todo-list';
+
+            for (const todo of todos) {
+                const item = document.createElement('div');
+                item.className = `todo-item ${todo.status}`;
+
+                const icon = document.createElement('div');
+                icon.className = 'todo-icon';
+                if (todo.status === 'in_progress') {
+                    const spinner = document.createElement('div');
+                    spinner.className = 'todo-spinner';
+                    icon.appendChild(spinner);
+                } else if (todo.status === 'completed') {
+                    icon.innerHTML = '<span class="mi" style="font-size:10px;color:#fff">check</span>';
+                }
+
+                const text = document.createElement('span');
+                text.className = 'todo-text';
+                text.textContent = todo.content;
+
+                item.appendChild(icon);
+                item.appendChild(text);
+                list.appendChild(item);
+            }
+
+            card.appendChild(list);
+        }
+
+        function appendConfirmCommandCard(id, command, cwd) {
+            const row = document.createElement('div');
+            row.className = 'message-row agent';
+
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = 'EI';
+            const label = document.createElement('span');
+            label.className = 'message-label';
+            label.textContent = 'Eucode IA';
+            meta.appendChild(avatar);
+            meta.appendChild(label);
+
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.style.padding = '0';
+            bubble.style.overflow = 'hidden';
+            bubble.style.width = '100%';
+            bubble.style.maxWidth = '100%';
+
+            const card = document.createElement('div');
+            card.className = 'confirm-card';
+
+            const header = document.createElement('div');
+            header.className = 'confirm-card-header';
+            const icon = document.createElement('div');
+            icon.className = 'confirm-card-icon';
+            icon.innerHTML = '<span class="mi" style="font-size:12px">terminal</span>';
+            const title = document.createElement('div');
+            title.className = 'confirm-card-title';
+            title.textContent = 'Executar comando';
+            header.appendChild(icon);
+            header.appendChild(title);
+
+            const body = document.createElement('div');
+            body.style.cssText = 'padding:10px 14px;font-family:var(--vscode-editor-font-family,monospace);font-size:12px;background:var(--vscode-editor-background,#1e1e1e);color:var(--vscode-editor-foreground,#d4d4d4);border-radius:4px;margin:10px 14px;word-break:break-all;';
+            body.textContent = command;
+
+            const cwdNote = document.createElement('div');
+            cwdNote.style.cssText = 'padding:0 14px 8px;font-size:11px;color:var(--vscode-descriptionForeground,#aaa);';
+            cwdNote.textContent = `em: ${cwd}`;
+
+            const actions = document.createElement('div');
+            actions.className = 'confirm-actions';
+            actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;';
+
+            const blockBtn = document.createElement('button');
+            blockBtn.className = 'confirm-reject-btn';
+            blockBtn.innerHTML = '<span class="mi" style="font-size:14px">block</span>Bloquear';
+
+            const onceBtn = document.createElement('button');
+            onceBtn.className = 'confirm-accept-btn';
+            onceBtn.style.background = 'var(--vscode-button-secondaryBackground,#3a3a3a)';
+            onceBtn.innerHTML = '<span class="mi" style="font-size:14px">play_arrow</span>Permitir uma vez';
+
+            const sessionBtn = document.createElement('button');
+            sessionBtn.className = 'confirm-accept-btn';
+            sessionBtn.innerHTML = '<span class="mi" style="font-size:14px">done_all</span>Permitir na sessao';
+
+            function decide(decision) {
+                vscode.postMessage({ command: 'confirm_command_response', id, decision });
+                row.remove();
+            }
+
+            blockBtn.addEventListener('click', () => decide('block'));
+            onceBtn.addEventListener('click', () => decide('once'));
+            sessionBtn.addEventListener('click', () => decide('session'));
+
+            actions.appendChild(blockBtn);
+            actions.appendChild(onceBtn);
+            actions.appendChild(sessionBtn);
+
+            card.appendChild(header);
+            card.appendChild(body);
+            card.appendChild(cwdNote);
+            card.appendChild(actions);
+            bubble.appendChild(card);
+            row.appendChild(meta);
+            row.appendChild(bubble);
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
         function appendConfirmCard(id, filePath, before, after) {
             const isNew = before === null;
 
@@ -1437,7 +1922,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode' };
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -1460,6 +1945,10 @@
                 savedSettings.provider = configProvider.value;
                 savedSettings.apiHost = configHostInput.value.trim();
                 savedSettings.model = configModelInput.value.trim();
+                savedSettings.enabledTools = getEnabledTools();
+                savedSettings.ragEnabled = configRagEnabled.checked;
+                savedSettings.ragEndpoint = configRagEndpoint.value.trim();
+                savedSettings.ragCollection = configRagCollection.value.trim();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -1471,86 +1960,376 @@
                 startTerminal(msg.cmd);
             } else if (msg.command === 'command_output') {
                 appendCommandChunk(msg.chunk);
+            } else if (msg.command === 'command_end') {
+                finalizeTerminal(msg.exitCode !== 0);
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
+            } else if (msg.command === 'todo_update') {
+                renderTodoList(msg.todos);
+            } else if (msg.command === 'confirm_command') {
+                clearStatus();
+                appendConfirmCommandCard(msg.id, msg.cmd, msg.cwd);
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
+            } else if (msg.command === 'live_telemetry') {
+                updateLiveTelemetry(msg.tokens, msg.tokensPerSec, msg.elapsedMs);
+            } else if (msg.command === 'telemetry') {
+                finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
+                if (!msg.running) { currentTodoCard = null; }
+            } else if (msg.command === 'stream_chunk') {
+                if (msg.text === '\x00CLEAR') {
+                    // Tool call iniciou — congela o texto ja escrito como markdown fixo,
+                    // limpa o estado de streaming mas mantem o conteudo visivel na timeline
+                    const tl = getTimeline();
+                    if (tl) {
+                        const responseItem = tl.querySelector('.tl-item.tl-response');
+                        if (responseItem) {
+                            const body = responseItem.querySelector('.tl-body');
+                            const pre = responseItem.querySelector('.tl-stream');
+                            if (pre && streamText) {
+                                // Converte o texto parcial em markdown fixo
+                                pre.remove();
+                                const md = document.createElement('div');
+                                md.innerHTML = marked.parse(streamText);
+                                body.appendChild(md);
+                            }
+                            // Fecha o item de resposta como done mas mantem visivel
+                            responseItem.classList.remove('active');
+                            responseItem.classList.add('done');
+                        }
+                    }
+                    streamBubble = null;
+                    streamText = '';
+                    streamRafPending = false;
+                    // Remove o item de telemetria ao vivo — foi preamble de tool call
+                    if (liveTelemetryItem) { liveTelemetryItem.remove(); }
+                    liveTelemetryItem = null;
+                    liveTelemetryChips = null;
+                    liveTelemetryPending = null;
+                    return;
+                }
+                streamText += msg.text;
+                if (!streamBubble) {
+                    // Primeiro chunk: cria item de resposta final na timeline
+                    const tl = getTimeline();
+                    if (tl) {
+                        const prev = tl.querySelector('.tl-item.active');
+                        if (prev) { prev.classList.replace('active', 'done'); }
+                        const item = document.createElement('div');
+                        item.className = 'tl-item active tl-response';
+                        const dot = document.createElement('div');
+                        dot.className = 'tl-dot';
+                        const body = document.createElement('div');
+                        body.className = 'tl-body';
+                        item.appendChild(dot);
+                        item.appendChild(body);
+                        tl.appendChild(item);
+                        streamBubble = body;
+                    }
+                }
+                if (streamBubble && !streamRafPending) {
+                    streamRafPending = true;
+                    requestAnimationFrame(() => {
+                        streamRafPending = false;
+                        if (!streamBubble) { return; }
+                        let pre = streamBubble.querySelector('.tl-stream');
+                        if (!pre) {
+                            pre = document.createElement('div');
+                            pre.className = 'tl-stream';
+                            streamBubble.appendChild(pre);
+                        }
+                        pre.textContent = streamText;
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    });
+                }
             } else if (msg.command === 'agent_response') {
-                clearStatus();
                 finalizeTerminal();
                 setAgentRunning(false);
-                const loading = chatContainer.querySelector('[data-loading="true"]');
-                if (loading) { loading.closest('.message-row').remove(); }
-                appendMessage(msg.text, 'agent');
                 sendBtn.disabled = false;
+
+                const tl = getTimeline();
+                // Pode ser o item ativo de resposta (se ainda nao foi congelado pelo CLEAR)
+                const activeResponse = tl?.querySelector('.tl-item.active.tl-response');
+                const loadingBubble = chatContainer.querySelector('[data-loading]');
+
+                if (activeResponse) {
+                    // Tinha streaming ativo — renderiza markdown final e para animacao
+                    const body = activeResponse.querySelector('.tl-body');
+                    const pre = activeResponse.querySelector('.tl-stream');
+                    if (pre) { pre.remove(); }
+                    if (msg.text || streamText) {
+                        const md = document.createElement('div');
+                        md.innerHTML = marked.parse(msg.text || streamText);
+                        body.appendChild(md);
+                    }
+                    activeResponse.classList.remove('active');
+                } else if (!streamText && msg.text) {
+                    // Sem streaming: adiciona item de resposta na timeline ao inves de nova bolha
+                    if (tl) {
+                        const prev = tl.querySelector('.tl-item.active');
+                        if (prev) { prev.classList.replace('active', 'done'); }
+                        const item = document.createElement('div');
+                        item.className = 'tl-item tl-response';
+                        const dot = document.createElement('div');
+                        dot.className = 'tl-dot';
+                        const body = document.createElement('div');
+                        body.className = 'tl-body';
+                        const md = document.createElement('div');
+                        md.innerHTML = marked.parse(msg.text);
+                        body.appendChild(md);
+                        item.appendChild(dot);
+                        item.appendChild(body);
+                        tl.appendChild(item);
+                    }
+                }
+
+                // Para a animacao da loading bubble mas mantem a timeline visivel no chat
+                if (loadingBubble) {
+                    loadingBubble.classList.remove('loading');
+                    delete loadingBubble.dataset.loading;
+                }
+
+                streamBubble = null;
+                streamText = '';
+                streamRafPending = false;
             }
         });
 
-        function updateStatus(text) {
-            const el = document.getElementById('loading-status-text');
-            if (el) { el.textContent = text; }
+        function getTimeline() { return document.getElementById('agent-timeline'); }
+
+        // Detecta nome de arquivo no texto e retorna { prefix, filename, suffix } ou null
+        function splitFilename(text) {
+            const m = text.match(/^(.*?)([^\s\/\\]+\.[a-zA-Z0-9]+)(.*)$/);
+            if (!m) { return null; }
+            return { prefix: m[1], filename: m[2], suffix: m[3] };
+        }
+
+        function buildLabelWithFilename(text) {
+            const span = document.createElement('span');
+            span.className = 'tl-text';
+            const parts = splitFilename(text);
+            if (parts) {
+                if (parts.prefix) { span.appendChild(document.createTextNode(parts.prefix)); }
+                const fn = document.createElement('span');
+                fn.className = 'tl-filename';
+                fn.textContent = parts.filename;
+                span.appendChild(fn);
+                if (parts.suffix) { span.appendChild(document.createTextNode(parts.suffix)); }
+            } else {
+                span.textContent = text;
+            }
+            return span;
+        }
+
+        function addTimelineItem(text, tl) {
+            const timeline = tl || getTimeline();
+            if (!timeline) { return null; }
+            // Mark previous active item as done
+            const prev = timeline.querySelector('.tl-item.active');
+            if (prev) { prev.classList.replace('active', 'done'); }
+
+            const item = document.createElement('div');
+            item.className = 'tl-item active';
+
+            const dot = document.createElement('div');
+            dot.className = 'tl-dot';
+
+            const body = document.createElement('div');
+            body.className = 'tl-body';
+
+            body.appendChild(buildLabelWithFilename(text));
+            item.appendChild(dot);
+            item.appendChild(body);
+            timeline.appendChild(item);
             chatContainer.scrollTop = chatContainer.scrollHeight;
+            return item;
+        }
+
+        function markTimelineError() {
+            const timeline = getTimeline();
+            if (!timeline) { return; }
+            const active = timeline.querySelector('.tl-item.active');
+            if (active) {
+                active.classList.remove('active');
+                active.classList.add('error');
+            }
+        }
+
+        function updateStatus(text) {
+            const timeline = getTimeline();
+            if (!timeline) { return; }
+            addTimelineItem(text, timeline);
         }
 
         function clearStatus() {
-            const el = document.getElementById('loading-status-text');
-            if (el) { el.textContent = ''; }
+            const timeline = getTimeline();
+            if (!timeline) { return; }
+            const active = timeline.querySelector('.tl-item.active');
+            if (active) { active.classList.replace('active', 'done'); }
+        }
+
+        let liveTelemetryItem = null;
+        let liveTelemetryChips = null;
+        // Throttle live updates to ~10fps to avoid layout thrashing
+        let liveTelemetryRaf = false;
+        let liveTelemetryPending = null;
+
+        function getOrCreateLiveTelemetryItem() {
+            if (liveTelemetryItem) { return; }
+            const tl = getTimeline();
+            if (!tl) { return; }
+            const item = document.createElement('div');
+            item.className = 'tl-item tl-telemetry';
+            const dot = document.createElement('div');
+            dot.className = 'tl-dot';
+            const body = document.createElement('div');
+            body.className = 'tl-body';
+            const label = document.createElement('span');
+            label.className = 'tl-text';
+            label.textContent = 'Gerando';
+            const chips = document.createElement('div');
+            chips.className = 'tl-telemetry-chips';
+            body.appendChild(label);
+            body.appendChild(chips);
+            item.appendChild(dot);
+            item.appendChild(body);
+            tl.appendChild(item);
+            liveTelemetryItem = item;
+            liveTelemetryChips = chips;
+        }
+
+        function renderTelemetryChips(chips, data) {
+            chips.innerHTML = '';
+            data.filter(Boolean).forEach(html => {
+                const chip = document.createElement('span');
+                chip.className = 'tl-chip';
+                chip.innerHTML = html;
+                chips.appendChild(chip);
+            });
+        }
+
+        function updateLiveTelemetry(tokens, tokensPerSec, elapsedMs) {
+            getOrCreateLiveTelemetryItem();
+            if (!liveTelemetryChips) { return; }
+            liveTelemetryPending = { tokens, tokensPerSec, elapsedMs };
+            if (liveTelemetryRaf) { return; }
+            liveTelemetryRaf = true;
+            requestAnimationFrame(() => {
+                liveTelemetryRaf = false;
+                if (!liveTelemetryPending || !liveTelemetryChips) { return; }
+                const { tokens: t, tokensPerSec: tps, elapsedMs: ms } = liveTelemetryPending;
+                liveTelemetryPending = null;
+                renderTelemetryChips(liveTelemetryChips, [
+                    `Gerado <span>${t}t</span>`,
+                    tps > 0 ? `<span>${tps} t/s</span>` : null,
+                    `<span>${(ms / 1000).toFixed(1)}s</span>`,
+                ]);
+            });
+        }
+
+        function finalizeTelemetry(promptTokens, completionTokens, tokensPerSec, elapsedMs) {
+            getOrCreateLiveTelemetryItem();
+            if (!liveTelemetryItem || !liveTelemetryChips) { return; }
+            // Update label
+            liveTelemetryItem.querySelector('.tl-text').textContent = 'Telemetria';
+            const elapsedSec = (elapsedMs / 1000).toFixed(1);
+            renderTelemetryChips(liveTelemetryChips, [
+                promptTokens > 0 ? `Prompt <span>${promptTokens}t</span>` : null,
+                completionTokens > 0 ? `Gerado <span>${completionTokens}t</span>` : null,
+                tokensPerSec > 0 ? `<span>${tokensPerSec} t/s</span>` : null,
+                `Tempo <span>${elapsedSec}s</span>`,
+            ]);
+            liveTelemetryItem = null;
+            liveTelemetryChips = null;
         }
 
         let activeTerminal = null;
         let activeTerminalWrapper = null;
+        let activeTerminalItem = null;
 
         function startTerminal(cmd) {
             finalizeTerminal();
 
-            // Insere o terminal DENTRO da bolha de loading, abaixo dos dots
-            const loadingBubble = chatContainer.querySelector('[data-loading="true"]');
+            const timeline = getTimeline();
+            if (!timeline) { return; }
 
-            const wrapper = document.createElement('div');
-            wrapper.className = 'terminal-output';
-            wrapper.id = 'active-terminal';
+            // Mark previous active done, create a new timeline item for this command
+            const prev = timeline.querySelector('.tl-item.active');
+            if (prev) { prev.classList.replace('active', 'done'); }
 
-            const label = document.createElement('div');
-            label.className = 'terminal-label';
-            label.textContent = cmd || 'Terminal';
+            const item = document.createElement('div');
+            item.className = 'tl-item active tl-run';
+
+            const dot = document.createElement('div');
+            dot.className = 'tl-dot';
 
             const body = document.createElement('div');
-            body.className = 'terminal-body';
-            body.id = 'active-terminal-body';
+            body.className = 'tl-body';
 
-            wrapper.appendChild(label);
-            wrapper.appendChild(body);
+            const label = document.createElement('span');
+            label.className = 'tl-text';
+            label.textContent = cmd ? `Running: ${cmd}` : 'Running command...';
 
-            if (loadingBubble) {
-                loadingBubble.appendChild(wrapper);
-            } else {
-                chatContainer.appendChild(wrapper);
-            }
+            // Terminal block (collapsible)
+            const terminal = document.createElement('div');
+            terminal.className = 'tl-terminal';
 
-            activeTerminal = body;
-            activeTerminalWrapper = wrapper;
+            const header = document.createElement('div');
+            header.className = 'tl-terminal-header';
+            const cmdSpan = document.createElement('span');
+            cmdSpan.className = 'tl-terminal-cmd';
+            cmdSpan.textContent = cmd || 'terminal';
+            const toggle = document.createElement('span');
+            toggle.className = 'tl-terminal-toggle mi';
+            toggle.textContent = 'expand_more';
+            header.appendChild(cmdSpan);
+            header.appendChild(toggle);
+            header.addEventListener('click', () => {
+                terminal.classList.toggle('collapsed');
+                toggle.textContent = terminal.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+            });
+
+            const termBody = document.createElement('div');
+            termBody.className = 'tl-terminal-body';
+
+            terminal.appendChild(header);
+            terminal.appendChild(termBody);
+            body.appendChild(label);
+            body.appendChild(terminal);
+            item.appendChild(dot);
+            item.appendChild(body);
+            timeline.appendChild(item);
+
+            activeTerminal = termBody;
+            activeTerminalWrapper = terminal;
+            activeTerminalItem = item;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function appendCommandChunk(chunk) {
-            // Cria bloco se command_start não chegou por algum motivo
             if (!activeTerminal) { startTerminal(''); }
-            const span = document.createElement('span');
-            span.textContent = chunk;
-            activeTerminal.appendChild(span);
-            if (activeTerminalWrapper) { activeTerminalWrapper.scrollTop = activeTerminalWrapper.scrollHeight; }
+            activeTerminal.textContent += chunk;
+            activeTerminalWrapper.scrollTop = activeTerminalWrapper.scrollHeight;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        function finalizeTerminal() {
+        function finalizeTerminal(isError = false) {
+            if (activeTerminalItem) {
+                activeTerminalItem.classList.remove('active');
+                activeTerminalItem.classList.add(isError ? 'error' : 'done');
+                // Collapse the terminal body after it finishes
+                if (activeTerminalWrapper) {
+                    activeTerminalWrapper.classList.add('collapsed');
+                    const toggle = activeTerminalWrapper.querySelector('.tl-terminal-toggle');
+                    if (toggle) { toggle.textContent = 'chevron_right'; }
+                }
+            }
             activeTerminal = null;
             activeTerminalWrapper = null;
-            // Remove o bloco anterior do DOM — só mantém um terminal por vez
-            const el = document.getElementById('active-terminal');
-            if (el) { el.remove(); }
+            activeTerminalItem = null;
         }
 
         // ── Send ──
@@ -1572,6 +2351,16 @@
             input.value = '';
             input.style.height = 'auto';
             sendBtn.disabled = true;
+            streamBubble = null;
+            streamText = '';
+            streamRafPending = false;
+            liveTelemetryItem = null;
+            liveTelemetryChips = null;
+            liveTelemetryPending = null;
+            // Sela a timeline anterior removendo o id para que getTimeline()
+            // sempre retorne a nova, evitando que dois elementos tenham o mesmo id
+            const oldTimeline = document.getElementById('agent-timeline');
+            if (oldTimeline) { oldTimeline.removeAttribute('id'); }
             appendMessage('', 'agent', true);
 
             vscode.postMessage({

@@ -37,10 +37,12 @@ exports.runAgentLoop = runAgentLoop;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const api_client_1 = require("../services/api-client");
+const rag_client_1 = require("../services/rag-client");
 const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
 const shell_tools_1 = require("../tools/shell-tools");
+const web_tools_1 = require("../tools/web-tools");
 const tools_definition_1 = require("./tools-definition");
 const prompt_1 = require("./prompt");
 const tools_definition_2 = require("./tools-definition");
@@ -70,7 +72,6 @@ function extractSymbols(code) {
 async function checkRemovedSymbols(before, after, cwd) {
     const beforeSymbols = extractSymbols(before);
     const afterSymbols = new Set(extractSymbols(after));
-    // Símbolos que existiam antes mas não existem mais no novo conteúdo
     const removed = beforeSymbols.filter(s => !afterSymbols.has(s));
     if (removed.length === 0) {
         return [];
@@ -78,29 +79,84 @@ async function checkRemovedSymbols(before, after, cwd) {
     const warnings = [];
     for (const symbol of removed) {
         const result = await (0, shell_tools_1.searchInWorkspace)(symbol, cwd);
-        // Se encontrou referências (além do próprio arquivo sendo editado)
         if (result && !result.startsWith('[ERRO]') && result.trim().length > 0) {
             warnings.push(`  - "${symbol}" — referencias encontradas:\n${result.split('\n').slice(0, 3).map(l => '    ' + l).join('\n')}`);
         }
     }
     return warnings;
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters) {
     return {
-        list_directory: async (args, cwd, _step, _max) => {
-            const dir = args.dirPath || args.path || cwd;
-            onStatus(`Lendo estrutura: ${path.basename(dir)}`);
-            return (0, file_tools_1.listDirectory)(dir);
+        list_directory: async (args, cwd) => {
+            const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
+            if (dirCache.has(dir)) {
+                onStatus(`Reading structure: ${path.basename(dir)} (cached)`);
+                return dirCache.get(dir);
+            }
+            onStatus(`Reading structure: ${path.basename(dir)}`);
+            const result = await (0, file_tools_1.listDirectory)(dir, cwd);
+            dirCache.set(dir, result);
+            return result;
         },
-        read_local_file: async (args, cwd, _step, _max) => {
-            onStatus(`Lendo arquivo: ${path.basename(args.filePath || '')}`);
-            return (0, file_tools_1.readLocalFile)(args.filePath || '', cwd);
+        read_local_file: async (args, cwd) => {
+            const fp = args.filePath || '';
+            const fullPath = path.resolve(cwd, fp);
+            if (fileCache.has(fullPath)) {
+                onStatus(`Reading file: ${path.basename(fp)} (cached)`);
+                filesReadThisRound.add(fullPath);
+                return fileCache.get(fullPath);
+            }
+            onStatus(`Reading file: ${path.basename(fp)}`);
+            const result = await (0, file_tools_1.readLocalFile)(fp, cwd);
+            fileCache.set(fullPath, result);
+            filesReadThisRound.add(fullPath);
+            return result;
         },
-        search_in_workspace: async (args, cwd, _step, _max) => {
-            onStatus(`Buscando no projeto: "${args.query}"`);
-            return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd);
+        edit_file: async (args, cwd) => {
+            const filePath = args.filePath || '';
+            const oldString = args.old_string ?? args.oldString ?? '';
+            const newString = args.new_string ?? args.newString ?? '';
+            if (!filePath) {
+                return '[ERROR] filePath not provided.';
+            }
+            if (oldString === '') {
+                return '[ERROR] old_string cannot be empty.';
+            }
+            let before = null;
+            try {
+                const fullPath = (0, validation_1.resolveFilePath)(filePath, cwd);
+                before = fs.readFileSync(fullPath, 'utf8');
+            }
+            catch {
+                before = null;
+            }
+            const after = before ? before.replace(oldString, newString) : newString;
+            if (autoMode) {
+                onStatus(`Editing: ${path.basename(filePath)}`);
+                const editResult = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
+                fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                counters.filesWritten++;
+                return editResult;
+            }
+            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+            const approved = await onConfirmWrite({ filePath, before, after });
+            if (!approved) {
+                return '[CANCELLED] User rejected the file change.';
+            }
+            const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
+            fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+            counters.filesWritten++;
+            return editResult2;
         },
-        write_local_file: async (args, cwd, _step, _max) => {
+        search_in_workspace: async (args, cwd) => {
+            onStatus(`Searching project: "${args.query}"`);
+            return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd, cwd);
+        },
+        get_diagnostics: async () => {
+            onStatus('Fetching editor diagnostics...');
+            return onGetDiagnostics() || 'No errors or warnings found in the editor.';
+        },
+        write_local_file: async (args, cwd) => {
             const filePath = args.filePath || '';
             const content = args.content || '';
             let before = null;
@@ -111,52 +167,110 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmW
             catch {
                 before = null;
             }
-            // Detecta símbolos removidos que não são substituídos no novo conteúdo
+            if (before !== null) {
+                const fullPath = (0, validation_1.resolveFilePath)(filePath, cwd);
+                if (!filesReadThisRound.has(fullPath)) {
+                    return `[REQUIRED] You attempted to overwrite "${path.basename(filePath)}" without reading its current content. Use edit_file for partial changes, or call read_local_file("${filePath}") before using write_local_file with the full accumulated content.`;
+                }
+            }
             if (before) {
                 const warnings = await checkRemovedSymbols(before, content, cwd);
                 if (warnings.length > 0) {
-                    // Retorna aviso para o modelo reconsiderar antes de escrever
-                    return `[ATENCAO] Os seguintes simbolos serao removidos e foram encontrados em outros arquivos:\n${warnings.join('\n')}\n\nSe a remocao for intencional como substituicao, chame write_local_file novamente com confirmacao explicita no campo content iniciando com "// REMOCAO_CONFIRMADA". Caso contrario, revise o conteudo para preservar esses simbolos.`;
+                    return `[WARNING] The following symbols will be removed and were found in other files:\n${warnings.join('\n')}\n\nIf the removal is intentional as a direct replacement, call write_local_file again with explicit confirmation by starting the content with "// REMOVAL_CONFIRMED". Otherwise, revise the content to preserve these symbols.`;
                 }
             }
             if (autoMode) {
-                onStatus(`Escrevendo: ${path.basename(filePath)}`);
-                return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+                onStatus(`Writing: ${path.basename(filePath)}`);
+                const writeResult = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+                fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                counters.filesWritten++;
+                return writeResult;
             }
-            onStatus(`Aguardando aprovacao: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved) {
-                return '[CANCELADO] O usuario rejeitou a alteracao do arquivo.';
+            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+            const approved2 = await onConfirmWrite({ filePath, before, after: content });
+            if (!approved2) {
+                return '[CANCELLED] User rejected the file change.';
             }
-            return (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+            const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
+            fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+            counters.filesWritten++;
+            return writeResult2;
         },
-        run_command: async (args, cwd, _step, _max) => {
+        run_command: async (args, cwd) => {
             const cmd = args.command || '';
-            onStatus(`Executando: ${cmd}`);
+            const workDir = args.cwd || cwd;
+            if ((0, shell_tools_1.isCommandBlocked)(cmd)) {
+                return `[BLOCKED] Command refused by security policy: "${cmd}"`;
+            }
+            if (!autoMode && !sessionApprovedCommands.has(cmd)) {
+                onStatus(`Awaiting approval to run: ${cmd}`);
+                const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
+                if (decision === 'block') {
+                    return `[BLOCKED] User refused to run: "${cmd}"`;
+                }
+                if (decision === 'session') {
+                    sessionApprovedCommands.add(cmd);
+                }
+            }
+            onStatus(`Running: ${cmd}`);
             onCommandStart(cmd);
             return new Promise((resolve) => {
-                const emitter = (0, tools_definition_1.runCommandTool)(cmd, args.cwd || cwd);
+                const emitter = (0, tools_definition_1.runCommandTool)(cmd, workDir);
                 let output = '';
                 let isLongRunning = false;
+                let exitCode = 0;
                 emitter.on('stdout', (chunk) => { output += chunk; onCommandOutput(chunk); });
                 emitter.on('stderr', (chunk) => { output += chunk; onCommandOutput(chunk); });
+                emitter.on('exit_code', (code) => { exitCode = code; });
                 emitter.on('long_running', () => { isLongRunning = true; });
                 emitter.on('done', () => {
+                    onCommandEnd(exitCode);
                     if (isLongRunning) {
-                        onStatus('Processo rodando — aguardando sua resposta...');
-                        // Retorna para o modelo saber que o processo subiu e está rodando
-                        resolve(`[PROCESSO INICIADO] O comando "${cmd}" esta rodando em background. Output ate agora:\n${output}\nO servidor esta ativo. Informe o usuario que pode interagir.`);
+                        onStatus('Process running — awaiting your response...');
+                        resolve(`[PROCESS STARTED] Command "${cmd}" is running in the background. Output so far:\n${output}\nThe server is up. Inform the user they can interact.`);
                     }
                     else {
-                        resolve(output || '[OK] Comando executado sem saida.');
+                        resolve(output || '[OK] Command executed with no output.');
                     }
                 });
             });
         },
+        run_git: async (args, cwd) => {
+            const subcommand = args.subcommand || '';
+            const workDir = args.cwd || cwd;
+            if (!subcommand) {
+                return '[ERROR] subcommand not provided.';
+            }
+            const isReadOnly = (0, shell_tools_1.isGitReadOnly)(subcommand);
+            if (!isReadOnly && !autoMode) {
+                onStatus(`Awaiting approval: git ${subcommand}`);
+                const decision = await onConfirmCommand({ command: `git ${subcommand}`, cwd: workDir });
+                if (decision === 'block') {
+                    return `[BLOCKED] User refused: "git ${subcommand}"`;
+                }
+            }
+            onStatus(`git ${subcommand.split(' ')[0]}...`);
+            return (0, shell_tools_1.runGit)(subcommand, workDir);
+        },
+        web_search: async (args) => {
+            const query = args.query || '';
+            if (!query) {
+                return '[ERROR] query not provided.';
+            }
+            onStatus(`Searching the web: "${query}"`);
+            return (0, web_tools_1.webSearch)(query);
+        },
+        todo_update: async (args) => {
+            const todos = (args.todos || []).map((t) => ({
+                content: t.content || '',
+                status: (['pending', 'in_progress', 'completed'].includes(t.status) ? t.status : 'pending'),
+            }));
+            onTodoUpdate(todos);
+            return '[OK] Todo list updated.';
+        },
     };
 }
 const PENDING_ACTION_PATTERNS = [
-    // Intenção futura — PT
     /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
     /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
     /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
@@ -165,7 +279,6 @@ const PENDING_ACTION_PATTERNS = [
     /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
     /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
     /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
-    // Modelo afirmou ter feito sem usar ferramenta — PT
     /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
     /escrevi o arquivo/i, /gravei o arquivo/i,
     /criei o mock/i, /gerei o arquivo/i,
@@ -174,7 +287,6 @@ const PENDING_ACTION_PATTERNS = [
     /eu executei/i, /executei os testes/i, /rodei os testes/i,
     /testes passaram/i, /testes foram executados/i,
     /atualizei o/i, /modifiquei o/i, /corrigi o/i,
-    // Inglês
     /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
     /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
     /i will refactor/i, /i will fix/i, /i will update/i,
@@ -182,14 +294,12 @@ const PENDING_ACTION_PATTERNS = [
     /i ran the tests/i, /tests passed/i, /i executed/i,
 ];
 function detectsPendingAction(text, autoMode = false) {
-    // Em modo auto verifica o texto inteiro — o modelo pode mentir em qualquer parte
     const toCheck = autoMode
         ? text
         : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
     return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 function detectEscapedToolCall(text) {
-    // Formato simples: funcao({ ... })
     const simple = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
     if (simple && tools_definition_2.TOOL_NAMES.has(simple[1])) {
         try {
@@ -197,12 +307,10 @@ function detectEscapedToolCall(text) {
         }
         catch { }
     }
-    // Formato JSON com tool_calls array (modelo gera como texto)
     const jsonBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     const jsonStr = jsonBlock ? jsonBlock[1] : text;
     try {
         const parsed = JSON.parse(jsonStr.trim());
-        // { tool_calls: [{ function: { name, args } }] }
         const tc = parsed?.tool_calls?.[0];
         if (tc?.function?.name && tools_definition_2.TOOL_NAMES.has(tc.function.name)) {
             const args = typeof tc.function.arguments === 'string'
@@ -210,7 +318,6 @@ function detectEscapedToolCall(text) {
                 : (tc.function.args || tc.function.arguments || {});
             return { id: tc.id, function: { name: tc.function.name, arguments: args } };
         }
-        // { function: { name, arguments } } direto
         if (parsed?.function?.name && tools_definition_2.TOOL_NAMES.has(parsed.function.name)) {
             const args = typeof parsed.function.arguments === 'string'
                 ? JSON.parse(parsed.function.arguments)
@@ -219,16 +326,13 @@ function detectEscapedToolCall(text) {
         }
     }
     catch { }
-    // Formato <|tool_call|>call:nome{args}<|/tool_call|> ou variantes
     const tagMatch = text.match(/<\|tool_call\|>call:(\w+)\{([^}]*)\}<\|\/tool_call\|>/);
     if (tagMatch && tools_definition_2.TOOL_NAMES.has(tagMatch[1])) {
         try {
-            // args no formato key:<|"value"|>
             const rawArgs = tagMatch[2].replace(/<\|"([^"]*)"\|>/g, '"$1"');
             return { function: { name: tagMatch[1], arguments: JSON.parse(`{${rawArgs}}`) } };
         }
         catch { }
-        // tenta extrair command diretamente
         const cmdMatch = tagMatch[2].match(/"command"\s*:\s*"([^"]+)"/);
         if (cmdMatch) {
             return { function: { name: tagMatch[1], arguments: { command: cmdMatch[1] } } };
@@ -236,61 +340,162 @@ function detectEscapedToolCall(text) {
     }
     return null;
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onConfirmWrite, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage) {
+// Keeps only the last `maxPairs` assistant/tool pairs from the current round,
+// dropping older ones so the context window doesn't overflow on long tasks.
+// System message, history messages, and the initial user message are preserved.
+function pruneRoundToolMessages(messages, maxPairs) {
+    // Find pairs (assistant with tool_calls + tool result) added during this round.
+    // They always appear after the last 'user' message that started the round.
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user' && !messages[i].tool_call_id) {
+            lastUserIdx = i;
+            break;
+        }
+    }
+    if (lastUserIdx === -1) {
+        return;
+    }
+    // Collect indices of assistant+tool pairs after the last user message
+    const pairStarts = [];
+    for (let i = lastUserIdx + 1; i < messages.length - 1; i++) {
+        if (messages[i].tool_calls?.length > 0 && messages[i + 1]?.role === 'tool') {
+            pairStarts.push(i);
+            i++; // skip the tool message
+        }
+    }
+    // If within limit, nothing to do
+    if (pairStarts.length <= maxPairs) {
+        return;
+    }
+    // Drop oldest pairs that exceed the limit
+    const toDrop = pairStarts.length - maxPairs;
+    const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
+    messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
+}
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry) {
     const autoBlock = autoMode
-        ? `\nMODO AUTOMATICO ATIVO: Escreva arquivos diretamente sem pedir confirmacao. Apos cada escrita, rode os testes do projeto automaticamente com run_command. Se os testes falharem, corrija o codigo e rode os testes de novo. Repita ate todos os testes passarem ou atingir o limite de tentativas.`
+        ? `\nAUTO MODE ACTIVE: Execute the user's task completely without asking for confirmation. Write files directly, run tests after each change, fix failures and retry until done. When the task is fully complete, respond with a short summary of what was done and stop — do not keep exploring or looping.`
         : '';
-    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, contextBlock].filter(Boolean).join('\n\n');
-    const priorMessages = (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
+    // Optional RAG: query vector DB and prepend relevant context
+    let ragContext = '';
+    if (ragEndpoint && ragCollection) {
+        const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
+        ragContext = (0, rag_client_1.formatRagContext)(ragResults);
+    }
+    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
+    // In auto mode include only the last 1 history pair so the model knows what
+    // the user was working on — skipping history entirely left it context-blind.
+    // The round's own tool chain still grows large, so keep it to 1 pair max.
+    const historySlice = sessionHistory.slice(0, -1);
+    const priorMessages = autoMode
+        ? (0, history_service_1.buildMessagesFromHistory)(historySlice.slice(-2)) // last user+assistant pair
+        : (0, history_service_1.buildMessagesFromHistory)(historySlice);
     const roundMessages = [
         { role: 'system', content: systemContent },
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
-    // Fila de mensagens injetadas pelo usuário durante a execução
     let injectedMessage = null;
     if (onInjectMessage) {
         onInjectMessage((msg) => { injectedMessage = msg; });
     }
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode);
+    const filesReadThisRound = new Set();
+    const sessionApprovedCommands = new Set();
+    const fileCache = new Map();
+    const dirCache = new Map();
+    const counters = { filesWritten: 0 };
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters);
     const thinkingStatus = [
-        'Analisando sua solicitacao...',
-        'Processando contexto do projeto...',
-        'Elaborando solucao...',
-        'Revisando o codigo...',
-        'Verificando dependencias...',
-        'Planejando proximos passos...',
-        'Gerando resposta...',
+        'Analyzing your request...',
+        'Processing project context...',
+        'Working out the solution...',
+        'Reviewing the code...',
+        'Checking dependencies...',
+        'Planning next steps...',
+        'Generating response...',
     ];
     let lastToolName = '';
-    const maxSteps = autoMode ? 200 : constants_2.MAX_AGENT_STEPS;
+    const maxSteps = autoMode ? 40 : constants_2.MAX_AGENT_STEPS;
     let step = 0;
+    let emptyResponseStreak = 0;
+    let pendingActionStreak = 0;
+    let filesWrittenThisRound = 0;
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalElapsedMs = 0;
+    const sessionStart = Date.now();
     while (++step <= maxSteps) {
-        // Verifica abort
         if (signal?.aborted) {
-            return '[INTERROMPIDO] Execucao cancelada pelo usuario.';
+            return '[INTERRUPTED] Execution cancelled by user.';
         }
-        // Verifica mensagem injetada — insere no contexto e continua
         if (injectedMessage) {
             const msg = injectedMessage;
             injectedMessage = null;
-            roundMessages.push({ role: 'user', content: `[USUARIO INTERROMPEU]: ${msg}` });
+            roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${msg}` });
             lastToolName = '';
         }
         const statusAfterTool = {
-            list_directory: 'Analisando estrutura do projeto...',
-            read_local_file: 'Processando arquivo lido...',
-            search_in_workspace: 'Analisando resultados da busca...',
-            write_local_file: 'Elaborando proxima acao...',
-            run_command: 'Analisando output do comando...',
+            list_directory: 'Analyzing project structure...',
+            read_local_file: 'Processing file contents...',
+            edit_file: 'Working out next action...',
+            search_in_workspace: 'Analyzing search results...',
+            get_diagnostics: 'Analyzing editor diagnostics...',
+            write_local_file: 'Working out next action...',
+            run_command: 'Analyzing command output...',
+            run_git: 'Analyzing git result...',
+            web_search: 'Analyzing web results...',
+            todo_update: 'Updating task list...',
         };
         const thinking = lastToolName && statusAfterTool[lastToolName]
             ? statusAfterTool[lastToolName]
             : thinkingStatus[step % thinkingStatus.length];
         onStatus(thinking);
-        const result = await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, tools_definition_2.TOOLS, model, signal);
+        const activeTools = enabledTools?.length
+            ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
+            : tools_definition_2.TOOLS;
+        // Preventive pruning calibrated for a 2048-token context window.
+        // Only prune when significantly over budget, keeping the most recent pairs
+        // so the model retains context of what it just read/did.
+        {
+            const totalChars = roundMessages.reduce((acc, m) => {
+                const content = typeof m.content === 'string' ? m.content : '';
+                const toolArgs = m.tool_calls ? JSON.stringify(m.tool_calls) : '';
+                return acc + content.length + toolArgs.length;
+            }, 0);
+            const estimatedTokens = Math.floor(totalChars / 4);
+            if (estimatedTokens > 1200) {
+                onStatus('Compactando contexto...');
+                // Keep more pairs in auto mode so model doesn't lose what it just read
+                pruneRoundToolMessages(roundMessages, autoMode ? 3 : 2);
+            }
+        }
+        // Only stream text to UI when there's a chance this is the final reply.
+        // If the model ends up calling a tool instead, onStreamChunk output is
+        // discarded — the UI bubble gets cleared before the tool result is shown.
+        let streamedSoFar = '';
+        const onChunk = onStreamChunk
+            ? (text) => { streamedSoFar += text; onStreamChunk(text); }
+            : undefined;
+        const result = provider === 'anthropic' && anthropicApiKey
+            ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
+            : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
+        // If the model called a tool, the streamed text was reasoning/preamble —
+        // tell the UI to discard it so the bubble doesn't show stale content.
+        if (result.toolCall && streamedSoFar) {
+            onStreamChunk?.('\x00CLEAR');
+        }
         if (result.responseText === '__ABORTED__') {
-            return '[INTERROMPIDO] Execucao cancelada pelo usuario.';
+            return '[INTERRUPTED] Execution cancelled by user.';
+        }
+        if (result.responseText === '__INFRA_ERROR__') {
+            return 'Erro de conexao com o modelo. Verifique se o LM Studio esta rodando e se o modelo tem memoria suficiente para ser carregado.';
+        }
+        // Accumulate telemetry
+        if (result.usage) {
+            totalPromptTokens += result.usage.promptTokens;
+            totalCompletionTokens += result.usage.completionTokens;
+            totalElapsedMs += result.usage.elapsedMs;
         }
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
@@ -302,15 +507,28 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
             lastToolName = name;
-            // Reseta o contador a cada tool call para que tarefas longas não estourem o limite
-            if (autoMode) {
-                step = 1;
-            }
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
             const toolOutput = handler
                 ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+            // Truncate large tool outputs to avoid filling the context window.
+            // In auto mode limits are tighter — no history budget and test/build
+            // output (jest, coverage tables) can be thousands of chars.
+            // Calibrated for 2048-token context: system (~250t) + prompt + response (1024t).
+            // Leaves ~750 tokens (~3000 chars) for tool output + conversation.
+            const TOOL_OUTPUT_LIMITS = {
+                list_directory: 600,
+                search_in_workspace: 800,
+                read_local_file: 1200,
+                run_command: 800,
+                run_git: 600,
+                web_search: 1000,
+            };
+            const limit = TOOL_OUTPUT_LIMITS[name] ?? 800;
+            const truncatedOutput = toolOutput.length > limit
+                ? toolOutput.slice(0, limit) + `\n...[truncated — ${toolOutput.length - limit} chars omitted]`
+                : toolOutput;
             roundMessages.push({
                 role: 'assistant',
                 content: null,
@@ -322,29 +540,85 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             });
             roundMessages.push({
                 role: 'tool',
-                content: toolOutput,
+                content: truncatedOutput,
                 tool_call_id: toolCallId,
             });
+            // In auto mode keep fewer pairs since there's no history budget to spare.
+            pruneRoundToolMessages(roundMessages, autoMode ? 3 : 6);
         }
         else if (result.responseText !== undefined) {
             const text = result.responseText || '';
-            if (text && detectsPendingAction(text, autoMode)) {
-                // Modelo anunciou ou fingiu ter feito algo sem chamar a ferramenta — empurra de volta
+            // Only treat completely empty response as recoverable overflow.
+            // Short responses are legitimate (model may say "Ok." then call a tool).
+            if (!text) {
+                emptyResponseStreak++;
+                onStatus('Compactando contexto...');
+                if (emptyResponseStreak >= 3) {
+                    return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
+                }
+                // Progressive pruning: each retry removes more pairs
+                const keepPairs = Math.max(1, 3 - emptyResponseStreak);
+                pruneRoundToolMessages(roundMessages, keepPairs);
+                roundMessages.push({
+                    role: 'user',
+                    content: step <= 1
+                        ? userPrompt
+                        : 'Continue a tarefa de onde parou.',
+                });
+                lastToolName = '';
+                continue;
+            }
+            emptyResponseStreak = 0;
+            // In auto mode: if the model returned text without writing any file yet,
+            // it's still in planning/reasoning phase — push it to act.
+            const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
+            if (detectsPendingAction(text, autoMode) || modelIsPlanning) {
+                pendingActionStreak++;
+                if (pendingActionStreak >= 3) {
+                    pendingActionStreak = 0;
+                    return text;
+                }
                 roundMessages.push({ role: 'assistant', content: text });
                 roundMessages.push({
                     role: 'user',
                     content: autoMode
-                        ? 'Voce descreveu acoes mas nao executou nenhuma ferramenta. Use write_local_file, run_command ou outra ferramenta agora. Nao descreva — execute.'
+                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
                         : 'continue',
                 });
                 lastToolName = '';
                 continue;
             }
-            return text || 'Nao foi possivel obter resposta.';
+            pendingActionStreak = 0;
+            // In auto mode: before returning, check editor diagnostics.
+            // If there are errors in files written this round, the model must fix them.
+            // Wait 2s for the TypeScript language server to process the new files.
+            if (autoMode && filesReadThisRound.size > 0) {
+                await new Promise(r => setTimeout(r, 2000));
+                const diag = onGetDiagnostics();
+                // Only block on actual errors — warnings are ignored in auto mode
+                const hasErrors = diag && /\[ERROR\]/.test(diag);
+                if (hasErrors) {
+                    onStatus('Erros detectados — corrigindo...');
+                    roundMessages.push({ role: 'assistant', content: text });
+                    roundMessages.push({
+                        role: 'user',
+                        content: `The editor found TypeScript/build errors in the files you wrote. Fix all [ERROR] items now using edit_file. Ignore any [WARNING] lines.\n\n${diag}`,
+                    });
+                    lastToolName = '';
+                    continue;
+                }
+            }
+            // Emit telemetry before returning
+            if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {
+                const elapsedSec = totalElapsedMs / 1000;
+                const tokensPerSec = elapsedSec > 0 ? Math.round(totalCompletionTokens / elapsedSec) : 0;
+                onTelemetry({ promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, tokensPerSec, elapsedMs: Date.now() - sessionStart });
+            }
+            return text;
         }
         else {
             break;
         }
     }
-    return 'O agente atingiu o limite de passos. Tente uma pergunta mais especifica.';
+    return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
 }
