@@ -2100,24 +2100,31 @@
 
         function getTimeline() { return document.getElementById('agent-timeline'); }
 
-        // Detecta nome de arquivo no texto e retorna { prefix, filename, suffix } ou null
-        function splitFilename(text) {
-            const m = text.match(/^(.*?)([^\s\/\\]+\.[a-zA-Z0-9]+)(.*)$/);
-            if (!m) { return null; }
-            return { prefix: m[1], filename: m[2], suffix: m[3] };
-        }
-
+        // Itera o texto encontrando TODOS os nomes de arquivo (algo.ext)
+        // e os envolve em <span class="tl-filename"> para destacar em amarelo.
+        // Suporta listas separadas por virgula como "Abertos no editor: a.ts, b.tsx, c.json".
         function buildLabelWithFilename(text) {
             const span = document.createElement('span');
             span.className = 'tl-text';
-            const parts = splitFilename(text);
-            if (parts) {
-                if (parts.prefix) { span.appendChild(document.createTextNode(parts.prefix)); }
+            const re = /([A-Za-z0-9_.\-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])/g;
+            let lastIndex = 0;
+            let match;
+            let anyMatch = false;
+            while ((match = re.exec(text)) !== null) {
+                anyMatch = true;
+                if (match.index > lastIndex) {
+                    span.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
                 const fn = document.createElement('span');
                 fn.className = 'tl-filename';
-                fn.textContent = parts.filename;
+                fn.textContent = match[1];
                 span.appendChild(fn);
-                if (parts.suffix) { span.appendChild(document.createTextNode(parts.suffix)); }
+                lastIndex = match.index + match[1].length;
+            }
+            if (anyMatch) {
+                if (lastIndex < text.length) {
+                    span.appendChild(document.createTextNode(text.slice(lastIndex)));
+                }
             } else {
                 span.textContent = text;
             }
