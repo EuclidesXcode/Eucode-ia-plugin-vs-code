@@ -41,13 +41,16 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const constants_1 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
-async function listDirectory(dirPath) {
+const ignore_1 = require("../utils/ignore");
+async function listDirectory(dirPath, workspaceRoot) {
     try {
         const fullPath = path.resolve(dirPath);
+        const root = workspaceRoot || fullPath;
         const entries = fs.readdirSync(fullPath, { withFileTypes: true });
         const lines = [];
         for (const entry of entries) {
-            if (constants_1.IGNORED_DIRS.has(entry.name)) {
+            const relPath = path.relative(root, path.join(fullPath, entry.name));
+            if ((0, ignore_1.isIgnored)(entry.name, relPath, root)) {
                 continue;
             }
             if (entry.isDirectory()) {

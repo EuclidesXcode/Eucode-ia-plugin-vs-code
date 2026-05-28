@@ -10,6 +10,7 @@ export interface ToolDefinition {
 export interface AIResponse {
     responseText: string;
     toolCall?: ToolCall;
+    usage?: { promptTokens: number; completionTokens: number; elapsedMs: number };
 }
 
 export interface ToolCall {
@@ -199,10 +200,12 @@ export async function callAI(
         if (onChunk) {
             // ── Streaming path ──
             let textAcc = '';
-            // tool call accumulation
             let toolId = '';
             let toolName = '';
             let toolArgsRaw = '';
+            let promptTokens = 0;
+            let completionTokens = 0;
+            const t0 = Date.now();
 
             await requestStream(endpoint, {
                 model, messages, tools: formattedTools, tool_choice: 'auto', stream: true,
@@ -212,6 +215,11 @@ export async function callAI(
                 if (data === '[DONE]') { return; }
                 try {
                     const evt = JSON.parse(data);
+                    // Capture usage when present (LM Studio sends it in last chunk)
+                    if (evt?.usage) {
+                        promptTokens = evt.usage.prompt_tokens ?? 0;
+                        completionTokens = evt.usage.completion_tokens ?? 0;
+                    }
                     const delta = evt?.choices?.[0]?.delta;
                     if (!delta) { return; }
 
@@ -229,11 +237,12 @@ export async function callAI(
                 } catch { /* malformed chunk */ }
             });
 
+            const usage = { promptTokens, completionTokens, elapsedMs: Date.now() - t0 };
             if (toolName) {
                 const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
-                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } }, usage };
             }
-            return { responseText: textAcc.trim() };
+            return { responseText: textAcc.trim(), usage };
 
         } else {
             // ── Non-streaming path (fallback) ──

@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { callAI, callAnthropicAI, ToolCall } from '../services/api-client';
+import { queryRag, formatRagContext } from '../services/rag-client';
 import { AIProvider } from '../config/settings';
 import { DEFAULT_MODEL } from '../utils/constants';
 import { HistoryEntry, buildMessagesFromHistory } from '../services/history-service';
@@ -83,7 +84,7 @@ function buildToolHandlers(
         list_directory: async (args, cwd) => {
             const dir = args.dirPath || args.path || cwd;
             onStatus(`Reading structure: ${path.basename(dir)}`);
-            return listDirectory(dir);
+            return listDirectory(dir, cwd);
         },
         read_local_file: async (args, cwd) => {
             const fp: string = args.filePath || '';
@@ -119,7 +120,7 @@ function buildToolHandlers(
         },
         search_in_workspace: async (args, cwd) => {
             onStatus(`Searching project: "${args.query}"`);
-            return searchInWorkspace(args.query || '', args.dirPath || cwd);
+            return searchInWorkspace(args.query || '', args.dirPath || cwd, cwd);
         },
         get_diagnostics: async () => {
             onStatus('Fetching editor diagnostics...');
@@ -362,12 +363,23 @@ export async function runAgentLoop(
     provider?: AIProvider,
     anthropicApiKey?: string,
     enabledTools?: string[],
-    onStreamChunk?: (text: string) => void
+    onStreamChunk?: (text: string) => void,
+    onTelemetry?: (metrics: { promptTokens: number; completionTokens: number; tokensPerSec: number; elapsedMs: number }) => void,
+    ragEndpoint?: string,
+    ragCollection?: string
 ): Promise<string> {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE: Write files directly without asking for confirmation. After each write, run the project tests automatically with run_command. If tests fail, fix the code and run again. Keep fixing until it works.`
         : '';
-    const systemContent = [SYSTEM_PROMPT + autoBlock, contextBlock].filter(Boolean).join('\n\n');
+
+    // Optional RAG: query vector DB and prepend relevant context
+    let ragContext = '';
+    if (ragEndpoint && ragCollection) {
+        const ragResults = await queryRag(ragEndpoint, ragCollection, userPrompt);
+        ragContext = formatRagContext(ragResults);
+    }
+
+    const systemContent = [SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode skip session history entirely — the round's own tool chain
     // grows large enough; including prior turns would quickly overflow the context.
     const priorMessages = autoMode ? [] : buildMessagesFromHistory(sessionHistory.slice(0, -1));
@@ -404,6 +416,10 @@ export async function runAgentLoop(
     const maxSteps = autoMode ? 200 : MAX_AGENT_STEPS;
     let step = 0;
     let emptyResponseStreak = 0;
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalElapsedMs = 0;
+    const sessionStart = Date.now();
 
     while (++step <= maxSteps) {
         if (signal?.aborted) { return '[INTERRUPTED] Execution cancelled by user.'; }
@@ -476,6 +492,13 @@ export async function runAgentLoop(
 
         if (result.responseText === '__INFRA_ERROR__') {
             return 'Erro de conexao com o modelo. Verifique se o LM Studio esta rodando e se o modelo tem memoria suficiente para ser carregado.';
+        }
+
+        // Accumulate telemetry
+        if (result.usage) {
+            totalPromptTokens += result.usage.promptTokens;
+            totalCompletionTokens += result.usage.completionTokens;
+            totalElapsedMs += result.usage.elapsedMs;
         }
 
         if (!result.toolCall && result.responseText) {
@@ -569,6 +592,13 @@ export async function runAgentLoop(
                 });
                 lastToolName = '';
                 continue;
+            }
+
+            // Emit telemetry before returning
+            if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {
+                const elapsedSec = totalElapsedMs / 1000;
+                const tokensPerSec = elapsedSec > 0 ? Math.round(totalCompletionTokens / elapsedSec) : 0;
+                onTelemetry({ promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, tokensPerSec, elapsedMs: Date.now() - sessionStart });
             }
             return text;
         } else {

@@ -1,17 +1,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BINARY_EXTS, IGNORED_DIRS } from '../utils/constants';
+import { BINARY_EXTS } from '../utils/constants';
 import { validateFilePath, resolveFilePath } from '../utils/validation';
+import { isIgnored } from '../utils/ignore';
 
 export type EditFileResult = { ok: true; summary: string } | { ok: false; error: string };
 
-export async function listDirectory(dirPath: string): Promise<string> {
+export async function listDirectory(dirPath: string, workspaceRoot?: string): Promise<string> {
     try {
         const fullPath = path.resolve(dirPath);
+        const root = workspaceRoot || fullPath;
         const entries = fs.readdirSync(fullPath, { withFileTypes: true });
         const lines: string[] = [];
         for (const entry of entries) {
-            if (IGNORED_DIRS.has(entry.name)) { continue; }
+            const relPath = path.relative(root, path.join(fullPath, entry.name));
+            if (isIgnored(entry.name, relPath, root)) { continue; }
             if (entry.isDirectory()) {
                 lines.push(`${entry.name}/`);
             } else {

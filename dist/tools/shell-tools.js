@@ -88,11 +88,18 @@ function isRgAvailable() {
         child.on('close', (code) => resolve(code === 0));
     });
 }
-async function searchInWorkspace(query, dirPath) {
+async function searchInWorkspace(query, dirPath, workspaceRoot) {
     const escaped = query.replace(/'/g, "'\\''");
     const rgAvailable = await isRgAvailable();
+    // Build ignore flags from .eucodeIgnore
+    let ignoreFlags = '';
+    if (workspaceRoot) {
+        const { getIgnorePatterns } = await Promise.resolve().then(() => __importStar(require('../utils/ignore')));
+        const patterns = getIgnorePatterns(workspaceRoot);
+        ignoreFlags = patterns.map(p => `--glob '!${p}'`).join(' ');
+    }
     if (rgAvailable) {
-        const cmd = `rg -n --max-count=3 -e '${escaped}' --type-add 'src:*.{ts,tsx,js,jsx,py,go,rs,java,dart,c,cpp,cs,rb,php,swift,kt}' -t src ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
+        const cmd = `rg -n --max-count=3 -e '${escaped}' --type-add 'src:*.{ts,tsx,js,jsx,py,go,rs,java,dart,c,cpp,cs,rb,php,swift,kt}' -t src ${ignoreFlags} ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
         const result = await runAsync(cmd, '/', 10000);
         if (result !== '[OK] Comando executado sem saida.' && !result.startsWith('[ERRO]')) {
             return result;

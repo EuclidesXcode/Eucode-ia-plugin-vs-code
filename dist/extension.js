@@ -117,7 +117,7 @@ class EucodeViewProvider {
         this._context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()), vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles()));
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message?.command === 'webview_ready') {
-                webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model, enabledTools: this._settings.enabledTools });
+                webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model, enabledTools: this._settings.enabledTools, ragEnabled: this._settings.ragEnabled, ragEndpoint: this._settings.ragEndpoint, ragCollection: this._settings.ragCollection });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
@@ -144,7 +144,7 @@ class EucodeViewProvider {
                 return;
             }
             if (message?.command === 'save_config') {
-                this._settings = { provider: message.provider ?? this._settings.provider, apiHost: message.apiHost ?? this._settings.apiHost, apiKey: message.apiKey ?? '', model: message.model ?? '', enabledTools: message.enabledTools ?? this._settings.enabledTools };
+                this._settings = { provider: message.provider ?? this._settings.provider, apiHost: message.apiHost ?? this._settings.apiHost, apiKey: message.apiKey ?? '', model: message.model ?? '', enabledTools: message.enabledTools ?? this._settings.enabledTools, ragEnabled: message.ragEnabled ?? this._settings.ragEnabled, ragEndpoint: message.ragEndpoint ?? this._settings.ragEndpoint, ragCollection: message.ragCollection ?? this._settings.ragCollection };
                 await (0, settings_1.saveSettings)(this._context, this._settings);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
@@ -212,7 +212,8 @@ class EucodeViewProvider {
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: true });
                 const notifyStreamChunk = (text) => webviewView.webview.postMessage({ command: 'stream_chunk', text });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk);
+                const notifyTelemetry = (metrics) => webviewView.webview.postMessage({ command: 'telemetry', ...metrics });
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined);
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });

@@ -37,6 +37,7 @@ exports.runAgentLoop = runAgentLoop;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const api_client_1 = require("../services/api-client");
+const rag_client_1 = require("../services/rag-client");
 const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
@@ -89,7 +90,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
         list_directory: async (args, cwd) => {
             const dir = args.dirPath || args.path || cwd;
             onStatus(`Reading structure: ${path.basename(dir)}`);
-            return (0, file_tools_1.listDirectory)(dir);
+            return (0, file_tools_1.listDirectory)(dir, cwd);
         },
         read_local_file: async (args, cwd) => {
             const fp = args.filePath || '';
@@ -129,7 +130,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
         },
         search_in_workspace: async (args, cwd) => {
             onStatus(`Searching project: "${args.query}"`);
-            return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd);
+            return (0, shell_tools_1.searchInWorkspace)(args.query || '', args.dirPath || cwd, cwd);
         },
         get_diagnostics: async () => {
             onStatus('Fetching editor diagnostics...');
@@ -346,11 +347,17 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection) {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE: Write files directly without asking for confirmation. After each write, run the project tests automatically with run_command. If tests fail, fix the code and run again. Keep fixing until it works.`
         : '';
-    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, contextBlock].filter(Boolean).join('\n\n');
+    // Optional RAG: query vector DB and prepend relevant context
+    let ragContext = '';
+    if (ragEndpoint && ragCollection) {
+        const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
+        ragContext = (0, rag_client_1.formatRagContext)(ragResults);
+    }
+    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode skip session history entirely — the round's own tool chain
     // grows large enough; including prior turns would quickly overflow the context.
     const priorMessages = autoMode ? [] : (0, history_service_1.buildMessagesFromHistory)(sessionHistory.slice(0, -1));
@@ -379,6 +386,10 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     const maxSteps = autoMode ? 200 : constants_2.MAX_AGENT_STEPS;
     let step = 0;
     let emptyResponseStreak = 0;
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalElapsedMs = 0;
+    const sessionStart = Date.now();
     while (++step <= maxSteps) {
         if (signal?.aborted) {
             return '[INTERRUPTED] Execution cancelled by user.';
@@ -443,6 +454,12 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         }
         if (result.responseText === '__INFRA_ERROR__') {
             return 'Erro de conexao com o modelo. Verifique se o LM Studio esta rodando e se o modelo tem memoria suficiente para ser carregado.';
+        }
+        // Accumulate telemetry
+        if (result.usage) {
+            totalPromptTokens += result.usage.promptTokens;
+            totalCompletionTokens += result.usage.completionTokens;
+            totalElapsedMs += result.usage.elapsedMs;
         }
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
@@ -532,6 +549,12 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 });
                 lastToolName = '';
                 continue;
+            }
+            // Emit telemetry before returning
+            if (onTelemetry && (totalCompletionTokens > 0 || totalElapsedMs > 0)) {
+                const elapsedSec = totalElapsedMs / 1000;
+                const tokensPerSec = elapsedSec > 0 ? Math.round(totalCompletionTokens / elapsedSec) : 0;
+                onTelemetry({ promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, tokensPerSec, elapsedMs: Date.now() - sessionStart });
             }
             return text;
         }

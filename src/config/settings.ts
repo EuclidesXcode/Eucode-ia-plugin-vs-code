@@ -23,6 +23,9 @@ export interface EucodeSettings {
     apiKey: string;
     model: string;
     enabledTools: ToolName[];
+    ragEnabled: boolean;
+    ragEndpoint: string;
+    ragCollection: string;
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -31,6 +34,9 @@ const DEFAULTS: EucodeSettings = {
     apiKey: '',
     model: '',
     enabledTools: [...ALL_TOOL_NAMES],
+    ragEnabled: false,
+    ragEndpoint: 'http://localhost:8000',
+    ragCollection: 'eucode',
 };
 
 const KEYS = {
@@ -39,6 +45,9 @@ const KEYS = {
     apiKey: 'eucode.apiKey',
     model: 'eucode.model',
     enabledTools: 'eucode.enabledTools',
+    ragEnabled: 'eucode.ragEnabled',
+    ragEndpoint: 'eucode.ragEndpoint',
+    ragCollection: 'eucode.ragCollection',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -54,6 +63,9 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         apiKey: context.globalState.get<string>(KEYS.apiKey) ?? DEFAULTS.apiKey,
         model: context.globalState.get<string>(KEYS.model) ?? DEFAULTS.model,
         enabledTools,
+        ragEnabled: context.globalState.get<boolean>(KEYS.ragEnabled) ?? DEFAULTS.ragEnabled,
+        ragEndpoint: context.globalState.get<string>(KEYS.ragEndpoint) ?? DEFAULTS.ragEndpoint,
+        ragCollection: context.globalState.get<string>(KEYS.ragCollection) ?? DEFAULTS.ragCollection,
     };
 }
 
@@ -63,6 +75,9 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.apiKey, settings.apiKey);
     await context.globalState.update(KEYS.model, settings.model.trim());
     await context.globalState.update(KEYS.enabledTools, settings.enabledTools);
+    await context.globalState.update(KEYS.ragEnabled, settings.ragEnabled);
+    await context.globalState.update(KEYS.ragEndpoint, settings.ragEndpoint.replace(/\/+$/, ''));
+    await context.globalState.update(KEYS.ragCollection, settings.ragCollection.trim());
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

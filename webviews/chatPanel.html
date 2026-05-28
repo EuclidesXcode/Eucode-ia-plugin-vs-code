@@ -735,6 +735,14 @@
         .tl-item.tl-response .tl-body > div code { background: #161b22; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
         .tl-item.tl-response .tl-body > div pre { background: #161b22; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
 
+        /* ── Telemetry item ── */
+        .tl-item.tl-telemetry .tl-dot { background: #0d1117 !important; border-color: #444 !important; }
+        .tl-item.tl-telemetry .tl-dot::after { background: #555 !important; }
+        .tl-item.tl-telemetry .tl-text { color: #555e6b !important; font-size: 11px; font-style: normal; letter-spacing: 0.02em; }
+        .tl-telemetry-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+        .tl-chip { background: #13131f; border: 1px solid #222; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #4a5568; }
+        .tl-chip span { color: #6a7f99; }
+
         /* ── Streaming text inside timeline ── */
         .tl-stream {
             margin-top: 8px;
@@ -1081,6 +1089,20 @@
             <div class="config-label">Ferramentas disponíveis</div>
             <div class="tools-grid" id="tools-grid"></div>
         </div>
+        <div>
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;">
+                RAG (Contexto Vetorial)
+                <label class="switch" style="margin-left:auto">
+                    <input type="checkbox" id="config-rag-enabled">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div id="config-rag-rows" style="display:none;margin-top:8px;gap:6px;flex-direction:column;">
+                <input id="config-rag-endpoint" class="config-input mono" type="text" placeholder="http://localhost:8000" spellcheck="false">
+                <input id="config-rag-collection" class="config-input mono" type="text" placeholder="eucode" spellcheck="false">
+                <div class="config-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
+            </div>
+        </div>
         <div class="config-actions">
             <span id="config-feedback"></span>
             <button class="config-cancel-btn" id="config-cancel-btn">Cancelar</button>
@@ -1307,6 +1329,14 @@
         const configModelHint = document.getElementById('config-model-hint');
         const configClaudeModels = document.getElementById('config-claude-models');
         const configKeyLabel = document.getElementById('config-key-label');
+        const configRagEnabled = document.getElementById('config-rag-enabled');
+        const configRagRows = document.getElementById('config-rag-rows');
+        const configRagEndpoint = document.getElementById('config-rag-endpoint');
+        const configRagCollection = document.getElementById('config-rag-collection');
+
+        configRagEnabled.addEventListener('change', () => {
+            configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
+        });
 
         function updateConfigUI(provider) {
             const isAnthropic = provider === 'anthropic';
@@ -1347,6 +1377,10 @@
                 configFeedback.textContent = '';
                 updateConfigUI(savedSettings.provider);
                 renderToolsGrid(savedSettings.enabledTools || ALL_TOOLS.map(t => t.name));
+                configRagEnabled.checked = !!savedSettings.ragEnabled;
+                configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
+                configRagCollection.value = savedSettings.ragCollection || 'eucode';
+                configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
             }
         });
 
@@ -1366,6 +1400,9 @@
                 model: configModelInput.value.trim(),
                 apiKey: configKeyInput.value.trim(),
                 enabledTools: getEnabledTools(),
+                ragEnabled: configRagEnabled.checked,
+                ragEndpoint: configRagEndpoint.value.trim(),
+                ragCollection: configRagCollection.value.trim(),
             });
         });
 
@@ -1885,7 +1922,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name) };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode' };
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -1909,6 +1946,9 @@
                 savedSettings.apiHost = configHostInput.value.trim();
                 savedSettings.model = configModelInput.value.trim();
                 savedSettings.enabledTools = getEnabledTools();
+                savedSettings.ragEnabled = configRagEnabled.checked;
+                savedSettings.ragEndpoint = configRagEndpoint.value.trim();
+                savedSettings.ragCollection = configRagCollection.value.trim();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -1932,6 +1972,8 @@
                 appendConfirmCommandCard(msg.id, msg.cmd, msg.cwd);
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
+            } else if (msg.command === 'telemetry') {
+                addTelemetryItem(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
                 if (!msg.running) { currentTodoCard = null; }
@@ -2120,6 +2162,40 @@
             if (!timeline) { return; }
             const active = timeline.querySelector('.tl-item.active');
             if (active) { active.classList.replace('active', 'done'); }
+        }
+
+        function addTelemetryItem(promptTokens, completionTokens, tokensPerSec, elapsedMs) {
+            const tl = getTimeline();
+            if (!tl) { return; }
+            const item = document.createElement('div');
+            item.className = 'tl-item tl-telemetry';
+            const dot = document.createElement('div');
+            dot.className = 'tl-dot';
+            const body = document.createElement('div');
+            body.className = 'tl-body';
+            const label = document.createElement('span');
+            label.className = 'tl-text';
+            label.textContent = 'Telemetria';
+            const chips = document.createElement('div');
+            chips.className = 'tl-telemetry-chips';
+            const elapsedSec = (elapsedMs / 1000).toFixed(1);
+            const data = [
+                promptTokens   > 0 ? `Prompt <span>${promptTokens}t</span>`       : null,
+                completionTokens > 0 ? `Gerado <span>${completionTokens}t</span>` : null,
+                tokensPerSec   > 0 ? `<span>${tokensPerSec} t/s</span>`           : null,
+                `Tempo <span>${elapsedSec}s</span>`,
+            ].filter(Boolean);
+            data.forEach(html => {
+                const chip = document.createElement('span');
+                chip.className = 'tl-chip';
+                chip.innerHTML = html;
+                chips.appendChild(chip);
+            });
+            body.appendChild(label);
+            body.appendChild(chips);
+            item.appendChild(dot);
+            item.appendChild(body);
+            tl.appendChild(item);
         }
 
         let activeTerminal = null;
