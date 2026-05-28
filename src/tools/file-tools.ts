@@ -55,10 +55,12 @@ export async function editLocalFile(
 
     const count = current.split(oldString).length - 1;
     if (count === 0) {
-        return `[ERROR] old_string was not found in "${path.basename(filePath)}". Check that the text is exact (spaces, line breaks, special characters).`;
+        // Show the first 200 chars of the file to help the model match
+        const preview = current.slice(0, 200).replace(/\n/g, '\\n');
+        return `[ERROR] old_string not found in "${path.basename(filePath)}". The text must match EXACTLY (whitespace, line breaks, quotes). File starts with: "${preview}...". To fix: call read_local_file first to get the exact current content, then retry edit_file with a string that exists literally in the file. Or use write_local_file to replace the entire file.`;
     }
     if (count > 1) {
-        return `[ERROR] old_string appears ${count} times in "${path.basename(filePath)}". Provide a more specific and unique string.`;
+        return `[ERROR] old_string appears ${count} times in "${path.basename(filePath)}". Provide a more specific and unique string — include surrounding lines (function signature, neighboring statements) to make it unique.`;
     }
 
     const updated = current.replace(oldString, newString);

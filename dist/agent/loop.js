@@ -117,10 +117,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const oldString = args.old_string ?? args.oldString ?? '';
             const newString = args.new_string ?? args.newString ?? '';
             if (!filePath) {
-                return '[ERROR] filePath not provided.';
-            }
-            if (oldString === '') {
-                return '[ERROR] old_string cannot be empty.';
+                return '[ERROR] filePath is required. Example: edit_file({"filePath": "/abs/path/to/file.ts", "old_string": "...", "new_string": "..."})';
             }
             let before = null;
             try {
@@ -129,6 +126,22 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }
             catch {
                 before = null;
+            }
+            // If old_string is empty, the model likely wants to create the file
+            // or replace its entire content. Route to write_local_file logic
+            // instead of failing with a terminal error.
+            if (oldString === '') {
+                if (before === null) {
+                    // File doesn't exist yet — create it with new_string
+                    onStatus(`Creating: ${path.basename(filePath)}`);
+                    const writeResult = await (0, file_tools_1.writeLocalFile)(filePath, newString, cwd);
+                    fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                    counters.filesWritten++;
+                    onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
+                    return `[OK] File created via edit_file (empty old_string). ${writeResult}`;
+                }
+                // File exists — empty old_string is ambiguous. Guide the model.
+                return `[ERROR] edit_file needs a non-empty old_string when the file already exists. To replace specific text: provide the exact existing text in old_string. To rewrite the entire file: use write_local_file instead. To append: use old_string with the last existing line and put that line + new content in new_string.`;
             }
             const after = before ? before.replace(oldString, newString) : newString;
             if (autoMode) {
@@ -644,6 +657,12 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 continue;
             }
             emptyResponseStreak = 0;
+            // Detect "code dumped in chat instead of using a tool":
+            // model included a fenced code block of substantial size but
+            // didn't call write_local_file/edit_file. Common failure mode
+            // when the model gives up on a tool error.
+            const codeBlockMatch = text.match(/```[a-z]*\n([\s\S]+?)\n```/i);
+            const dumpedCodeInChat = !!codeBlockMatch && codeBlockMatch[1].length > 200;
             // ── Auto mode: force continuation rules ────────────────────────
             // The user activated AUTO expecting the agent NOT to stop until
             // the build passes. Any of these conditions mean "not done yet":
@@ -651,31 +670,37 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             //   - planning text without ever writing a file
             //   - last command failed (build/test/install error)
             //   - never ran a successful build
+            //   - dumped code in chat instead of using write_local_file
             // In all cases: push the model to act, don't return to the user.
             const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
             const lastCommandFailed = autoMode && counters.lastCommandFailed;
             const buildNotYetPassed = autoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
-            if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed) {
+            const dumpedInsteadOfWriting = autoMode && dumpedCodeInChat;
+            if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
                 if (pendingActionStreak >= 5) {
                     // Hard cap to avoid eternal loop. Surface what happened
                     // so the user knows the agent gave up and why.
                     pendingActionStreak = 0;
                     emitTelemetry();
-                    const reason = lastCommandFailed
-                        ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
-                        : !counters.lastBuildPassed && counters.filesWritten > 0
-                            ? 'O build ainda nao passou apos varias tentativas.'
-                            : 'O modelo descreveu acoes mas nao executou.';
+                    const reason = dumpedInsteadOfWriting
+                        ? 'O modelo escreveu codigo no chat em vez de salvar via tool — possivelmente o modelo local nao esta seguindo o protocolo de tool calling.'
+                        : lastCommandFailed
+                            ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
+                            : !counters.lastBuildPassed && counters.filesWritten > 0
+                                ? 'O build ainda nao passou apos varias tentativas.'
+                                : 'O modelo descreveu acoes mas nao executou.';
                     return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}`;
                 }
-                const nudge = lastCommandFailed
-                    ? 'The last command failed. Read the error output carefully, identify the root cause, and use edit_file or write_local_file to fix it. Then re-run the command. Do not stop or ask the user — fix and retry.'
-                    : buildNotYetPassed
-                        ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                        : autoMode
-                            ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
-                            : 'continue';
+                const nudge = dumpedInsteadOfWriting
+                    ? 'You wrote code in the chat instead of saving it to a file. The user cannot use code in the chat. Use write_local_file (for new/full-rewrite) or edit_file (for partial edits) NOW to save that code to disk. Do not paste code in your reply — call the tool.'
+                    : lastCommandFailed
+                        ? 'The last command failed. Read the error output carefully, identify the root cause, and use edit_file or write_local_file to fix it. Then re-run the command. Do not stop or ask the user — fix and retry.'
+                        : buildNotYetPassed
+                            ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
+                            : autoMode
+                                ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
+                                : 'continue';
                 roundMessages.push({ role: 'assistant', content: text });
                 roundMessages.push({ role: 'user', content: nudge });
                 lastToolName = '';
