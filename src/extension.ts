@@ -222,6 +222,21 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 const notifyLiveTelemetry = (tokens: number, tokensPerSec: number, elapsedMs: number) =>
                     webviewView.webview.postMessage({ command: 'live_telemetry', tokens, tokensPerSec, elapsedMs });
 
+                // Open the file the agent just wrote/edited in the editor so the
+                // user sees the change live. Throttled per path — repeated touches
+                // to the same file in quick succession only open once.
+                const recentlyOpened = new Map<string, number>();
+                const openFileInEditor = (absolutePath: string) => {
+                    const now = Date.now();
+                    const last = recentlyOpened.get(absolutePath) || 0;
+                    if (now - last < 1500) { return; }
+                    recentlyOpened.set(absolutePath, now);
+                    vscode.workspace.openTextDocument(absolutePath).then(
+                        doc => vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true }),
+                        () => { /* file may not exist yet (race) — ignore */ }
+                    );
+                };
+
                 response = await runAgentLoop(
                     message.text, fullContextBlock, defaultCwd, endpoint, authHeaders,
                     this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd,
@@ -237,7 +252,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     notifyTelemetry,
                     this._settings.ragEnabled ? this._settings.ragEndpoint : undefined,
                     this._settings.ragEnabled ? this._settings.ragCollection : undefined,
-                    notifyLiveTelemetry
+                    notifyLiveTelemetry,
+                    openFileInEditor
                 );
                 this._abortController = null;
                 this._injectMessage = null;

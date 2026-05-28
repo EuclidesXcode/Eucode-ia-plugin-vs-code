@@ -81,7 +81,8 @@ function buildToolHandlers(
     sessionApprovedCommands: Set<string>,
     fileCache: Map<string, string>,
     dirCache: Map<string, string>,
-    counters: { filesWritten: number; lastCommandFailed: boolean; lastBuildPassed: boolean }
+    counters: { filesWritten: number; lastCommandFailed: boolean; lastBuildPassed: boolean },
+    onFileTouched?: (absolutePath: string) => void
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
         list_directory: async (args, cwd) => {
@@ -130,6 +131,7 @@ function buildToolHandlers(
                 const editResult = editLocalFile(filePath, oldString, newString, cwd);
                 fileCache.delete(resolveFilePath(filePath, cwd));
                 counters.filesWritten++;
+                onFileTouched?.(resolveFilePath(filePath, cwd));
                 return editResult;
             }
 
@@ -139,6 +141,7 @@ function buildToolHandlers(
             const editResult2 = editLocalFile(filePath, oldString, newString, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
             counters.filesWritten++;
+            onFileTouched?.(resolveFilePath(filePath, cwd));
             return editResult2;
         },
         search_in_workspace: async (args, cwd) => {
@@ -178,6 +181,7 @@ function buildToolHandlers(
                 const writeResult = writeLocalFile(filePath, content, cwd);
                 fileCache.delete(resolveFilePath(filePath, cwd));
                 counters.filesWritten++;
+                onFileTouched?.(resolveFilePath(filePath, cwd));
                 return writeResult;
             }
 
@@ -187,6 +191,7 @@ function buildToolHandlers(
             const writeResult2 = writeLocalFile(filePath, content, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
             counters.filesWritten++;
+            onFileTouched?.(resolveFilePath(filePath, cwd));
             return writeResult2;
         },
         run_command: async (args, cwd) => {
@@ -411,7 +416,8 @@ export async function runAgentLoop(
     onTelemetry?: (metrics: { promptTokens: number; completionTokens: number; tokensPerSec: number; elapsedMs: number }) => void,
     ragEndpoint?: string,
     ragCollection?: string,
-    onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void
+    onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void,
+    onFileTouched?: (absolutePath: string) => void
 ): Promise<string> {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
@@ -460,7 +466,7 @@ export async function runAgentLoop(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
         onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands,
-        fileCache, dirCache, counters
+        fileCache, dirCache, counters, onFileTouched
     );
 
     const thinkingStatus = [

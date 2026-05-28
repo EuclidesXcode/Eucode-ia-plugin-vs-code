@@ -214,7 +214,20 @@ class EucodeViewProvider {
                 const notifyStreamChunk = (text) => webviewView.webview.postMessage({ command: 'stream_chunk', text });
                 const notifyTelemetry = (metrics) => webviewView.webview.postMessage({ command: 'telemetry', ...metrics });
                 const notifyLiveTelemetry = (tokens, tokensPerSec, elapsedMs) => webviewView.webview.postMessage({ command: 'live_telemetry', tokens, tokensPerSec, elapsedMs });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry);
+                // Open the file the agent just wrote/edited in the editor so the
+                // user sees the change live. Throttled per path — repeated touches
+                // to the same file in quick succession only open once.
+                const recentlyOpened = new Map();
+                const openFileInEditor = (absolutePath) => {
+                    const now = Date.now();
+                    const last = recentlyOpened.get(absolutePath) || 0;
+                    if (now - last < 1500) {
+                        return;
+                    }
+                    recentlyOpened.set(absolutePath, now);
+                    vscode.workspace.openTextDocument(absolutePath).then(doc => vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true }), () => { });
+                };
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor);
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });

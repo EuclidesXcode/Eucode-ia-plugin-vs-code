@@ -85,7 +85,7 @@ async function checkRemovedSymbols(before, after, cwd) {
     }
     return warnings;
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -136,6 +136,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 const editResult = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
                 fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
                 counters.filesWritten++;
+                onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return editResult;
             }
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
@@ -146,6 +147,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
             counters.filesWritten++;
+            onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
             return editResult2;
         },
         search_in_workspace: async (args, cwd) => {
@@ -184,6 +186,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 const writeResult = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
                 fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
                 counters.filesWritten++;
+                onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return writeResult;
             }
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
@@ -194,6 +197,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
             counters.filesWritten++;
+            onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
             return writeResult2;
         },
         run_command: async (args, cwd) => {
@@ -394,7 +398,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched) {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
 - Execute the task end-to-end without asking the user anything.
@@ -434,7 +438,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     const fileCache = new Map();
     const dirCache = new Map();
     const counters = { filesWritten: 0, lastCommandFailed: false, lastBuildPassed: false };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',
