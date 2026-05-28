@@ -225,11 +225,24 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 emitter.on('long_running', () => { isLongRunning = true; });
                 emitter.on('done', () => {
                     onCommandEnd(exitCode);
+                    const looksLikeBuild = /\b(build|test|tsc|compile|lint|jest|vitest|pytest|cargo build|go build|mvn|gradle)\b/i.test(cmd);
                     if (isLongRunning) {
                         onStatus('Process running — awaiting your response...');
+                        counters.lastCommandFailed = false;
                         resolve(`[PROCESS STARTED] Command "${cmd}" is running in the background. Output so far:\n${output}\nThe server is up. Inform the user they can interact.`);
                     }
+                    else if (exitCode !== 0) {
+                        counters.lastCommandFailed = true;
+                        if (looksLikeBuild) {
+                            counters.lastBuildPassed = false;
+                        }
+                        resolve(`[FAILED exit=${exitCode}] Command "${cmd}" failed. You MUST diagnose and fix the underlying issue, then re-run. Do not give up. Output:\n${output || '(no output)'}`);
+                    }
                     else {
+                        counters.lastCommandFailed = false;
+                        if (looksLikeBuild) {
+                            counters.lastBuildPassed = true;
+                        }
                         resolve(output || '[OK] Command executed with no output.');
                     }
                 });
@@ -383,7 +396,13 @@ function pruneRoundToolMessages(messages, maxPairs) {
 }
 async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry) {
     const autoBlock = autoMode
-        ? `\nAUTO MODE ACTIVE: Execute the user's task completely without asking for confirmation. Write files directly, run tests after each change, fix failures and retry until done. When the task is fully complete, respond with a short summary of what was done and stop — do not keep exploring or looping.`
+        ? `\nAUTO MODE ACTIVE — strict rules:
+- Execute the task end-to-end without asking the user anything.
+- After writing files, ALWAYS run a build/test command to verify (npm run build, npm test, tsc, etc.).
+- If a command fails (exit code != 0), READ the error output, diagnose the root cause, fix it with edit_file/write_local_file, and RE-RUN the command. Do NOT stop or describe — fix and retry.
+- Never end with phrases like "I'll try", "let me try", "vou tentar", "vou ajustar" — execute the action immediately instead.
+- Only finish when: (a) a build/test command exited with code 0, OR (b) the task explicitly does not require a build.
+- When truly done, respond with a one-line summary.`
         : '';
     // Optional RAG: query vector DB and prepend relevant context
     let ragContext = '';
@@ -414,7 +433,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     const sessionApprovedCommands = new Set();
     const fileCache = new Map();
     const dirCache = new Map();
-    const counters = { filesWritten: 0 };
+    const counters = { filesWritten: 0, lastCommandFailed: false, lastBuildPassed: false };
     const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters);
     const thinkingStatus = [
         'Analyzing your request...',
@@ -621,23 +640,40 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 continue;
             }
             emptyResponseStreak = 0;
-            // In auto mode: if the model returned text without writing any file yet,
-            // it's still in planning/reasoning phase — push it to act.
+            // ── Auto mode: force continuation rules ────────────────────────
+            // The user activated AUTO expecting the agent NOT to stop until
+            // the build passes. Any of these conditions mean "not done yet":
+            //   - model described an action but didn't call a tool
+            //   - planning text without ever writing a file
+            //   - last command failed (build/test/install error)
+            //   - never ran a successful build
+            // In all cases: push the model to act, don't return to the user.
             const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
-            if (detectsPendingAction(text, autoMode) || modelIsPlanning) {
+            const lastCommandFailed = autoMode && counters.lastCommandFailed;
+            const buildNotYetPassed = autoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
+            if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed) {
                 pendingActionStreak++;
-                if (pendingActionStreak >= 3) {
+                if (pendingActionStreak >= 5) {
+                    // Hard cap to avoid eternal loop. Surface what happened
+                    // so the user knows the agent gave up and why.
                     pendingActionStreak = 0;
                     emitTelemetry();
-                    return text;
+                    const reason = lastCommandFailed
+                        ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
+                        : !counters.lastBuildPassed && counters.filesWritten > 0
+                            ? 'O build ainda nao passou apos varias tentativas.'
+                            : 'O modelo descreveu acoes mas nao executou.';
+                    return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}`;
                 }
+                const nudge = lastCommandFailed
+                    ? 'The last command failed. Read the error output carefully, identify the root cause, and use edit_file or write_local_file to fix it. Then re-run the command. Do not stop or ask the user — fix and retry.'
+                    : buildNotYetPassed
+                        ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
+                        : autoMode
+                            ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
+                            : 'continue';
                 roundMessages.push({ role: 'assistant', content: text });
-                roundMessages.push({
-                    role: 'user',
-                    content: autoMode
-                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
-                        : 'continue',
-                });
+                roundMessages.push({ role: 'user', content: nudge });
                 lastToolName = '';
                 continue;
             }
