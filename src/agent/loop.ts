@@ -80,7 +80,8 @@ function buildToolHandlers(
     filesReadThisRound: Set<string>,
     sessionApprovedCommands: Set<string>,
     fileCache: Map<string, string>,
-    dirCache: Map<string, string>
+    dirCache: Map<string, string>,
+    counters: { filesWritten: number }
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
         list_directory: async (args, cwd) => {
@@ -128,6 +129,7 @@ function buildToolHandlers(
                 onStatus(`Editing: ${path.basename(filePath)}`);
                 const editResult = editLocalFile(filePath, oldString, newString, cwd);
                 fileCache.delete(resolveFilePath(filePath, cwd));
+                counters.filesWritten++;
                 return editResult;
             }
 
@@ -136,6 +138,7 @@ function buildToolHandlers(
             if (!approved) { return '[CANCELLED] User rejected the file change.'; }
             const editResult2 = editLocalFile(filePath, oldString, newString, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
+            counters.filesWritten++;
             return editResult2;
         },
         search_in_workspace: async (args, cwd) => {
@@ -174,6 +177,7 @@ function buildToolHandlers(
                 onStatus(`Writing: ${path.basename(filePath)}`);
                 const writeResult = writeLocalFile(filePath, content, cwd);
                 fileCache.delete(resolveFilePath(filePath, cwd));
+                counters.filesWritten++;
                 return writeResult;
             }
 
@@ -182,6 +186,7 @@ function buildToolHandlers(
             if (!approved2) { return '[CANCELLED] User rejected the file change.'; }
             const writeResult2 = writeLocalFile(filePath, content, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
+            counters.filesWritten++;
             return writeResult2;
         },
         run_command: async (args, cwd) => {
@@ -427,11 +432,12 @@ export async function runAgentLoop(
     const sessionApprovedCommands = new Set<string>();
     const fileCache = new Map<string, string>();
     const dirCache = new Map<string, string>();
+    const counters = { filesWritten: 0 };
     const toolHandlers = buildToolHandlers(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
         onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands,
-        fileCache, dirCache
+        fileCache, dirCache, counters
     );
 
     const thinkingStatus = [
@@ -449,6 +455,7 @@ export async function runAgentLoop(
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
+    let filesWrittenThisRound = 0;
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
@@ -486,8 +493,8 @@ export async function runAgentLoop(
             : TOOLS;
 
         // Preventive pruning calibrated for a 2048-token context window.
-        // Reserve ~1024 tokens for the response, leaving ~1024 for the prompt.
-        // Chars / 4 ≈ tokens; prune before sending if we're over budget.
+        // Only prune when significantly over budget, keeping the most recent pairs
+        // so the model retains context of what it just read/did.
         {
             const totalChars = roundMessages.reduce((acc, m) => {
                 const content = typeof m.content === 'string' ? m.content : '';
@@ -495,9 +502,10 @@ export async function runAgentLoop(
                 return acc + content.length + toolArgs.length;
             }, 0);
             const estimatedTokens = Math.floor(totalChars / 4);
-            if (estimatedTokens > 1000) {
+            if (estimatedTokens > 1200) {
                 onStatus('Compactando contexto...');
-                pruneRoundToolMessages(roundMessages, autoMode ? 1 : 2);
+                // Keep more pairs in auto mode so model doesn't lose what it just read
+                pruneRoundToolMessages(roundMessages, autoMode ? 3 : 2);
             }
         }
 
@@ -589,15 +597,12 @@ export async function runAgentLoop(
         } else if (result.responseText !== undefined) {
             const text = result.responseText || '';
 
-            // Treat empty or garbage (very short, no tool call, after tool work) as a
-            // recoverable context overflow — prune silently and retry without surfacing
-            // the error to the user. Works in both auto and normal mode.
-            const isGarbage = !text || (text.length < 8 && lastToolName);
-            if (isGarbage) {
+            // Only treat completely empty response as recoverable overflow.
+            // Short responses are legitimate (model may say "Ok." then call a tool).
+            if (!text) {
                 emptyResponseStreak++;
                 onStatus('Compactando contexto...');
                 if (emptyResponseStreak >= 3) {
-                    // Gave up retrying — return whatever we have or a neutral message
                     return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
                 }
                 // Progressive pruning: each retry removes more pairs
@@ -606,18 +611,20 @@ export async function runAgentLoop(
                 roundMessages.push({
                     role: 'user',
                     content: step <= 1
-                        ? userPrompt  // first call failed — resend original request
-                        : 'Continue a tarefa de onde parou e responda ao usuario.',
+                        ? userPrompt
+                        : 'Continue a tarefa de onde parou.',
                 });
                 lastToolName = '';
                 continue;
             }
             emptyResponseStreak = 0;
 
-            if (detectsPendingAction(text, autoMode)) {
+            // In auto mode: if the model returned text without writing any file yet,
+            // it's still in planning/reasoning phase — push it to act.
+            const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
+            if (detectsPendingAction(text, autoMode) || modelIsPlanning) {
                 pendingActionStreak++;
                 if (pendingActionStreak >= 3) {
-                    // Model keeps describing but not acting — return what it said
                     pendingActionStreak = 0;
                     return text;
                 }
@@ -625,7 +632,7 @@ export async function runAgentLoop(
                 roundMessages.push({
                     role: 'user',
                     content: autoMode
-                        ? 'You described actions but did not call any tool. Use write_local_file, edit_file, run_command or another tool now. Do not describe — execute.'
+                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
                         : 'continue',
                 });
                 lastToolName = '';

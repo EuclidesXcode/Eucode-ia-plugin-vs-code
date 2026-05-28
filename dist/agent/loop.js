@@ -85,7 +85,7 @@ async function checkRemovedSymbols(before, after, cwd) {
     }
     return warnings;
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -135,6 +135,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onStatus(`Editing: ${path.basename(filePath)}`);
                 const editResult = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
                 fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                counters.filesWritten++;
                 return editResult;
             }
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
@@ -144,6 +145,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }
             const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+            counters.filesWritten++;
             return editResult2;
         },
         search_in_workspace: async (args, cwd) => {
@@ -181,6 +183,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onStatus(`Writing: ${path.basename(filePath)}`);
                 const writeResult = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
                 fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+                counters.filesWritten++;
                 return writeResult;
             }
             onStatus(`Awaiting approval: ${path.basename(filePath)}`);
@@ -190,6 +193,7 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }
             const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
+            counters.filesWritten++;
             return writeResult2;
         },
         run_command: async (args, cwd) => {
@@ -400,7 +404,8 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     const sessionApprovedCommands = new Set();
     const fileCache = new Map();
     const dirCache = new Map();
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache);
+    const counters = { filesWritten: 0 };
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',
@@ -415,6 +420,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
+    let filesWrittenThisRound = 0;
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
@@ -449,8 +455,8 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
             : tools_definition_2.TOOLS;
         // Preventive pruning calibrated for a 2048-token context window.
-        // Reserve ~1024 tokens for the response, leaving ~1024 for the prompt.
-        // Chars / 4 ≈ tokens; prune before sending if we're over budget.
+        // Only prune when significantly over budget, keeping the most recent pairs
+        // so the model retains context of what it just read/did.
         {
             const totalChars = roundMessages.reduce((acc, m) => {
                 const content = typeof m.content === 'string' ? m.content : '';
@@ -458,9 +464,10 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 return acc + content.length + toolArgs.length;
             }, 0);
             const estimatedTokens = Math.floor(totalChars / 4);
-            if (estimatedTokens > 1000) {
+            if (estimatedTokens > 1200) {
                 onStatus('Compactando contexto...');
-                pruneRoundToolMessages(roundMessages, autoMode ? 1 : 2);
+                // Keep more pairs in auto mode so model doesn't lose what it just read
+                pruneRoundToolMessages(roundMessages, autoMode ? 3 : 2);
             }
         }
         // Only stream text to UI when there's a chance this is the final reply.
@@ -541,15 +548,12 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         }
         else if (result.responseText !== undefined) {
             const text = result.responseText || '';
-            // Treat empty or garbage (very short, no tool call, after tool work) as a
-            // recoverable context overflow — prune silently and retry without surfacing
-            // the error to the user. Works in both auto and normal mode.
-            const isGarbage = !text || (text.length < 8 && lastToolName);
-            if (isGarbage) {
+            // Only treat completely empty response as recoverable overflow.
+            // Short responses are legitimate (model may say "Ok." then call a tool).
+            if (!text) {
                 emptyResponseStreak++;
                 onStatus('Compactando contexto...');
                 if (emptyResponseStreak >= 3) {
-                    // Gave up retrying — return whatever we have or a neutral message
                     return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
                 }
                 // Progressive pruning: each retry removes more pairs
@@ -558,17 +562,19 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 roundMessages.push({
                     role: 'user',
                     content: step <= 1
-                        ? userPrompt // first call failed — resend original request
-                        : 'Continue a tarefa de onde parou e responda ao usuario.',
+                        ? userPrompt
+                        : 'Continue a tarefa de onde parou.',
                 });
                 lastToolName = '';
                 continue;
             }
             emptyResponseStreak = 0;
-            if (detectsPendingAction(text, autoMode)) {
+            // In auto mode: if the model returned text without writing any file yet,
+            // it's still in planning/reasoning phase — push it to act.
+            const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
+            if (detectsPendingAction(text, autoMode) || modelIsPlanning) {
                 pendingActionStreak++;
                 if (pendingActionStreak >= 3) {
-                    // Model keeps describing but not acting — return what it said
                     pendingActionStreak = 0;
                     return text;
                 }
@@ -576,7 +582,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 roundMessages.push({
                     role: 'user',
                     content: autoMode
-                        ? 'You described actions but did not call any tool. Use write_local_file, edit_file, run_command or another tool now. Do not describe — execute.'
+                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
                         : 'continue',
                 });
                 lastToolName = '';
