@@ -276,6 +276,14 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.7.1
+- Modo AUTO: eliminado loop infinito de leitura repetida (modelo ficava relendo package.json indefinidamente)
+- Modo AUTO: cache de leituras por round — read_local_file e list_directory retornam resultado cacheado sem custo de contexto
+- Modo AUTO: verificacao de erros do editor apos resposta final — se o modelo escrever arquivo com erro de sintaxe, o loop continua automaticamente ate corrigir
+- Modo AUTO: warnings do editor ignorados — somente erros reais ([ERROR]) bloqueiam o loop; warnings de schema do VS Code nao causam mais travamento
+- Modo AUTO: modelo que planeja sem agir e forcado a executar imediatamente
+- Telemetria ao vivo durante streaming: contador de tokens e tokens/s atualizados em tempo real na timeline
+
 ### 0.7.0
 - Suporte a RAG opcional via Chroma — banco vetorial local configuravel nas settings
 - `.eucodeIgnore`: arquivo de filtro gitignore-style para excluir arquivos/pastas do contexto do agente
