@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.7.4
+
+- Parser de stack trace na saida de comandos: extrai caminhos file.ext:line:col e popula counters.lastErrorFiles
+- Detector de arquivo errado em modo AUTO: se o erro aponta para arquivo A mas o modelo editou arquivo B, nudge especifico avisa "WRONG FILE. You edited X but the error is in Y"
+- run_command detecta runtime errors em processos long-running: server inicia mas joga TypeError/500 nao e mais reportado como sucesso
+- Bloco ERROR LOCATION incluido em todos os nudges de comando falho com paths + summary destacados
+- Status visivel para resposta vazia: "Modelo retornou vazio — recarregando contexto (tentativa N/3)" substitui itens silenciosos com bullet
+- Botao "Tentar mais 5 vezes" no chat quando [AUTO PAUSADO]: click reenvia mensagem de continuacao sem o usuario reescrever prompt
+- Status "Compactando contexto..." removido da timeline (ruido — pruning continua acontecendo em silencio)
+- Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro
+- README: tabela de modelos por tipo de tarefa (<7B, 7B-13B, 30B+) com limitacoes praticas
+- README: recomendacao do Ministral 3 14B Reasoning para hardware potente, com requisitos minimos por SO (macOS Apple Silicon, Windows/Linux com GPU NVIDIA/AMD, CPU-only) e configuracao de sampling especifica
+- README: nota explicita sobre comecar com Context Length 4096 antes de subir para 256k
+
+## 0.7.3
+
+- Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro: listas como "Abertos no editor: a.ts, b.tsx, c.json" agora tem cada arquivo pintado individualmente para identificacao rapida
+
+## 0.7.2
+
+- Arquivo criado/editado abre automaticamente em evidencia no editor (preview: false, preserveFocus: true), com throttle de 1.5s por path
+- Modo AUTO nao desiste mais ao receber erro de comando: novos counters lastCommandFailed e lastBuildPassed forcam continuacao ate o build passar com exit code 0
+- run_command sinaliza falhas explicitas ao modelo com prefixo [FAILED exit=N] e instrucao "diagnose and fix"
+- Detector de codigo dumped no chat: se o modelo escrever bloco de codigo grande (>200 chars) sem chamar tool, loop em AUTO injeta correcao forcando uso de write_local_file/edit_file
+- edit_file com old_string vazio nao falha mais com erro terminal: cria arquivo novo automaticamente ou retorna mensagem explicativa com opcoes acionaveis
+- Erro "old_string not found" agora inclui preview do arquivo e instrucao para chamar read_local_file primeiro
+- System prompt do AUTO reescrito com regras estritas e exemplos negativos (proibido terminar com "vou tentar")
+- [AUTO PAUSADO] retorna motivo especifico do bloqueio quando atinge cap de 5 tentativas
+- Hard timeout de 5 min em run_command: SIGTERM + SIGKILL apos 2s, exit code 124 (convencao GNU timeout)
+- Loop guard de tool repetida: 3+ chamadas identicas disparam [LOOP DETECTED] forcando mudanca de abordagem
+- Fila de mensagens injetadas durante chamadas lentas (substitui slot unico last-write-wins)
+- emitTelemetry helper extraido: telemetria sempre emitida em todos os pontos de saida do loop
+- Diagnostics check usa counters.filesWritten em vez de filesReadThisRound (correto para detectar erros em arquivos modificados)
+- Guard rapido em detectEscapedToolCall: evita CPU spike em respostas longas sem hints de tool call
+- Remocao de variavel morta filesWrittenThisRound
+
+## 0.7.1
+
+- Modo AUTO: cache de leituras por round — read_local_file e list_directory retornam resultado cacheado, eliminando releituras repetidas do mesmo arquivo
+- Modo AUTO: loop infinito de leitura eliminado — isGarbage agora so dispara em respostas completamente vazias, nao em respostas curtas legitimas
+- Modo AUTO: pruning preventivo aumentado para keepPairs=3, evitando que o modelo perca o contexto dos resultados das ferramentas recentes
+- Modo AUTO: modelo forcado a agir quando retorna texto sem ter escrito nenhum arquivo (Stop planning — act now)
+- Modo AUTO: verificacao automatica de erros do editor apos resposta final — agente continua corrigindo ate os erros de TypeScript/build desaparecerem
+- Modo AUTO: warnings do VS Code ignorados — somente [ERROR] bloqueia o loop; avisos de schema do editor nao causam mais travamento
+- Modo AUTO: historico do ultimo par incluido para o modelo nao perder contexto da conversa anterior
+- Modo AUTO: maxSteps reduzido de 200 para 40; instrucao clara de finalizacao no system prompt
+- Modo AUTO: pendingActionStreak limita a 3 tentativas de descricao sem acao antes de retornar
+- Telemetria ao vivo durante streaming: contador de tokens e tokens/s atualizados em tempo real na timeline via requestAnimationFrame
+- Telemetria: item "Gerando" criado ao primeiro chunk, atualizado continuamente, finalizado com dados definitivos do servidor ao concluir
+- Telemetria: item live removido automaticamente se o stream for interrompido por tool call (era preamble, nao resposta final)
+
+## 0.7.0
+
+- Suporte a RAG opcional via Chroma — banco vetorial local configuravel nas settings (toggle + endpoint + collection)
+- RAG injeta contexto semantico relevante no system prompt antes de cada resposta; timeout de 5s, nunca bloqueia o chat
+- .eucodeIgnore: arquivo de filtro gitignore-style na raiz do workspace para excluir arquivos/pastas do contexto do agente
+- Telemetria de desempenho na timeline: chips com tokens/s, prompt tokens e tempo total de resposta ao final de cada rodada
+- Distincao entre erro de infraestrutura (OOM, conexao) e contexto cheio — sentinel __INFRA_ERROR__ retorna mensagem direta sem retry
+- Sentinel __ABORTED__ para cancelamento pelo usuario, separado de outros erros
+- Notificacao nativa macOS via osascript quando VS Code nao esta em foco
+
 ## 0.6.3
 
 - Timeline persistente: texto do LM permanece visivel ao iniciar nova tool call — convertido em markdown fixo em vez de sumido

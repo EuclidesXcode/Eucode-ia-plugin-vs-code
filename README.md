@@ -22,6 +22,54 @@ O Eucode IA e um agente autonomo com acesso completo ao seu workspace. Ele nao a
 
 ---
 
+## ◆ Modo HYBRID — IA local + IA paga como suporte (destaque)
+
+O modo HYBRID resolve o maior dilema de quem usa IA para desenvolvimento: **custo da API paga vs. capacidade limitada de modelos locais**.
+
+A ideia e simples: a IA local executa o trabalho principal (~70%) e a IA paga entra como **consultor estrategico** apenas em momentos criticos onde o local nao da conta — economizando ate 70% do que voce gastaria usando so a API paga, sem abrir mao da qualidade nos pontos de decisao.
+
+### Quando a IA paga entra (5 gatilhos)
+
+1. **Planejamento inicial** — a primeira mensagem do usuario passa pelo pago, que gera um plano detalhado em 5-10 passos. O local executa.
+2. **Verificacao apos escrita/edicao** — verificacao deterministica (V1) confere no disco se o arquivo foi realmente criado. Verificacao semantica (V2) so quando ha milestones (build verde, por exemplo).
+3. **Recuperacao de erro de comando** — se o local falhar 3+ vezes ao corrigir um erro de build/test, o pago analisa o stack trace e propoe correcao especifica.
+4. **Recuperacao de erro de sintaxe persistente** — TypeScript errors via `get_diagnostics` que o local nao resolveu sozinho.
+5. **Local travou** — `[AUTO PAUSADO]`, modelo descrevendo sem agir, etc. Antes de desistir, consulta o pago para um plano de saida.
+
+### Provedores de suporte suportados
+
+| Provedor | Modelo default | Quando usar |
+|---|---|---|
+| **Anthropic (Claude)** | `claude-sonnet-4-6` | Melhor qualidade geral para coding, raciocinio causal forte |
+| **OpenAI (ChatGPT)** | `gpt-4o` | Equilibrio entre custo e qualidade, boa para revisoes |
+| **Google (Gemini)** | `gemini-2.0-flash-exp` | Mais barato, rapido, contexto enorme |
+
+Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente no VS Code (`globalState`) e nunca e enviada para nenhum servidor alem do proprio provedor.
+
+### Como ativar
+
+1. Abra as configuracoes (engrenagem no chat)
+2. Role ate a secao **◆ HYBRID — IA local + IA paga como suporte**
+3. Ative o toggle, escolha o provedor, cole a API key, opcionalmente especifique um modelo
+4. Salve
+5. Clique no botao **◆ Hybrid** no header (vai ficar azul neon quando ativo)
+6. Use normalmente — o suporte atua automaticamente nos 5 gatilhos
+
+### Transparencia total
+
+- Cada intervencao da IA paga aparece na timeline com **badge cyan azul-neon** (`◆ via Claude/GPT/Gemini`) e contexto do motivo (planejamento, verificacao, recuperacao)
+- Telemetria por chamada: tokens consumidos + tempo
+- **Chip comparativo no final da rodada**: mostra a divisao Local x Suporte em 3 dimensoes (chamadas / tokens / tempo)
+- Se a API paga falhar (timeout, sem creditos, key invalida), o modo entra automaticamente em modo degradado e o local continua sozinho
+
+### Modo Hybrid ≠ Modo AUTO
+
+- **AUTO** controla se o agente pede aprovacao para escrever/rodar comandos
+- **HYBRID** controla se a IA paga atua como suporte para a IA local
+- Os dois podem ser ativados juntos ou separados
+
+---
+
 ## Provedores suportados
 
 | Provedor | Como conectar |
@@ -206,6 +254,54 @@ As configuracoes abaixo foram validadas com o **Gemma 4 E4B** rodando em um **Ma
 >
 > **Nota sobre Context Length:** o Eucode IA esta calibrado para janelas de 2048 tokens com o Gemma 4 E4B. Se usar um modelo com contexto maior (ex: 8192), os limites internos de poda do plugin sao conservadores mas funcionam — nao e necessario ajustar nada no plugin.
 
+### Escolha de modelo por tipo de tarefa
+
+A capacidade de raciocinio do agente em modo automatico depende diretamente do tamanho do modelo. Recomendacoes baseadas em uso real:
+
+| Tamanho do modelo | Bom para | Limitacao |
+|---|---|---|
+| **< 7B** (Gemma 4 E4B, Phi-3-mini, Llama 3.2 3B) | Tarefas pontuais: corrigir um erro especifico, refatorar uma funcao, adicionar um endpoint, edicoes locais com contexto claro | Projetos multi-arquivo: tendem a perder o fio em tarefas que exigem raciocinio causal entre 3+ arquivos. Modo AUTO pode entrar em loop tentando corrigir o arquivo errado |
+| **7B-13B** (Qwen 2.5 Coder 7B, DeepSeek Coder V2, CodeLlama 13B) | Projetos pequenos e medios: criar features completas (login + dashboard), refatorar modulos, debug com stack trace | Tarefas muito ambiciosas em uma rodada (ex: "construa um SaaS inteiro") ainda pedem intervencao humana |
+| **30B+** (Qwen 2.5 Coder 32B, DeepSeek V3) ou **Claude API** | Projetos grandes, refatoracoes amplas, modo AUTO confiavel por longas execucoes | Recursos: 30B local exige 32GB+ de RAM. Claude API tem custo por token |
+
+> **Dica pratica:** se o modo AUTO ficar pausando com `[AUTO PAUSADO]` repetidamente para tarefas que voce considera simples, o modelo provavelmente esta abaixo da capacidade necessaria. Suba uma faixa de tamanho ou divida a tarefa em pedidos menores.
+
+### Recomendacao premium: Ministral 3 14B Reasoning (hardware potente)
+
+Para usuarios com hardware mais potente, este modelo entrega uma experiencia significativamente superior em modo AUTO. E um modelo treinado especificamente para raciocinio passo-a-passo, com tool use nativo e janela de contexto de 256k tokens — o que resolve quase todos os problemas de pruning agressivo que afetam modelos menores.
+
+**Por que vale a pena:**
+- **Tool calling robusto:** chama as ferramentas com consistencia muito maior que modelos < 7B
+- **Raciocinio causal entre arquivos:** entende fluxo de dados entre componentes, reduzindo drasticamente o cenario "modelo edita arquivo errado"
+- **Contexto gigante (256k):** o agente lembra do projeto inteiro entre rodadas
+- **Faixa doce 14B:** suficiente para projetos reais sem exigir 32GB+ de RAM
+
+**Requisitos minimos por sistema operacional:**
+
+| Sistema | RAM unificada / VRAM | Armazenamento | Observacao |
+|---|---|---|---|
+| **macOS (Apple Silicon)** | 16 GB minimo, 24 GB+ recomendado | 10 GB livres | M2/M3/M4 com GPU integrada. No M-series base de 16 GB feche Chrome e outros apps pesados durante uso |
+| **macOS (Intel)** | Nao recomendado | — | Performance inviavel sem GPU dedicada |
+| **Windows / Linux com GPU NVIDIA** | 12 GB VRAM minimo (ex: RTX 3060 12GB, RTX 4070+) | 10 GB livres | Full GPU offload garante velocidade aceitavel (15+ t/s) |
+| **Windows / Linux com GPU AMD** | 16 GB VRAM (ex: RX 7900 XT) | 10 GB livres | Suporte via ROCm/Vulkan no LM Studio; performance varia |
+| **Windows / Linux CPU-only** | 32 GB RAM | 10 GB livres | Funcional mas lento (3-5 t/s) — use apenas para tarefas pontuais |
+
+**Configuracao recomendada no LM Studio:**
+
+| Parametro | Valor |
+|---|---|
+| **Context Length** | `4096` para comecar; suba para `8192` se a maquina aguentar |
+| **Temperature** | `0.5` (equilibrio entre coding preciso e reasoning) |
+| **Top K Sampling** | `40` |
+| **Top P Sampling** | `0.95` |
+| **Min P Sampling** | `0.05` |
+| **Repeat Penalty** | `1.05` (mais leve que para Gemma) |
+| **Limit Response Length** | `2048` (reasoning models precisam de espaco para "pensar") |
+| **Context Overflow** | `Rolling Window` |
+| **CPU Threads** | Numero de nucleos performance da CPU (4-8 dependendo do chip) |
+
+> **Aviso:** comece com Context Length de 4096. Nao habilite 256k de cara — vai consumir RAM em excesso e cair drasticamente a velocidade por token. Suba gradualmente conforme valida a estabilidade na sua maquina.
+
 ---
 
 ## Contexto vetorial com RAG (opcional)
@@ -275,6 +371,27 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.7.4
+- Detector de arquivo errado em modo AUTO: agente para de "corrigir" o arquivo errado quando o erro aponta para outro
+- Stack trace destacado nos nudges de erro: arquivos + mensagem extraidos da saida do comando
+- Runtime errors em dev servers (TypeError, 500) detectados em processos long-running
+- Botao "Tentar mais 5 vezes" quando o modo AUTO pausa
+- Status visivel para retry de resposta vazia
+- Status "Compactando contexto..." removido (ruido)
+- Recomendacao de modelo premium no README: Ministral 3 14B Reasoning com requisitos por SO
+
+### 0.7.3
+- Todos os nomes de arquivo na timeline destacados em amarelo, nao apenas o primeiro
+
+### 0.7.2
+- Arquivos criados ou editados pelo agente abrem automaticamente em evidencia no editor
+- Modo AUTO nao desiste mais ao receber erro de comando: continua corrigindo ate o build passar com exit code 0
+- Detector de codigo dumped no chat: forca o modelo a salvar codigo via tool em vez de colar no chat
+- edit_file mais tolerante: old_string vazio cria arquivo novo automaticamente; mensagens de erro didaticas guiam o modelo a se autocorrigir
+- Hard timeout de 5 min em comandos: evita travamento do loop em comandos pendurados
+- Loop guard de tool repetida: 3 chamadas identicas disparam correcao forcando mudanca de abordagem
+- [AUTO PAUSADO] com diagnostico especifico quando o agente nao consegue concluir
 
 ### 0.7.1
 - Modo AUTO: eliminado loop infinito de leitura repetida (modelo ficava relendo package.json indefinidamente)

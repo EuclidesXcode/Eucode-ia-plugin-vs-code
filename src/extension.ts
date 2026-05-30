@@ -5,7 +5,7 @@ import { callAIWithVision, checkConnection, checkAnthropicConnection } from './s
 import { buildHistorySummary, HistoryEntry } from './services/history-service';
 import { HistoryManagerService } from './services/HistoryManagerService';
 import { collectWorkspaceContext, collectDiagnostics, getDefaultCwd } from './workspace/context';
-import { runAgentLoop, ConfirmWriteRequest, ConfirmCommandRequest, ConfirmCommandDecision, TodoItem } from './agent/loop';
+import { runAgentLoop, ConfirmWriteRequest, ConfirmCommandRequest, ConfirmCommandDecision, TodoItem, HybridActivityEvent } from './agent/loop';
 import { SYSTEM_PROMPT } from './agent/prompt';
 import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSettings } from './config/settings';
 import { DEFAULT_MODEL } from './utils/constants';
@@ -111,7 +111,21 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.onDidReceiveMessage(async (message: any) => {
             if (message?.command === 'webview_ready') {
-                webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model, enabledTools: this._settings.enabledTools, ragEnabled: this._settings.ragEnabled, ragEndpoint: this._settings.ragEndpoint, ragCollection: this._settings.ragCollection });
+                webviewView.webview.postMessage({
+                    command: 'load_config',
+                    provider: this._settings.provider,
+                    apiHost: this._settings.apiHost,
+                    apiKey: this._settings.apiKey,
+                    model: this._settings.model,
+                    enabledTools: this._settings.enabledTools,
+                    ragEnabled: this._settings.ragEnabled,
+                    ragEndpoint: this._settings.ragEndpoint,
+                    ragCollection: this._settings.ragCollection,
+                    hybridEnabled: this._settings.hybridEnabled,
+                    supportProvider: this._settings.supportProvider,
+                    supportApiKey: this._settings.supportApiKey,
+                    supportModel: this._settings.supportModel,
+                });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
@@ -142,10 +156,32 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             }
 
             if (message?.command === 'save_config') {
-                this._settings = { provider: message.provider ?? this._settings.provider, apiHost: message.apiHost ?? this._settings.apiHost, apiKey: message.apiKey ?? '', model: message.model ?? '', enabledTools: message.enabledTools ?? this._settings.enabledTools, ragEnabled: message.ragEnabled ?? this._settings.ragEnabled, ragEndpoint: message.ragEndpoint ?? this._settings.ragEndpoint, ragCollection: message.ragCollection ?? this._settings.ragCollection };
+                this._settings = {
+                    provider: message.provider ?? this._settings.provider,
+                    apiHost: message.apiHost ?? this._settings.apiHost,
+                    apiKey: message.apiKey ?? '',
+                    model: message.model ?? '',
+                    enabledTools: message.enabledTools ?? this._settings.enabledTools,
+                    ragEnabled: message.ragEnabled ?? this._settings.ragEnabled,
+                    ragEndpoint: message.ragEndpoint ?? this._settings.ragEndpoint,
+                    ragCollection: message.ragCollection ?? this._settings.ragCollection,
+                    hybridEnabled: message.hybridEnabled ?? this._settings.hybridEnabled,
+                    supportProvider: message.supportProvider ?? this._settings.supportProvider,
+                    // Empty string from UI means "don't change" — preserve stored key
+                    supportApiKey: (message.supportApiKey && message.supportApiKey.length > 0)
+                        ? message.supportApiKey
+                        : this._settings.supportApiKey,
+                    supportModel: message.supportModel ?? this._settings.supportModel,
+                };
                 await saveSettings(this._context, this._settings);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
+                return;
+            }
+
+            if (message?.command === 'set_hybrid') {
+                this._settings = { ...this._settings, hybridEnabled: !!message.enabled };
+                await saveSettings(this._context, this._settings);
                 return;
             }
 
@@ -222,6 +258,34 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 const notifyLiveTelemetry = (tokens: number, tokensPerSec: number, elapsedMs: number) =>
                     webviewView.webview.postMessage({ command: 'live_telemetry', tokens, tokensPerSec, elapsedMs });
 
+                // Open the file the agent just wrote/edited in the editor so the
+                // user sees the change live. Throttled per path — repeated touches
+                // to the same file in quick succession only open once.
+                const recentlyOpened = new Map<string, number>();
+                const openFileInEditor = (absolutePath: string) => {
+                    const now = Date.now();
+                    const last = recentlyOpened.get(absolutePath) || 0;
+                    if (now - last < 1500) { return; }
+                    recentlyOpened.set(absolutePath, now);
+                    vscode.workspace.openTextDocument(absolutePath).then(
+                        doc => vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true }),
+                        () => { /* file may not exist yet (race) — ignore */ }
+                    );
+                };
+
+                // Hybrid: when toggled on AND a key is configured, ship support
+                // config + activity callback to the loop.
+                const hybridConfig = (message.hybridMode && this._settings.supportApiKey)
+                    ? {
+                        enabled: true,
+                        provider: this._settings.supportProvider,
+                        apiKey: this._settings.supportApiKey,
+                        model: this._settings.supportModel,
+                    }
+                    : undefined;
+                const notifyHybridActivity = (evt: HybridActivityEvent) =>
+                    webviewView.webview.postMessage({ command: 'hybrid_activity', ...evt });
+
                 response = await runAgentLoop(
                     message.text, fullContextBlock, defaultCwd, endpoint, authHeaders,
                     this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd,
@@ -237,7 +301,10 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     notifyTelemetry,
                     this._settings.ragEnabled ? this._settings.ragEndpoint : undefined,
                     this._settings.ragEnabled ? this._settings.ragCollection : undefined,
-                    notifyLiveTelemetry
+                    notifyLiveTelemetry,
+                    openFileInEditor,
+                    hybridConfig,
+                    notifyHybridActivity
                 );
                 this._abortController = null;
                 this._injectMessage = null;

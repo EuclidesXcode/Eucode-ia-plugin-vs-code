@@ -89,6 +89,13 @@
             background: #0a1a0f;
         }
         .header-btn.auto-active:hover { background: #0d2212; }
+        .header-btn.hybrid-active {
+            border-color: #00d4ff;
+            color: #00d4ff;
+            background: #001a26;
+            box-shadow: 0 0 6px #00d4ff44;
+        }
+        .header-btn.hybrid-active:hover { background: #002030; }
 
         /* ── Sessions panel ── */
         #sessions-panel {
@@ -453,6 +460,58 @@
         .tl-item.error .tl-text { color: #8a1a1a; }
         .tl-item.error .tl-dot  { background: #1a0000; border-color: #9a2020; }
         .tl-item.error .tl-dot::after { background: #cc3030; }
+
+        /* HYBRID — IA paga atuando como suporte (azul neon) */
+        .tl-item.tl-hybrid {
+            flex-direction: row-reverse;
+            justify-content: flex-start;
+            text-align: right;
+            padding-left: 24px;
+        }
+        .tl-item.tl-hybrid::after { display: none; }
+        .tl-item.tl-hybrid .tl-body {
+            background: linear-gradient(90deg, transparent 0%, #001a2630 100%);
+            border-right: 2px solid #00d4ff;
+            padding: 4px 10px 4px 10px;
+            border-radius: 4px 0 0 4px;
+            max-width: 90%;
+        }
+        .tl-item.tl-hybrid.active .tl-dot {
+            background: #001a26;
+            border: 1.5px solid #00d4ff;
+            animation: tl-pulse 1.4s ease-in-out infinite;
+        }
+        .tl-item.tl-hybrid.active .tl-dot::after { background: #00d4ff; }
+        .tl-item.tl-hybrid.done .tl-dot {
+            background: #001a26;
+            border: 1.5px solid #00d4ff;
+        }
+        .tl-item.tl-hybrid.done .tl-dot::after { background: #00d4ff; }
+        .tl-item.tl-hybrid .tl-text { color: #6ad7ee; }
+        .tl-item.tl-hybrid.done .tl-text { color: #00d4ff; }
+        .tl-item.tl-hybrid .tl-hybrid-badge {
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #00d4ff;
+            opacity: 0.75;
+            margin-bottom: 2px;
+            display: block;
+        }
+        .tl-item.tl-hybrid .tl-hybrid-meta {
+            font-size: 10px;
+            color: #4a8090;
+            margin-top: 3px;
+            display: block;
+        }
+        .tl-item.tl-hybrid .tl-hybrid-detail {
+            font-size: 11px;
+            color: #8fb5c5;
+            margin-top: 4px;
+            white-space: pre-wrap;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
         /* nome de arquivo — amarelo */
         .tl-filename { color: #c9a020; }
 
@@ -742,6 +801,26 @@
         .tl-telemetry-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
         .tl-chip { background: #13131f; border: 1px solid #222; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #4a5568; }
         .tl-chip span { color: #6a7f99; }
+
+        .continue-btn {
+            margin-top: 10px;
+            background: #0d1a2e;
+            border: 1px solid #3a7bd5;
+            border-radius: 4px;
+            color: #3a7bd5;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .continue-btn:hover:not(:disabled) { background: #3a7bd5; color: #fff; }
+        .continue-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* ── Streaming text inside timeline ── */
         .tl-stream {
@@ -1049,6 +1128,7 @@
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
+        <button id="hybrid-btn" class="header-btn" title="Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos">◆ Hybrid</button>
         <button id="auto-btn" class="header-btn" title="Modo automatico: escreve, testa e corrige sem pedir aprovacao"><span class="mi" style="font-size:14px">bolt</span>Auto <span style="font-size:8px;opacity:0.7;letter-spacing:0.04em">BETA</span></button>
         <button id="sessions-btn" class="header-btn"><span class="mi" style="font-size:14px">forum</span>Sessoes</button>
         <button id="new-session-btn" class="header-btn"><span class="mi" style="font-size:14px">add</span>Novo chat</button>
@@ -1101,6 +1181,28 @@
                 <input id="config-rag-endpoint" class="config-input mono" type="text" placeholder="http://localhost:8000" spellcheck="false">
                 <input id="config-rag-collection" class="config-input mono" type="text" placeholder="eucode" spellcheck="false">
                 <div class="config-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
+            </div>
+        </div>
+        <div style="border: 1px solid #00d4ff44; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #001a2611 0%, transparent 100%);">
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#00d4ff;">
+                ◆ HYBRID — IA local + IA paga como suporte
+                <label class="switch" style="margin-left:auto">
+                    <input type="checkbox" id="config-hybrid-enabled">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="config-hint" style="margin-top:6px;margin-bottom:8px;color:#7090b0;">
+                A IA local faz o trabalho principal (~70%). A IA paga entra como consultor em momentos criticos: planejamento inicial, verificacao de acoes, recuperacao de erros.
+            </div>
+            <div id="config-hybrid-rows" style="display:none;gap:6px;flex-direction:column;">
+                <select id="config-hybrid-provider" class="config-select">
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (ChatGPT)</option>
+                    <option value="gemini">Google (Gemini)</option>
+                </select>
+                <input id="config-hybrid-key" class="config-input mono" type="password" placeholder="API key do provedor de suporte" spellcheck="false" autocomplete="off">
+                <input id="config-hybrid-model" class="config-input mono" type="text" placeholder="Modelo (vazio usa o padrao do provedor)" spellcheck="false" autocomplete="off">
+                <div class="config-hint" id="config-hybrid-hint">Padrao: claude-sonnet-4-6</div>
             </div>
         </div>
         <div class="config-actions">
@@ -1255,6 +1357,27 @@
                 : 'Modo automatico: escreve, testa e corrige sem pedir aprovacao';
         });
 
+        // ── Hybrid mode toggle ──
+        let hybridMode = false;
+        const hybridBtn = document.getElementById('hybrid-btn');
+        function updateHybridBtnState() {
+            hybridBtn.classList.toggle('hybrid-active', hybridMode);
+            hybridBtn.title = hybridMode
+                ? 'Modo Hybrid ATIVO — IA paga atuando como suporte. Clique para desativar.'
+                : 'Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos';
+        }
+        hybridBtn.addEventListener('click', () => {
+            if (!savedSettings.supportApiKey && !hybridMode) {
+                alert('Configure a API key do provedor de suporte nas configuracoes primeiro (engrenagem).');
+                return;
+            }
+            hybridMode = !hybridMode;
+            savedSettings.hybridEnabled = hybridMode;
+            updateHybridBtnState();
+            // Persiste a preferencia
+            vscode.postMessage({ command: 'set_hybrid', enabled: hybridMode });
+        });
+
         // ── Sessions panel ──
         sessionsBtn.addEventListener('click', () => sessionsPanel.classList.toggle('open'));
 
@@ -1334,9 +1457,37 @@
         const configRagEndpoint = document.getElementById('config-rag-endpoint');
         const configRagCollection = document.getElementById('config-rag-collection');
 
+        const configHybridEnabled = document.getElementById('config-hybrid-enabled');
+        const configHybridRows = document.getElementById('config-hybrid-rows');
+        const configHybridProvider = document.getElementById('config-hybrid-provider');
+        const configHybridKey = document.getElementById('config-hybrid-key');
+        const configHybridModel = document.getElementById('config-hybrid-model');
+        const configHybridHint = document.getElementById('config-hybrid-hint');
+
+        const HYBRID_DEFAULT_MODELS = {
+            anthropic: 'claude-sonnet-4-6',
+            openai: 'gpt-4o',
+            gemini: 'gemini-2.0-flash-exp',
+        };
+        const HYBRID_PLACEHOLDERS = {
+            anthropic: 'sk-ant-...',
+            openai: 'sk-...',
+            gemini: 'AIza...',
+        };
+        function updateHybridHint() {
+            const p = configHybridProvider.value;
+            configHybridHint.textContent = `Padrao: ${HYBRID_DEFAULT_MODELS[p]}`;
+            configHybridKey.placeholder = HYBRID_PLACEHOLDERS[p];
+            configHybridModel.placeholder = `Modelo (vazio = ${HYBRID_DEFAULT_MODELS[p]})`;
+        }
+
         configRagEnabled.addEventListener('change', () => {
             configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
         });
+        configHybridEnabled.addEventListener('change', () => {
+            configHybridRows.style.display = configHybridEnabled.checked ? 'flex' : 'none';
+        });
+        configHybridProvider.addEventListener('change', updateHybridHint);
 
         function updateConfigUI(provider) {
             const isAnthropic = provider === 'anthropic';
@@ -1381,6 +1532,13 @@
                 configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
                 configRagCollection.value = savedSettings.ragCollection || 'eucode';
                 configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
+
+                configHybridEnabled.checked = !!savedSettings.hybridEnabled;
+                configHybridProvider.value = savedSettings.supportProvider || 'anthropic';
+                configHybridKey.value = '';
+                configHybridModel.value = savedSettings.supportModel || '';
+                configHybridRows.style.display = configHybridEnabled.checked ? 'flex' : 'none';
+                updateHybridHint();
             }
         });
 
@@ -1403,6 +1561,10 @@
                 ragEnabled: configRagEnabled.checked,
                 ragEndpoint: configRagEndpoint.value.trim(),
                 ragCollection: configRagCollection.value.trim(),
+                hybridEnabled: configHybridEnabled.checked,
+                supportProvider: configHybridProvider.value,
+                supportApiKey: configHybridKey.value.trim(),
+                supportModel: configHybridModel.value.trim(),
             });
         });
 
@@ -1922,7 +2084,8 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '' };
+                if (typeof msg.hybridEnabled === 'boolean') { hybridMode = msg.hybridEnabled; updateHybridBtnState(); }
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -1949,6 +2112,12 @@
                 savedSettings.ragEnabled = configRagEnabled.checked;
                 savedSettings.ragEndpoint = configRagEndpoint.value.trim();
                 savedSettings.ragCollection = configRagCollection.value.trim();
+                savedSettings.hybridEnabled = configHybridEnabled.checked;
+                savedSettings.supportProvider = configHybridProvider.value;
+                if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }
+                savedSettings.supportModel = configHybridModel.value.trim();
+                hybridMode = savedSettings.hybridEnabled;
+                updateHybridBtnState();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -1976,9 +2145,21 @@
                 updateLiveTelemetry(msg.tokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'telemetry') {
                 finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
+            } else if (msg.command === 'hybrid_activity') {
+                handleHybridActivity(msg);
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
-                if (!msg.running) { currentTodoCard = null; }
+                if (!msg.running) {
+                    currentTodoCard = null;
+                    // Failsafe: ao parar a execucao (stop pelo usuario ou fim
+                    // do loop), garante que nenhum item de status fique girando.
+                    const tl = getTimeline();
+                    if (tl) {
+                        tl.querySelectorAll('.tl-item.active:not(.tl-response)').forEach(el => {
+                            el.classList.replace('active', 'done');
+                        });
+                    }
+                }
             } else if (msg.command === 'stream_chunk') {
                 if (msg.text === '\x00CLEAR') {
                     // Tool call iniciou — congela o texto ja escrito como markdown fixo,
@@ -2055,18 +2236,48 @@
                 const activeResponse = tl?.querySelector('.tl-item.active.tl-response');
                 const loadingBubble = chatContainer.querySelector('[data-loading]');
 
+                // SEMPRE finalizar qualquer item ativo de status que NAO seja
+                // a resposta em streaming. Cobre o caso onde o loop retorna sem
+                // novo texto e o ultimo "Analyzing project structure..." ficaria
+                // com a animacao girando para sempre.
+                if (tl) {
+                    tl.querySelectorAll('.tl-item.active:not(.tl-response)').forEach(el => {
+                        el.classList.replace('active', 'done');
+                    });
+                }
+
+                // Detecta o sentinel [CONTINUE_BUTTON] colocado pelo loop quando
+                // o modo AUTO desistiu. Remove do texto e adiciona um botao real.
+                const hasContinueBtn = msg.text && msg.text.includes('[CONTINUE_BUTTON]');
+                const cleanText = hasContinueBtn
+                    ? msg.text.replace(/\[CONTINUE_BUTTON\]\s*$/, '').trim()
+                    : msg.text;
+
+                const appendContinueButton = (container) => {
+                    if (!hasContinueBtn) { return; }
+                    const btn = document.createElement('button');
+                    btn.className = 'continue-btn';
+                    btn.innerHTML = '<span class="mi" style="font-size:14px">replay</span>Tentar mais 5 vezes';
+                    btn.addEventListener('click', () => {
+                        btn.disabled = true;
+                        vscode.postMessage({ command: 'user_input', text: 'Continue a tarefa de onde parou. Voce nao terminou — execute as proximas etapas ate o build passar com sucesso.', autoMode: true });
+                    });
+                    container.appendChild(btn);
+                };
+
                 if (activeResponse) {
                     // Tinha streaming ativo — renderiza markdown final e para animacao
                     const body = activeResponse.querySelector('.tl-body');
                     const pre = activeResponse.querySelector('.tl-stream');
                     if (pre) { pre.remove(); }
-                    if (msg.text || streamText) {
+                    if (cleanText || streamText) {
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(msg.text || streamText);
+                        md.innerHTML = marked.parse(cleanText || streamText);
                         body.appendChild(md);
+                        appendContinueButton(body);
                     }
                     activeResponse.classList.remove('active');
-                } else if (!streamText && msg.text) {
+                } else if (!streamText && cleanText) {
                     // Sem streaming: adiciona item de resposta na timeline ao inves de nova bolha
                     if (tl) {
                         const prev = tl.querySelector('.tl-item.active');
@@ -2078,8 +2289,9 @@
                         const body = document.createElement('div');
                         body.className = 'tl-body';
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(msg.text);
+                        md.innerHTML = marked.parse(cleanText);
                         body.appendChild(md);
+                        appendContinueButton(body);
                         item.appendChild(dot);
                         item.appendChild(body);
                         tl.appendChild(item);
@@ -2100,24 +2312,31 @@
 
         function getTimeline() { return document.getElementById('agent-timeline'); }
 
-        // Detecta nome de arquivo no texto e retorna { prefix, filename, suffix } ou null
-        function splitFilename(text) {
-            const m = text.match(/^(.*?)([^\s\/\\]+\.[a-zA-Z0-9]+)(.*)$/);
-            if (!m) { return null; }
-            return { prefix: m[1], filename: m[2], suffix: m[3] };
-        }
-
+        // Itera o texto encontrando TODOS os nomes de arquivo (algo.ext)
+        // e os envolve em <span class="tl-filename"> para destacar em amarelo.
+        // Suporta listas separadas por virgula como "Abertos no editor: a.ts, b.tsx, c.json".
         function buildLabelWithFilename(text) {
             const span = document.createElement('span');
             span.className = 'tl-text';
-            const parts = splitFilename(text);
-            if (parts) {
-                if (parts.prefix) { span.appendChild(document.createTextNode(parts.prefix)); }
+            const re = /([A-Za-z0-9_.\-]+\.[A-Za-z0-9]{1,8})(?![A-Za-z0-9])/g;
+            let lastIndex = 0;
+            let match;
+            let anyMatch = false;
+            while ((match = re.exec(text)) !== null) {
+                anyMatch = true;
+                if (match.index > lastIndex) {
+                    span.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
                 const fn = document.createElement('span');
                 fn.className = 'tl-filename';
-                fn.textContent = parts.filename;
+                fn.textContent = match[1];
                 span.appendChild(fn);
-                if (parts.suffix) { span.appendChild(document.createTextNode(parts.suffix)); }
+                lastIndex = match.index + match[1].length;
+            }
+            if (anyMatch) {
+                if (lastIndex < text.length) {
+                    span.appendChild(document.createTextNode(text.slice(lastIndex)));
+                }
             } else {
                 span.textContent = text;
             }
@@ -2231,6 +2450,11 @@
         }
 
         function finalizeTelemetry(promptTokens, completionTokens, tokensPerSec, elapsedMs) {
+            // Accumulate local stats for comparison with hybrid
+            hybridStats.local.calls += 1;
+            hybridStats.local.tokens += (promptTokens || 0) + (completionTokens || 0);
+            hybridStats.local.timeMs += (elapsedMs || 0);
+
             getOrCreateLiveTelemetryItem();
             if (!liveTelemetryItem || !liveTelemetryChips) { return; }
             // Update label
@@ -2244,6 +2468,140 @@
             ]);
             liveTelemetryItem = null;
             liveTelemetryChips = null;
+
+            // If hybrid had any activity, append a comparative chip row
+            if (hybridStats.hybrid.calls > 0) {
+                appendHybridSplitChip();
+            }
+        }
+
+        // ── HYBRID telemetry & timeline ───────────────────────────────
+        const PROVIDER_LABEL = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' };
+        const REASON_PREFIX = {
+            plan: 'Planejamento',
+            verify_write: 'Verificacao de escrita',
+            verify_build: 'Verificacao de build',
+            recover_command: 'Recuperacao de comando',
+            recover_syntax: 'Recuperacao de sintaxe',
+            recover_stop: 'Recuperacao de parada',
+        };
+
+        // Aggregated stats per session for the split chip
+        let hybridStats = { local: { calls: 0, tokens: 0, timeMs: 0 }, hybrid: { calls: 0, tokens: 0, timeMs: 0 } };
+        // Track pending hybrid items by reason so we update the same row when the
+        // call returns (instead of stacking duplicate items).
+        const pendingHybridItems = new Map();
+
+        function resetHybridStats() {
+            hybridStats = { local: { calls: 0, tokens: 0, timeMs: 0 }, hybrid: { calls: 0, tokens: 0, timeMs: 0 } };
+            pendingHybridItems.clear();
+        }
+
+        function handleHybridActivity(msg) {
+            const tl = getTimeline();
+            if (!tl) { return; }
+            const label = PROVIDER_LABEL[msg.provider] || msg.provider;
+            const reasonLabel = REASON_PREFIX[msg.reason] || msg.reason;
+            const itemKey = `${msg.reason}_${msg.statusText}`;
+
+            // Pending state — create item with "Consultando..." status
+            let item = pendingHybridItems.get(itemKey);
+            if (!msg.success && !msg.error && (!msg.completionTokens || msg.completionTokens === 0)) {
+                if (!item) {
+                    item = document.createElement('div');
+                    item.className = 'tl-item tl-hybrid active';
+                    const dot = document.createElement('div');
+                    dot.className = 'tl-dot';
+                    const body = document.createElement('div');
+                    body.className = 'tl-body';
+                    body.innerHTML = `
+                        <span class="tl-hybrid-badge">◆ via ${label} — ${reasonLabel}</span>
+                        <span class="tl-text">${msg.statusText}...</span>
+                    `;
+                    item.appendChild(dot);
+                    item.appendChild(body);
+                    tl.appendChild(item);
+                    pendingHybridItems.set(itemKey, item);
+                }
+                return;
+            }
+
+            // Resolved (success or error) — update existing pending item or create new
+            if (!item) {
+                item = document.createElement('div');
+                item.className = 'tl-item tl-hybrid';
+                const dot = document.createElement('div');
+                dot.className = 'tl-dot';
+                const body = document.createElement('div');
+                body.className = 'tl-body';
+                item.appendChild(dot);
+                item.appendChild(body);
+                tl.appendChild(item);
+            }
+            pendingHybridItems.delete(itemKey);
+            item.classList.remove('active');
+            item.classList.add(msg.error ? 'error' : 'done');
+
+            const body = item.querySelector('.tl-body');
+            const detail = msg.error
+                ? `[ERRO] ${msg.error}`
+                : (msg.responseText || '').slice(0, 400);
+            const tokens = (msg.promptTokens || 0) + (msg.completionTokens || 0);
+            const meta = msg.error
+                ? ''
+                : `${tokens}t · ${((msg.elapsedMs || 0) / 1000).toFixed(1)}s`;
+
+            body.innerHTML = `
+                <span class="tl-hybrid-badge">◆ via ${label} — ${reasonLabel}</span>
+                <span class="tl-text">${msg.error ? 'Falhou' : 'Concluido'}</span>
+                ${detail ? `<span class="tl-hybrid-detail">${escapeHtml(detail)}</span>` : ''}
+                ${meta ? `<span class="tl-hybrid-meta">${meta}</span>` : ''}
+            `;
+
+            if (!msg.error) {
+                hybridStats.hybrid.calls += 1;
+                hybridStats.hybrid.tokens += tokens;
+                hybridStats.hybrid.timeMs += (msg.elapsedMs || 0);
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        }
+
+        // Appends a comparative chip row showing % split between local and hybrid
+        // across three dimensions: calls, tokens, time.
+        function appendHybridSplitChip() {
+            const tl = getTimeline();
+            if (!tl) { return; }
+            const L = hybridStats.local;
+            const H = hybridStats.hybrid;
+            const totalCalls = L.calls + H.calls;
+            const totalTokens = L.tokens + H.tokens;
+            const totalTime = L.timeMs + H.timeMs;
+            const pct = (a, t) => t > 0 ? Math.round((a / t) * 100) : 0;
+
+            const item = document.createElement('div');
+            item.className = 'tl-item tl-telemetry done';
+            const dot = document.createElement('div');
+            dot.className = 'tl-dot';
+            const body = document.createElement('div');
+            body.className = 'tl-body';
+            const label = document.createElement('span');
+            label.className = 'tl-text';
+            label.innerHTML = `Divisao Local x Suporte`;
+            const chips = document.createElement('div');
+            chips.className = 'tl-telemetry-chips';
+            renderTelemetryChips(chips, [
+                `Chamadas <span>${pct(L.calls, totalCalls)}% / ${pct(H.calls, totalCalls)}%</span>`,
+                `Tokens <span>${pct(L.tokens, totalTokens)}% / ${pct(H.tokens, totalTokens)}%</span>`,
+                `Tempo <span>${pct(L.timeMs, totalTime)}% / ${pct(H.timeMs, totalTime)}%</span>`,
+            ]);
+            body.appendChild(label);
+            body.appendChild(chips);
+            item.appendChild(dot);
+            item.appendChild(body);
+            tl.appendChild(item);
         }
 
         let activeTerminal = null;
@@ -2357,6 +2715,7 @@
             liveTelemetryItem = null;
             liveTelemetryChips = null;
             liveTelemetryPending = null;
+            resetHybridStats();
             // Sela a timeline anterior removendo o id para que getTimeline()
             // sempre retorne a nova, evitando que dois elementos tenham o mesmo id
             const oldTimeline = document.getElementById('agent-timeline');
@@ -2368,6 +2727,7 @@
                 text: text || '(analise esta imagem)',
                 image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
                 autoMode,
+                hybridMode,
             });
 
             pendingImage = null;

@@ -1,10 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_ANTHROPIC_MODEL = exports.ALL_TOOL_NAMES = void 0;
+exports.DEFAULT_ANTHROPIC_MODEL = exports.ALL_TOOL_NAMES = exports.DEFAULT_SUPPORT_MODELS = void 0;
 exports.loadSettings = loadSettings;
 exports.saveSettings = saveSettings;
 exports.buildApiEndpoint = buildApiEndpoint;
 exports.buildAuthHeader = buildAuthHeader;
+exports.DEFAULT_SUPPORT_MODELS = {
+    anthropic: 'claude-sonnet-4-6',
+    openai: 'gpt-4o',
+    gemini: 'gemini-2.0-flash-exp',
+};
 exports.ALL_TOOL_NAMES = [
     'list_directory',
     'read_local_file',
@@ -26,6 +31,10 @@ const DEFAULTS = {
     ragEnabled: false,
     ragEndpoint: 'http://localhost:8000',
     ragCollection: 'eucode',
+    hybridEnabled: false,
+    supportProvider: 'anthropic',
+    supportApiKey: '',
+    supportModel: '',
 };
 const KEYS = {
     provider: 'eucode.provider',
@@ -36,6 +45,10 @@ const KEYS = {
     ragEnabled: 'eucode.ragEnabled',
     ragEndpoint: 'eucode.ragEndpoint',
     ragCollection: 'eucode.ragCollection',
+    hybridEnabled: 'eucode.hybridEnabled',
+    supportProvider: 'eucode.supportProvider',
+    supportApiKey: 'eucode.supportApiKey',
+    supportModel: 'eucode.supportModel',
 };
 exports.DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 function loadSettings(context) {
@@ -52,6 +65,10 @@ function loadSettings(context) {
         ragEnabled: context.globalState.get(KEYS.ragEnabled) ?? DEFAULTS.ragEnabled,
         ragEndpoint: context.globalState.get(KEYS.ragEndpoint) ?? DEFAULTS.ragEndpoint,
         ragCollection: context.globalState.get(KEYS.ragCollection) ?? DEFAULTS.ragCollection,
+        hybridEnabled: context.globalState.get(KEYS.hybridEnabled) ?? DEFAULTS.hybridEnabled,
+        supportProvider: context.globalState.get(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
+        supportApiKey: context.globalState.get(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
+        supportModel: context.globalState.get(KEYS.supportModel) ?? DEFAULTS.supportModel,
     };
 }
 async function saveSettings(context, settings) {
@@ -63,6 +80,10 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.ragEnabled, settings.ragEnabled);
     await context.globalState.update(KEYS.ragEndpoint, settings.ragEndpoint.replace(/\/+$/, ''));
     await context.globalState.update(KEYS.ragCollection, settings.ragCollection.trim());
+    await context.globalState.update(KEYS.hybridEnabled, settings.hybridEnabled);
+    await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
+    await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);
+    await context.globalState.update(KEYS.supportModel, settings.supportModel.trim());
 }
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts
 function buildApiEndpoint(settings) {
