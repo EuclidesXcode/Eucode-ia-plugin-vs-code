@@ -372,6 +372,13 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.8.0
+- **NOVO: Modo HYBRID** — IA local + IA paga (Anthropic / OpenAI / Gemini) como suporte estrategico em momentos criticos
+- 5 gatilhos: planejamento inicial, verificacao apos escrita, recuperacao de erro de comando/sintaxe, recuperacao quando o local trava
+- Botao HYBRID no header e secao dedicada nas configuracoes
+- Timeline com items de suporte cyan azul-neon alinhados a direita, com badge do provedor + motivo + meta
+- Telemetria comparativa final: divisao Local x Suporte em 3 dimensoes (chamadas / tokens / tempo)
+
 ### 0.7.4
 - Detector de arquivo errado em modo AUTO: agente para de "corrigir" o arquivo errado quando o erro aponta para outro
 - Stack trace destacado nos nudges de erro: arquivos + mensagem extraidos da saida do comando

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0
+
+- **NOVO: Modo HYBRID** — IA local + IA paga (Anthropic / OpenAI / Gemini) como suporte estrategico. Opcao A (consultor textual silencioso): o pago nao chama tools, apenas injeta orientacao no contexto do local
+- 5 gatilhos para a IA paga: planejamento inicial, verificacao apos escrita (V1 deterministica + V2 semantica), recuperacao de erro de comando, recuperacao de erro de sintaxe persistente, recuperacao quando o local trava
+- Cliente hybrid-client.ts com adaptadores para Anthropic (messages API), OpenAI (chat/completions) e Gemini (generateContent). Timeout 30s, modo degradado em erro
+- Botao HYBRID no header (cyan #00d4ff quando ativo) ao lado do AUTO
+- Painel de configuracoes ganha secao destacada HYBRID: dropdown provedor, API key, modelo (default por provedor)
+- Defaults: claude-sonnet-4-6 / gpt-4o / gemini-2.0-flash-exp
+- Timeline com items de suporte alinhados a direita, cyan azul-neon, badge "via Claude/GPT/Gemini" + motivo + detalhe + meta (tokens/tempo)
+- Telemetria comparativa: chip "Divisao Local x Suporte" no final da rodada em 3 dimensoes (chamadas / tokens / tempo, formato % / %)
+- API keys armazenadas localmente em globalState, nunca enviadas para servidores alem do proprio provedor
+- README com secao HYBRID em destaque imediatamente apos a apresentacao do plugin
+
 ## 0.7.4
 
 - Parser de stack trace na saida de comandos: extrai caminhos file.ext:line:col e popula counters.lastErrorFiles
