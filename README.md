@@ -22,6 +22,54 @@ O Eucode IA e um agente autonomo com acesso completo ao seu workspace. Ele nao a
 
 ---
 
+## ◆ Modo HYBRID — IA local + IA paga como suporte (destaque)
+
+O modo HYBRID resolve o maior dilema de quem usa IA para desenvolvimento: **custo da API paga vs. capacidade limitada de modelos locais**.
+
+A ideia e simples: a IA local executa o trabalho principal (~70%) e a IA paga entra como **consultor estrategico** apenas em momentos criticos onde o local nao da conta — economizando ate 70% do que voce gastaria usando so a API paga, sem abrir mao da qualidade nos pontos de decisao.
+
+### Quando a IA paga entra (5 gatilhos)
+
+1. **Planejamento inicial** — a primeira mensagem do usuario passa pelo pago, que gera um plano detalhado em 5-10 passos. O local executa.
+2. **Verificacao apos escrita/edicao** — verificacao deterministica (V1) confere no disco se o arquivo foi realmente criado. Verificacao semantica (V2) so quando ha milestones (build verde, por exemplo).
+3. **Recuperacao de erro de comando** — se o local falhar 3+ vezes ao corrigir um erro de build/test, o pago analisa o stack trace e propoe correcao especifica.
+4. **Recuperacao de erro de sintaxe persistente** — TypeScript errors via `get_diagnostics` que o local nao resolveu sozinho.
+5. **Local travou** — `[AUTO PAUSADO]`, modelo descrevendo sem agir, etc. Antes de desistir, consulta o pago para um plano de saida.
+
+### Provedores de suporte suportados
+
+| Provedor | Modelo default | Quando usar |
+|---|---|---|
+| **Anthropic (Claude)** | `claude-sonnet-4-6` | Melhor qualidade geral para coding, raciocinio causal forte |
+| **OpenAI (ChatGPT)** | `gpt-4o` | Equilibrio entre custo e qualidade, boa para revisoes |
+| **Google (Gemini)** | `gemini-2.0-flash-exp` | Mais barato, rapido, contexto enorme |
+
+Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente no VS Code (`globalState`) e nunca e enviada para nenhum servidor alem do proprio provedor.
+
+### Como ativar
+
+1. Abra as configuracoes (engrenagem no chat)
+2. Role ate a secao **◆ HYBRID — IA local + IA paga como suporte**
+3. Ative o toggle, escolha o provedor, cole a API key, opcionalmente especifique um modelo
+4. Salve
+5. Clique no botao **◆ Hybrid** no header (vai ficar azul neon quando ativo)
+6. Use normalmente — o suporte atua automaticamente nos 5 gatilhos
+
+### Transparencia total
+
+- Cada intervencao da IA paga aparece na timeline com **badge cyan azul-neon** (`◆ via Claude/GPT/Gemini`) e contexto do motivo (planejamento, verificacao, recuperacao)
+- Telemetria por chamada: tokens consumidos + tempo
+- **Chip comparativo no final da rodada**: mostra a divisao Local x Suporte em 3 dimensoes (chamadas / tokens / tempo)
+- Se a API paga falhar (timeout, sem creditos, key invalida), o modo entra automaticamente em modo degradado e o local continua sozinho
+
+### Modo Hybrid ≠ Modo AUTO
+
+- **AUTO** controla se o agente pede aprovacao para escrever/rodar comandos
+- **HYBRID** controla se a IA paga atua como suporte para a IA local
+- Os dois podem ser ativados juntos ou separados
+
+---
+
 ## Provedores suportados
 
 | Provedor | Como conectar |

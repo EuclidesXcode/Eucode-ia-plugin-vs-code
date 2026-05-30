@@ -38,6 +38,7 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const api_client_1 = require("../services/api-client");
 const rag_client_1 = require("../services/rag-client");
+const hybrid_client_1 = require("../services/hybrid-client");
 const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
@@ -471,7 +472,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity) {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
 - Execute the task end-to-end without asking the user anything.
@@ -556,6 +557,74 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             elapsedMs: Date.now() - sessionStart,
         });
     };
+    // ── HYBRID helpers ─────────────────────────────────────────────────
+    const hybridActive = !!(hybridConfig?.enabled && hybridConfig.apiKey);
+    const HYBRID_STATUS_BY_REASON = {
+        plan: 'Planejando estrategia da tarefa',
+        verify_write: 'Verificando se a escrita foi feita corretamente',
+        verify_build: 'Confirmando que o build esta saudavel',
+        recover_command: 'Analisando falha de comando e sugerindo correcao',
+        recover_syntax: 'Analisando erro de sintaxe persistente',
+        recover_stop: 'Local travou — pedindo plano de recuperacao',
+    };
+    async function askSupport(reason, system, user, maxTokens = 800) {
+        if (!hybridActive || !hybridConfig) {
+            return null;
+        }
+        const statusText = HYBRID_STATUS_BY_REASON[reason];
+        onHybridActivity?.({
+            provider: hybridConfig.provider,
+            reason,
+            statusText,
+            success: false, // pending; UI will update on second event
+        });
+        const res = await (0, hybrid_client_1.callSupportProvider)({
+            provider: hybridConfig.provider,
+            apiKey: hybridConfig.apiKey,
+            model: hybridConfig.model,
+            system,
+            user,
+            maxTokens,
+        });
+        const ok = !res.error && res.text.length > 0;
+        onHybridActivity?.({
+            provider: hybridConfig.provider,
+            reason,
+            statusText,
+            responseText: res.text,
+            promptTokens: res.promptTokens,
+            completionTokens: res.completionTokens,
+            elapsedMs: res.elapsedMs,
+            success: ok,
+            error: res.error,
+        });
+        return ok ? res.text : null;
+    }
+    // V1: deterministic verification — checks the filesystem.
+    function v1VerifyWrite(absPath, claim) {
+        try {
+            const stat = fs.statSync(absPath);
+            return `[V1 OK] "${path.basename(absPath)}" exists (${stat.size} bytes). Local model claim: "${claim.slice(0, 200)}"`;
+        }
+        catch {
+            return `[V1 FAIL] "${absPath}" was NOT created on disk, but the model claimed it was. Try again with write_local_file.`;
+        }
+    }
+    // ── GATILHO 1: planejamento inicial ────────────────────────────────
+    // Antes da primeira iteracao do loop, consulta o pago para gerar um
+    // plano de execucao. O plano vira contexto adicional injetado como
+    // mensagem do usuario que o local executa passo a passo.
+    if (hybridActive) {
+        const planSystem = 'You are a senior software architect helping a smaller local LLM execute a coding task. Produce a CONCISE, ACTIONABLE plan in 5-10 bullet steps. Each step must name specific files to create/edit and the exact action. No prose, no explanations — just the numbered plan. Keep under 300 words.';
+        const planUser = `User request:\n${userPrompt}\n\nWorkspace context:\n${contextBlock.slice(0, 1500)}\n\nProduce the plan now.`;
+        const plan = await askSupport('plan', planSystem, planUser, 600);
+        if (plan) {
+            roundMessages.push({
+                role: 'user',
+                content: `[HYBRID PLAN from support model] Follow this plan step by step. Use tools to execute each item:\n\n${plan}`,
+            });
+        }
+    }
     while (++step <= maxSteps) {
         if (signal?.aborted) {
             emitTelemetry();
@@ -696,6 +765,35 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 content: truncatedOutput,
                 tool_call_id: toolCallId,
             });
+            // ── GATILHO 2: verificacao apos escrita / build ────────────
+            // V1 (deterministica) roda sempre que houve escrita/edicao.
+            // V2 (semantica via pago) so roda em milestones: build verde
+            // ou escrita que tenha "implementado" algo nao-trivial.
+            if (hybridActive) {
+                if ((name === 'write_local_file' || name === 'edit_file') && !toolOutput.startsWith('[ERROR') && !toolOutput.startsWith('[ERRO')) {
+                    const fp = args.filePath || '';
+                    if (fp) {
+                        const absPath = (0, validation_1.resolveFilePath)(fp, defaultCwd);
+                        const v1 = v1VerifyWrite(absPath, toolOutput);
+                        roundMessages.push({
+                            role: 'user',
+                            content: `[VERIFICATION] ${v1}`,
+                        });
+                    }
+                }
+                else if (name === 'run_command' && counters.lastBuildPassed && !counters.lastCommandFailed) {
+                    // V2: build acabou de passar — pago confirma se de fato esta tudo certo
+                    const verifySystem = 'You are a code reviewer. The local agent just ran a build/test command successfully. Look at the command output and decide: is the build truly OK, or are there warnings/skipped tests/incomplete work the local agent might be ignoring? Reply in ONE LINE: either "BUILD OK" or "BUILD CONCERN: <one sentence>".';
+                    const verifyUser = `Command: ${args.command || ''}\nOutput:\n${toolOutput.slice(0, 1500)}`;
+                    const verdict = await askSupport('verify_build', verifySystem, verifyUser, 150);
+                    if (verdict && verdict.toUpperCase().includes('CONCERN')) {
+                        roundMessages.push({
+                            role: 'user',
+                            content: `[BUILD REVIEW from support model] ${verdict}\n\nAddress this concern before declaring done.`,
+                        });
+                    }
+                }
+            }
             // In auto mode keep fewer pairs since there's no history budget to spare.
             pruneRoundToolMessages(roundMessages, autoMode ? 3 : 6);
         }
@@ -744,6 +842,31 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             const dumpedInsteadOfWriting = autoMode && dumpedCodeInChat;
             if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
+                // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
+                // Em vez de bater no cap de 5 e desistir, no penultimo
+                // strike (4) consulta o pago para um plano de saida.
+                if (hybridActive && pendingActionStreak === 4) {
+                    const reason = lastCommandFailed
+                        ? 'recover_command'
+                        : buildNotYetPassed
+                            ? 'recover_syntax'
+                            : 'recover_stop';
+                    const sys = 'You are a senior engineer helping a stuck local agent. The local agent failed multiple attempts. Diagnose and produce a SHORT, SPECIFIC corrective plan in 3-5 bullets. Name exact files and exact actions. Be concrete.';
+                    const errCtx = counters.lastErrorFiles.length > 0
+                        ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
+                        : '';
+                    const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nWhat should the local agent do next?`;
+                    const recovery = await askSupport(reason, sys, usr, 500);
+                    if (recovery) {
+                        roundMessages.push({ role: 'assistant', content: text });
+                        roundMessages.push({
+                            role: 'user',
+                            content: `[HYBRID RECOVERY from support model] The support model analyzed your situation. Follow this exactly:\n\n${recovery}`,
+                        });
+                        lastToolName = '';
+                        continue;
+                    }
+                }
                 if (pendingActionStreak >= 5) {
                     // Hard cap to avoid eternal loop. Surface what happened
                     // so the user knows the agent gave up and why.

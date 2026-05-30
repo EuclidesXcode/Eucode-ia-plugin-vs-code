@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { callAI, callAnthropicAI, ToolCall } from '../services/api-client';
 import { queryRag, formatRagContext } from '../services/rag-client';
-import { AIProvider } from '../config/settings';
+import { callSupportProvider } from '../services/hybrid-client';
+import { AIProvider, SupportProvider } from '../config/settings';
 import { DEFAULT_MODEL } from '../utils/constants';
 import { HistoryEntry, buildMessagesFromHistory } from '../services/history-service';
 import { listDirectory, readLocalFile, writeLocalFile, editLocalFile } from '../tools/file-tools';
@@ -30,6 +31,26 @@ export type ConfirmCommandRequest = {
 };
 
 export type ConfirmCommandDecision = 'once' | 'session' | 'block';
+
+export type HybridReason = 'plan' | 'verify_write' | 'verify_build' | 'recover_command' | 'recover_syntax' | 'recover_stop';
+export type HybridActivityEvent = {
+    provider: SupportProvider;
+    reason: HybridReason;
+    statusText: string;
+    responseText?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+    elapsedMs?: number;
+    success: boolean;
+    error?: string;
+};
+
+export interface HybridConfig {
+    enabled: boolean;
+    provider: SupportProvider;
+    apiKey: string;
+    model?: string;
+}
 
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code: string): string[] {
@@ -496,7 +517,9 @@ export async function runAgentLoop(
     ragEndpoint?: string,
     ragCollection?: string,
     onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void,
-    onFileTouched?: (absolutePath: string) => void
+    onFileTouched?: (absolutePath: string) => void,
+    hybridConfig?: HybridConfig,
+    onHybridActivity?: (evt: HybridActivityEvent) => void
 ): Promise<string> {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
@@ -590,6 +613,75 @@ export async function runAgentLoop(
             elapsedMs: Date.now() - sessionStart,
         });
     };
+
+    // ── HYBRID helpers ─────────────────────────────────────────────────
+    const hybridActive = !!(hybridConfig?.enabled && hybridConfig.apiKey);
+    const HYBRID_STATUS_BY_REASON: Record<HybridReason, string> = {
+        plan: 'Planejando estrategia da tarefa',
+        verify_write: 'Verificando se a escrita foi feita corretamente',
+        verify_build: 'Confirmando que o build esta saudavel',
+        recover_command: 'Analisando falha de comando e sugerindo correcao',
+        recover_syntax: 'Analisando erro de sintaxe persistente',
+        recover_stop: 'Local travou — pedindo plano de recuperacao',
+    };
+
+    async function askSupport(reason: HybridReason, system: string, user: string, maxTokens = 800): Promise<string | null> {
+        if (!hybridActive || !hybridConfig) { return null; }
+        const statusText = HYBRID_STATUS_BY_REASON[reason];
+        onHybridActivity?.({
+            provider: hybridConfig.provider,
+            reason,
+            statusText,
+            success: false, // pending; UI will update on second event
+        });
+        const res = await callSupportProvider({
+            provider: hybridConfig.provider,
+            apiKey: hybridConfig.apiKey,
+            model: hybridConfig.model,
+            system,
+            user,
+            maxTokens,
+        });
+        const ok = !res.error && res.text.length > 0;
+        onHybridActivity?.({
+            provider: hybridConfig.provider,
+            reason,
+            statusText,
+            responseText: res.text,
+            promptTokens: res.promptTokens,
+            completionTokens: res.completionTokens,
+            elapsedMs: res.elapsedMs,
+            success: ok,
+            error: res.error,
+        });
+        return ok ? res.text : null;
+    }
+
+    // V1: deterministic verification — checks the filesystem.
+    function v1VerifyWrite(absPath: string, claim: string): string {
+        try {
+            const stat = fs.statSync(absPath);
+            return `[V1 OK] "${path.basename(absPath)}" exists (${stat.size} bytes). Local model claim: "${claim.slice(0, 200)}"`;
+        } catch {
+            return `[V1 FAIL] "${absPath}" was NOT created on disk, but the model claimed it was. Try again with write_local_file.`;
+        }
+    }
+
+    // ── GATILHO 1: planejamento inicial ────────────────────────────────
+    // Antes da primeira iteracao do loop, consulta o pago para gerar um
+    // plano de execucao. O plano vira contexto adicional injetado como
+    // mensagem do usuario que o local executa passo a passo.
+    if (hybridActive) {
+        const planSystem = 'You are a senior software architect helping a smaller local LLM execute a coding task. Produce a CONCISE, ACTIONABLE plan in 5-10 bullet steps. Each step must name specific files to create/edit and the exact action. No prose, no explanations — just the numbered plan. Keep under 300 words.';
+        const planUser = `User request:\n${userPrompt}\n\nWorkspace context:\n${contextBlock.slice(0, 1500)}\n\nProduce the plan now.`;
+        const plan = await askSupport('plan', planSystem, planUser, 600);
+        if (plan) {
+            roundMessages.push({
+                role: 'user',
+                content: `[HYBRID PLAN from support model] Follow this plan step by step. Use tools to execute each item:\n\n${plan}`,
+            });
+        }
+    }
 
     while (++step <= maxSteps) {
         if (signal?.aborted) { emitTelemetry(); return '[INTERRUPTED] Execution cancelled by user.'; }
@@ -745,6 +837,35 @@ export async function runAgentLoop(
                 tool_call_id: toolCallId,
             });
 
+            // ── GATILHO 2: verificacao apos escrita / build ────────────
+            // V1 (deterministica) roda sempre que houve escrita/edicao.
+            // V2 (semantica via pago) so roda em milestones: build verde
+            // ou escrita que tenha "implementado" algo nao-trivial.
+            if (hybridActive) {
+                if ((name === 'write_local_file' || name === 'edit_file') && !toolOutput.startsWith('[ERROR') && !toolOutput.startsWith('[ERRO')) {
+                    const fp = (args as any).filePath || '';
+                    if (fp) {
+                        const absPath = resolveFilePath(fp, defaultCwd);
+                        const v1 = v1VerifyWrite(absPath, toolOutput);
+                        roundMessages.push({
+                            role: 'user',
+                            content: `[VERIFICATION] ${v1}`,
+                        });
+                    }
+                } else if (name === 'run_command' && counters.lastBuildPassed && !counters.lastCommandFailed) {
+                    // V2: build acabou de passar — pago confirma se de fato esta tudo certo
+                    const verifySystem = 'You are a code reviewer. The local agent just ran a build/test command successfully. Look at the command output and decide: is the build truly OK, or are there warnings/skipped tests/incomplete work the local agent might be ignoring? Reply in ONE LINE: either "BUILD OK" or "BUILD CONCERN: <one sentence>".';
+                    const verifyUser = `Command: ${(args as any).command || ''}\nOutput:\n${toolOutput.slice(0, 1500)}`;
+                    const verdict = await askSupport('verify_build', verifySystem, verifyUser, 150);
+                    if (verdict && verdict.toUpperCase().includes('CONCERN')) {
+                        roundMessages.push({
+                            role: 'user',
+                            content: `[BUILD REVIEW from support model] ${verdict}\n\nAddress this concern before declaring done.`,
+                        });
+                    }
+                }
+            }
+
             // In auto mode keep fewer pairs since there's no history budget to spare.
             pruneRoundToolMessages(roundMessages, autoMode ? 3 : 6);
         } else if (result.responseText !== undefined) {
@@ -796,6 +917,33 @@ export async function runAgentLoop(
 
             if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
+
+                // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
+                // Em vez de bater no cap de 5 e desistir, no penultimo
+                // strike (4) consulta o pago para um plano de saida.
+                if (hybridActive && pendingActionStreak === 4) {
+                    const reason: HybridReason = lastCommandFailed
+                        ? 'recover_command'
+                        : buildNotYetPassed
+                            ? 'recover_syntax'
+                            : 'recover_stop';
+                    const sys = 'You are a senior engineer helping a stuck local agent. The local agent failed multiple attempts. Diagnose and produce a SHORT, SPECIFIC corrective plan in 3-5 bullets. Name exact files and exact actions. Be concrete.';
+                    const errCtx = counters.lastErrorFiles.length > 0
+                        ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
+                        : '';
+                    const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nWhat should the local agent do next?`;
+                    const recovery = await askSupport(reason, sys, usr, 500);
+                    if (recovery) {
+                        roundMessages.push({ role: 'assistant', content: text });
+                        roundMessages.push({
+                            role: 'user',
+                            content: `[HYBRID RECOVERY from support model] The support model analyzed your situation. Follow this exactly:\n\n${recovery}`,
+                        });
+                        lastToolName = '';
+                        continue;
+                    }
+                }
+
                 if (pendingActionStreak >= 5) {
                     // Hard cap to avoid eternal loop. Surface what happened
                     // so the user knows the agent gave up and why.
