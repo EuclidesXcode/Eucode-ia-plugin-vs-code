@@ -33,7 +33,7 @@ function runAsync(command: string, cwd: string, timeoutMs: number): Promise<stri
             const err = stderr.join('').trim();
             if (out) { resolve(out); return; }
             if (code !== 0 && err) { resolve(`[ERRO] ${err}`); return; }
-            resolve('[OK] Comando executado sem saida.');
+            resolve('[OK] Command executed without output.');
         });
         child.on('error', (e) => resolve(`[ERRO] ${e.message}`));
     });
@@ -62,7 +62,7 @@ export async function searchInWorkspace(query: string, dirPath: string, workspac
     if (rgAvailable) {
         const cmd = `rg -n --max-count=3 -e '${escaped}' --type-add 'src:*.{ts,tsx,js,jsx,py,go,rs,java,dart,c,cpp,cs,rb,php,swift,kt}' -t src ${ignoreFlags} ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
         const result = await runAsync(cmd, '/', 10000);
-        if (result !== '[OK] Comando executado sem saida.' && !result.startsWith('[ERRO]')) {
+        if (!result.startsWith('[ERRO]') && result !== '[OK] Command executed without output.') {
             return result;
         }
     }
