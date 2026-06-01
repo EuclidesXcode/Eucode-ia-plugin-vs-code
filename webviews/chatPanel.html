@@ -216,6 +216,53 @@
             flex-direction: column;
             gap: 8px;
         }
+        .config-collapsible {
+            border: 1px solid #1a1a2e;
+            border-radius: 4px;
+            background: #0a0a15;
+            padding: 0;
+        }
+        .config-collapsible[open] { padding-bottom: 8px; }
+        .config-collapsible-summary {
+            cursor: pointer;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #3a7bd5;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+        }
+        .config-collapsible-summary::-webkit-details-marker { display: none; }
+        .config-collapsible-summary::before {
+            content: '▸';
+            font-size: 10px;
+            transition: transform 0.15s;
+        }
+        .config-collapsible[open] > .config-collapsible-summary::before { transform: rotate(90deg); }
+        .config-collapsible-summary:hover { color: #5b9bf5; }
+        .config-collapsible-body {
+            padding: 4px 12px 0 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .editor-feature-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: #050510;
+            border: 1px solid #13131f;
+            border-radius: 4px;
+        }
+        .editor-feature-info { display: flex; flex-direction: column; gap: 2px; }
+        .editor-feature-name { font-size: 12px; color: #c9d1d9; font-weight: 500; }
+        .editor-feature-desc { font-size: 10px; color: #4a5568; line-height: 1.35; }
         .tool-row {
             display: flex;
             align-items: center;
@@ -1169,6 +1216,32 @@
             <div class="config-label">Ferramentas disponíveis</div>
             <div class="tools-grid" id="tools-grid"></div>
         </div>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Recursos do Editor</summary>
+            <div class="config-collapsible-body">
+                <div class="editor-feature-row">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Autocomplete inline</span>
+                        <span class="editor-feature-desc">Sugestoes de codigo enquanto voce digita (texto fantasma cinza, aceita com Tab)</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-inline-completion">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="editor-feature-row">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Fix with Eucode</span>
+                        <span class="editor-feature-desc">Lampada de Quick Fix em erros e item no menu de contexto para refatorar selecao</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-fix-with-eucode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="config-hint">Ambos usam o modelo local por padrao. Se o modo Hybrid estiver ativo, a IA paga e usada como fallback quando o local nao retornar resultado util.</div>
+            </div>
+        </details>
         <div>
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;">
                 RAG (Contexto Vetorial)
@@ -1464,6 +1537,9 @@
         const configHybridModel = document.getElementById('config-hybrid-model');
         const configHybridHint = document.getElementById('config-hybrid-hint');
 
+        const configInlineCompletion = document.getElementById('config-inline-completion');
+        const configFixWithEucode = document.getElementById('config-fix-with-eucode');
+
         const HYBRID_DEFAULT_MODELS = {
             anthropic: 'claude-sonnet-4-6',
             openai: 'gpt-4o',
@@ -1539,6 +1615,9 @@
                 configHybridModel.value = savedSettings.supportModel || '';
                 configHybridRows.style.display = configHybridEnabled.checked ? 'flex' : 'none';
                 updateHybridHint();
+
+                configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
+                configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
             }
         });
 
@@ -1565,6 +1644,8 @@
                 supportProvider: configHybridProvider.value,
                 supportApiKey: configHybridKey.value.trim(),
                 supportModel: configHybridModel.value.trim(),
+                inlineCompletionEnabled: configInlineCompletion.checked,
+                fixWithEucodeEnabled: configFixWithEucode.checked,
             });
         });
 
@@ -2084,7 +2165,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled };
                 if (typeof msg.hybridEnabled === 'boolean') { hybridMode = msg.hybridEnabled; updateHybridBtnState(); }
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
@@ -2116,6 +2197,8 @@
                 savedSettings.supportProvider = configHybridProvider.value;
                 if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }
                 savedSettings.supportModel = configHybridModel.value.trim();
+                savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
+                savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
                 hybridMode = savedSettings.hybridEnabled;
                 updateHybridBtnState();
                 configFeedback.textContent = 'Configuracao salva.';

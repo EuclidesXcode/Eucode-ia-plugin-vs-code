@@ -35,6 +35,8 @@ const DEFAULTS = {
     supportProvider: 'anthropic',
     supportApiKey: '',
     supportModel: '',
+    inlineCompletionEnabled: false,
+    fixWithEucodeEnabled: false,
 };
 const KEYS = {
     provider: 'eucode.provider',
@@ -49,6 +51,8 @@ const KEYS = {
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
     supportModel: 'eucode.supportModel',
+    inlineCompletionEnabled: 'eucode.inlineCompletionEnabled',
+    fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
 };
 exports.DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 function loadSettings(context) {
@@ -69,6 +73,8 @@ function loadSettings(context) {
         supportProvider: context.globalState.get(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
         supportModel: context.globalState.get(KEYS.supportModel) ?? DEFAULTS.supportModel,
+        inlineCompletionEnabled: context.globalState.get(KEYS.inlineCompletionEnabled) ?? DEFAULTS.inlineCompletionEnabled,
+        fixWithEucodeEnabled: context.globalState.get(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
     };
 }
 async function saveSettings(context, settings) {
@@ -84,6 +90,8 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);
     await context.globalState.update(KEYS.supportModel, settings.supportModel.trim());
+    await context.globalState.update(KEYS.inlineCompletionEnabled, settings.inlineCompletionEnabled);
+    await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
 }
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts
 function buildApiEndpoint(settings) {

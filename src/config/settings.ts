@@ -37,6 +37,8 @@ export interface EucodeSettings {
     supportProvider: SupportProvider;
     supportApiKey: string;
     supportModel: string;
+    inlineCompletionEnabled: boolean;
+    fixWithEucodeEnabled: boolean;
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -52,6 +54,8 @@ const DEFAULTS: EucodeSettings = {
     supportProvider: 'anthropic',
     supportApiKey: '',
     supportModel: '',
+    inlineCompletionEnabled: false,
+    fixWithEucodeEnabled: false,
 };
 
 const KEYS = {
@@ -67,6 +71,8 @@ const KEYS = {
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
     supportModel: 'eucode.supportModel',
+    inlineCompletionEnabled: 'eucode.inlineCompletionEnabled',
+    fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -89,6 +95,8 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         supportProvider: context.globalState.get<SupportProvider>(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get<string>(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
         supportModel: context.globalState.get<string>(KEYS.supportModel) ?? DEFAULTS.supportModel,
+        inlineCompletionEnabled: context.globalState.get<boolean>(KEYS.inlineCompletionEnabled) ?? DEFAULTS.inlineCompletionEnabled,
+        fixWithEucodeEnabled: context.globalState.get<boolean>(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
     };
 }
 
@@ -105,6 +113,8 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);
     await context.globalState.update(KEYS.supportModel, settings.supportModel.trim());
+    await context.globalState.update(KEYS.inlineCompletionEnabled, settings.inlineCompletionEnabled);
+    await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

@@ -45,8 +45,11 @@ const context_1 = require("./workspace/context");
 const loop_1 = require("./agent/loop");
 const prompt_1 = require("./agent/prompt");
 const settings_1 = require("./config/settings");
+const inline_completion_provider_1 = require("./providers/inline-completion-provider");
+const fix_code_action_provider_1 = require("./providers/fix-code-action-provider");
 const constants_1 = require("./utils/constants");
 class EucodeViewProvider {
+    getCurrentSettings() { return this._settings; }
     constructor(_context) {
         this._context = _context;
         this._sessionHistory = [];
@@ -131,6 +134,8 @@ class EucodeViewProvider {
                     supportProvider: this._settings.supportProvider,
                     supportApiKey: this._settings.supportApiKey,
                     supportModel: this._settings.supportModel,
+                    inlineCompletionEnabled: this._settings.inlineCompletionEnabled,
+                    fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -174,8 +179,11 @@ class EucodeViewProvider {
                         ? message.supportApiKey
                         : this._settings.supportApiKey,
                     supportModel: message.supportModel ?? this._settings.supportModel,
+                    inlineCompletionEnabled: message.inlineCompletionEnabled ?? this._settings.inlineCompletionEnabled,
+                    fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
                 };
                 await (0, settings_1.saveSettings)(this._context, this._settings);
+                vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
                 return;
@@ -301,5 +309,17 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.openChat', () => {
         vscode.commands.executeCommand('eucode-ia.chatView.focus');
     }));
+    // ── Editor features: inline completion + fix with eucode ──
+    const getSettings = () => provider.getCurrentSettings();
+    // Set the initial context key for the menu visibility (Fix with Eucode)
+    vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', getSettings().fixWithEucodeEnabled);
+    // Register inline completion provider for ALL languages — provider itself
+    // checks the setting at runtime and bails when disabled, so registering
+    // once is enough (no need to dispose/reregister on toggle).
+    context.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider({ scheme: 'file' }, new inline_completion_provider_1.EucodeInlineCompletionProvider(getSettings)));
+    // Register code action provider (Quick Fix lightbulb + Refactor).
+    context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, new fix_code_action_provider_1.EucodeFixCodeActionProvider(getSettings), { providedCodeActionKinds: fix_code_action_provider_1.EucodeFixCodeActionProvider.providedCodeActionKinds }));
+    // Register the fixWithEucode command (used by code action AND context menu).
+    context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.fixWithEucode', (uri, range, diags) => (0, fix_code_action_provider_1.executeFixWithEucode)(getSettings, uri, range, diags)));
 }
 function deactivate() { }

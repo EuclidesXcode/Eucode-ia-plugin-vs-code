@@ -8,6 +8,8 @@ import { collectWorkspaceContext, collectDiagnostics, getDefaultCwd } from './wo
 import { runAgentLoop, ConfirmWriteRequest, ConfirmCommandRequest, ConfirmCommandDecision, TodoItem, HybridActivityEvent } from './agent/loop';
 import { SYSTEM_PROMPT } from './agent/prompt';
 import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSettings } from './config/settings';
+import { EucodeInlineCompletionProvider } from './providers/inline-completion-provider';
+import { EucodeFixCodeActionProvider, executeFixWithEucode } from './providers/fix-code-action-provider';
 import { DEFAULT_MODEL } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
@@ -15,6 +17,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
     private _historyManager: HistoryManagerService;
     private _sessionHistory: HistoryEntry[] = [];
     private _settings: EucodeSettings;
+
+    public getCurrentSettings(): EucodeSettings { return this._settings; }
     private _pendingConfirms = new Map<string, (approved: boolean) => void>();
     private _pendingCommandConfirms = new Map<string, (decision: ConfirmCommandDecision) => void>();
     private _abortController: AbortController | null = null;
@@ -125,6 +129,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     supportProvider: this._settings.supportProvider,
                     supportApiKey: this._settings.supportApiKey,
                     supportModel: this._settings.supportModel,
+                    inlineCompletionEnabled: this._settings.inlineCompletionEnabled,
+                    fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -172,8 +178,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                         ? message.supportApiKey
                         : this._settings.supportApiKey,
                     supportModel: message.supportModel ?? this._settings.supportModel,
+                    inlineCompletionEnabled: message.inlineCompletionEnabled ?? this._settings.inlineCompletionEnabled,
+                    fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
                 };
                 await saveSettings(this._context, this._settings);
+                vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
                 return;
@@ -342,6 +351,38 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('eucode-ia.openChat', () => {
             vscode.commands.executeCommand('eucode-ia.chatView.focus');
         })
+    );
+
+    // ── Editor features: inline completion + fix with eucode ──
+    const getSettings = () => provider.getCurrentSettings();
+
+    // Set the initial context key for the menu visibility (Fix with Eucode)
+    vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', getSettings().fixWithEucodeEnabled);
+
+    // Register inline completion provider for ALL languages — provider itself
+    // checks the setting at runtime and bails when disabled, so registering
+    // once is enough (no need to dispose/reregister on toggle).
+    context.subscriptions.push(
+        vscode.languages.registerInlineCompletionItemProvider(
+            { scheme: 'file' },
+            new EucodeInlineCompletionProvider(getSettings)
+        )
+    );
+
+    // Register code action provider (Quick Fix lightbulb + Refactor).
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(
+            { scheme: 'file' },
+            new EucodeFixCodeActionProvider(getSettings),
+            { providedCodeActionKinds: EucodeFixCodeActionProvider.providedCodeActionKinds }
+        )
+    );
+
+    // Register the fixWithEucode command (used by code action AND context menu).
+    context.subscriptions.push(
+        vscode.commands.registerCommand('eucode-ia.fixWithEucode', (uri?: vscode.Uri, range?: vscode.Range, diags?: vscode.Diagnostic[]) =>
+            executeFixWithEucode(getSettings, uri, range, diags)
+        )
     );
 }
 

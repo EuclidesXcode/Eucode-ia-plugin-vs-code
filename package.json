@@ -40,8 +40,22 @@
                 "command": "eucode-ia.openChat",
                 "title": "Eucode IA: Abrir Chat",
                 "icon": "images/eucode-icon.svg"
+            },
+            {
+                "command": "eucode-ia.fixWithEucode",
+                "title": "◆ Fix with Eucode",
+                "category": "Eucode IA"
             }
         ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "eucode-ia.fixWithEucode",
+                    "when": "editorHasSelection && eucodeFixEnabled",
+                    "group": "1_modification@99"
+                }
+            ]
+        },
         "viewsContainers": {
             "activitybar": [
                 {
