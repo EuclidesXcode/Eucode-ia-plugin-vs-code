@@ -1212,10 +1212,12 @@
             <div class="config-label" id="config-key-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
             <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
         </div>
-        <div>
-            <div class="config-label">Ferramentas disponíveis</div>
-            <div class="tools-grid" id="tools-grid"></div>
-        </div>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Ferramentas disponíveis</summary>
+            <div class="config-collapsible-body">
+                <div class="tools-grid" id="tools-grid"></div>
+            </div>
+        </details>
         <details class="config-collapsible">
             <summary class="config-collapsible-summary">Recursos do Editor</summary>
             <div class="config-collapsible-body">
