@@ -96,6 +96,11 @@
             box-shadow: 0 0 6px #00d4ff44;
         }
         .header-btn.hybrid-active:hover { background: #002030; }
+        .header-btn.disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        .header-btn.disabled:hover { border-color: #1e2a3a; background: none; }
 
         /* ── Sessions panel ── */
         #sessions-panel {
@@ -1772,24 +1777,45 @@
         });
 
         // ── Hybrid mode toggle ──
+        // Estados:
+        //   - savedSettings.hybridEnabled  = configurado nas Settings (master switch)
+        //   - hybridMode                   = ligado/desligado pelo botao do header
+        // Regra: o botao do header so pode ativar se o master switch estiver
+        // ligado nas Settings. Se o usuario desativar nas Settings, o botao
+        // tambem cai para off automaticamente.
         let hybridMode = false;
         const hybridBtn = document.getElementById('hybrid-btn');
         function updateHybridBtnState() {
             hybridBtn.classList.toggle('hybrid-active', hybridMode);
-            hybridBtn.title = hybridMode
-                ? 'Modo Hybrid ATIVO — IA paga atuando como suporte. Clique para desativar.'
-                : 'Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos';
+            const disabled = !savedSettings.hybridEnabled;
+            hybridBtn.disabled = disabled;
+            hybridBtn.classList.toggle('disabled', disabled);
+            if (disabled) {
+                hybridBtn.title = 'Modo Hybrid esta desativado nas configuracoes. Ative em Configuracoes → HYBRID antes de usar.';
+            } else {
+                hybridBtn.title = hybridMode
+                    ? 'Modo Hybrid ATIVO — IA paga atuando como suporte. Clique para desativar.'
+                    : 'Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos';
+            }
+        }
+        function syncHybridModeWithSettings() {
+            // Se o master switch estiver desligado, forca o botao para off.
+            if (!savedSettings.hybridEnabled && hybridMode) {
+                hybridMode = false;
+            }
+            updateHybridBtnState();
         }
         hybridBtn.addEventListener('click', () => {
+            if (!savedSettings.hybridEnabled) {
+                alert('Ative o modo HYBRID nas configuracoes primeiro (engrenagem → secao HYBRID).');
+                return;
+            }
             if (!savedSettings.supportApiKey && !hybridMode) {
                 alert('Configure a API key do provedor de suporte nas configuracoes primeiro (engrenagem).');
                 return;
             }
             hybridMode = !hybridMode;
-            savedSettings.hybridEnabled = hybridMode;
             updateHybridBtnState();
-            // Persiste a preferencia
-            vscode.postMessage({ command: 'set_hybrid', enabled: hybridMode });
         });
 
         // ── Sessions panel ──
@@ -2528,7 +2554,7 @@
             if (msg.command === 'load_config') {
                 savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace' };
                 customCommandsScope = savedSettings.customCommandsScope;
-                if (typeof msg.hybridEnabled === 'boolean') { hybridMode = msg.hybridEnabled; updateHybridBtnState(); }
+                syncHybridModeWithSettings();
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -2561,8 +2587,10 @@
                 savedSettings.supportModel = configHybridModel.value.trim();
                 savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
-                hybridMode = savedSettings.hybridEnabled;
-                updateHybridBtnState();
+                // Se o usuario desativou Hybrid nas configs, o botao do header
+                // tambem cai para off. Se ativou, mantemos o botao no estado
+                // anterior (usuario precisa clicar no botao do header para usar).
+                syncHybridModeWithSettings();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
