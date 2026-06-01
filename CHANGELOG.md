@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.3
+
+- Botao HYBRID do header agora respeita o master switch das configuracoes: se HYBRID nao estiver ativado em Configuracoes → HYBRID, o botao fica desabilitado (opacidade reduzida, cursor not-allowed)
+- Click no botao desabilitado mostra alerta orientando o usuario a ativar nas configuracoes primeiro
+- Desativar HYBRID nas configuracoes forca o botao do header para off automaticamente
+- Ativar HYBRID nas configuracoes nao liga o botao automaticamente — usuario clica para usar (separa intencao "permitido" de intencao "usar agora")
+
 ## 0.8.2
 
 - **NOVO: Comandos personalizaveis em eucode.json** — defina atalhos `/comando` que expandem em prompts completos. Cada comando pode opcionalmente forcar AUTO e/ou HYBRID ao rodar

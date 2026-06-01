@@ -485,6 +485,11 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.8.3
+- Botao HYBRID do header agora respeita o master switch das configuracoes — desabilitado se HYBRID nao estiver ligado em Configuracoes
+- Desativar HYBRID nas configs forca o botao do header para off automaticamente
+- Tooltip e alerta orientam o usuario quando ele tenta usar o botao desabilitado
+
 ### 0.8.2
 - **NOVO: Comandos personalizaveis** via `eucode.json` — atalhos `/comando` que expandem em prompts completos com AUTO/HYBRID opcionais
 - Autocomplete inline ao digitar `/` no chat (setas ↑/↓ para navegar, Tab para aceitar)
