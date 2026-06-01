@@ -15,6 +15,13 @@ const ALWAYS_BLOCKED = [
     /git\s+clean\s+-f/i,
 ];
 
+const eucode = [
+    {
+        "command": "/testar",
+        "prompt": "Quero que faça o teste de ponta a ponta x vezes",    
+    }
+]
+
 // Subcomandos git que apenas leem — aprovados sem confirmacao do usuario
 const GIT_READ_ONLY = new Set([
     'status', 'log', 'diff', 'branch', 'show', 'stash', 'remote', 'tag',
