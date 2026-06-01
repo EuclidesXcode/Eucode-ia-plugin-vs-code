@@ -10,6 +10,7 @@ import { SYSTEM_PROMPT } from './agent/prompt';
 import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSettings } from './config/settings';
 import { EucodeInlineCompletionProvider } from './providers/inline-completion-provider';
 import { EucodeFixCodeActionProvider, executeFixWithEucode } from './providers/fix-code-action-provider';
+import { loadCommands, appendCommand, getCommandsFilePath, watchCommandsFile, CustomCommand, CommandsScope } from './services/custom-commands';
 import { DEFAULT_MODEL } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
@@ -108,6 +109,38 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             webviewView.webview.postMessage({ command: 'open_files', files: ctx.openFiles });
         };
 
+        // Loads commands from the configured scope and pushes them to the
+        // webview so the chat input can autocomplete on `/`. Errors come
+        // through as a separate field for non-blocking display.
+        const pushCommandsToWebview = () => {
+            const scope = this._settings.customCommandsScope;
+            const { commands, errors } = loadCommands(scope);
+            webviewView.webview.postMessage({
+                command: 'command_list',
+                commands,
+                errors,
+                scope,
+                filePath: getCommandsFilePath(scope),
+            });
+        };
+
+        // Hot-reload: rewatch whenever the scope changes
+        let commandsWatcher: vscode.Disposable = watchCommandsFile(
+            this._settings.customCommandsScope,
+            () => pushCommandsToWebview()
+        );
+        this._context.subscriptions.push({
+            dispose: () => commandsWatcher.dispose(),
+        });
+
+        const rewatchCommands = () => {
+            commandsWatcher.dispose();
+            commandsWatcher = watchCommandsFile(
+                this._settings.customCommandsScope,
+                () => pushCommandsToWebview()
+            );
+        };
+
         this._context.subscriptions.push(
             vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()),
             vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles())
@@ -131,12 +164,14 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     supportModel: this._settings.supportModel,
                     inlineCompletionEnabled: this._settings.inlineCompletionEnabled,
                     fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
+                    customCommandsScope: this._settings.customCommandsScope,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
                 pingAndNotify(this._settings);
                 sendOpenFiles();
+                pushCommandsToWebview();
                 return;
             }
 
@@ -180,6 +215,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     supportModel: message.supportModel ?? this._settings.supportModel,
                     inlineCompletionEnabled: message.inlineCompletionEnabled ?? this._settings.inlineCompletionEnabled,
                     fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
+                    customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                 };
                 await saveSettings(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
@@ -191,6 +227,59 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             if (message?.command === 'set_hybrid') {
                 this._settings = { ...this._settings, hybridEnabled: !!message.enabled };
                 await saveSettings(this._context, this._settings);
+                return;
+            }
+
+            if (message?.command === 'save_command') {
+                const cmd: CustomCommand = {
+                    command: String(message.commandName || '').trim(),
+                    prompt: String(message.prompt || '').trim(),
+                    description: message.description ? String(message.description).trim() : undefined,
+                    autoMode: !!message.autoMode,
+                    hybridMode: !!message.hybridMode,
+                };
+                const scope: CommandsScope = (message.scope === 'global' || message.scope === 'workspace')
+                    ? message.scope
+                    : this._settings.customCommandsScope;
+                const result = await appendCommand(scope, cmd);
+                webviewView.webview.postMessage({
+                    command: 'save_command_result',
+                    ok: result.ok,
+                    error: result.error,
+                    filePath: result.filePath,
+                });
+                if (result.ok) { pushCommandsToWebview(); }
+                return;
+            }
+
+            if (message?.command === 'open_commands_file') {
+                const scope: CommandsScope = (message.scope === 'global' || message.scope === 'workspace')
+                    ? message.scope
+                    : this._settings.customCommandsScope;
+                const fp = getCommandsFilePath(scope);
+                if (!fp) {
+                    vscode.window.showWarningMessage('Eucode IA: abra um workspace para usar comandos em escopo workspace.');
+                    return;
+                }
+                try {
+                    require('fs').mkdirSync(require('path').dirname(fp), { recursive: true });
+                    if (!require('fs').existsSync(fp)) {
+                        require('fs').writeFileSync(fp, '[\n]\n', 'utf8');
+                    }
+                    const doc = await vscode.workspace.openTextDocument(fp);
+                    await vscode.window.showTextDocument(doc, { preview: false });
+                } catch (e) {
+                    vscode.window.showErrorMessage(`Eucode IA: nao foi possivel abrir ${fp}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                return;
+            }
+
+            if (message?.command === 'change_commands_scope') {
+                const next: CommandsScope = message.scope === 'global' ? 'global' : 'workspace';
+                this._settings = { ...this._settings, customCommandsScope: next };
+                await saveSettings(this._context, this._settings);
+                rewatchCommands();
+                pushCommandsToWebview();
                 return;
             }
 

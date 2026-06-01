@@ -21,6 +21,7 @@ O Eucode IA e um agente autonomo com acesso completo ao seu workspace. Ele nao a
 - **Controle de ferramentas** — habilite ou desabilite cada ferramenta individualmente nas configuracoes
 - **Autocomplete inline** — sugestoes de codigo enquanto voce digita, no padrao Copilot (texto fantasma cinza, aceita com Tab)
 - **Fix with Eucode** — lampada de Quick Fix em erros do editor e item no menu de contexto para refatorar selecao
+- **Comandos personalizaveis** — defina atalhos `/comando` em `eucode.json` que expandem em prompts completos, com AUTO/HYBRID embutidos
 
 ---
 
@@ -114,6 +115,71 @@ Se voce **nao tem HYBRID configurado**, o resultado do local e usado direto (mes
 4. Salve
 
 Os toggles funcionam independentemente — voce pode habilitar so um, ou os dois.
+
+---
+
+## Comandos personalizaveis (`eucode.json`)
+
+Voce pode definir comandos de atalho em um arquivo `eucode.json`. Digite `/` no chat para ver a lista, navegue com setas, aceite com Tab. O comando expande para o `prompt` salvo e (opcionalmente) ja ativa AUTO e/ou HYBRID.
+
+### Estrutura do arquivo
+
+```json
+[
+  {
+    "command": "/testar",
+    "prompt": "Quero que faca o teste de ponta a ponta. Rode npm test, analise as falhas e corrija ate todos os testes passarem.",
+    "description": "Roda testes E2E e corrige falhas",
+    "autoMode": true,
+    "hybridMode": false
+  },
+  {
+    "command": "/refatorar-arquitetura",
+    "prompt": "Analise a estrutura atual do projeto e proponha uma refatoracao da arquitetura. Foque em separacao de responsabilidades e testabilidade.",
+    "description": "Plano de refatoracao arquitetural (recomenda HYBRID)",
+    "autoMode": false,
+    "hybridMode": true
+  }
+]
+```
+
+**Campos:**
+
+| Campo | Tipo | Obrigatorio | Descricao |
+|---|---|---|---|
+| `command` | string | sim | Nome do atalho, deve comecar com `/` |
+| `prompt` | string | sim | Texto enviado ao agente quando voce invoca o comando |
+| `description` | string | nao | Texto curto que aparece no autocomplete |
+| `autoMode` | boolean | nao | Forca o modo AUTO ao rodar este comando |
+| `hybridMode` | boolean | nao | Forca o modo HYBRID ao rodar este comando |
+
+### Escopo: workspace ou global
+
+Voce escolhe onde os comandos ficam armazenados nas configuracoes do plugin:
+
+- **Workspace** (padrao): `eucode.json` na raiz do projeto. Committable, time compartilha
+- **Global**: `~/.eucode/eucode.json`. Pessoal do usuario, vale para qualquer projeto aberto
+
+O toggle de escopo nas configuracoes troca qual arquivo o plugin esta usando. Apenas um dos dois esta ativo por vez.
+
+### Salvar prompts longos como comando
+
+Sempre que voce escreve um prompt com **30+ palavras** e envia, um banner amarelo aparece sugerindo "Salvar como comando". Um clique abre o dialog ja preenchido com o seu prompt, e voce define o nome do comando, descricao, e quais modos ativar.
+
+### Como usar
+
+1. Digite `/` no chat — o autocomplete mostra a lista
+2. Use setas ↑/↓ para navegar, Tab para aceitar, Enter para enviar
+3. O agente recebe o `prompt` expandido, com AUTO/HYBRID aplicados se voce configurou
+4. Voce ve no chat o atalho usado: `/testar ⚡ → Quero que faca o teste...`
+
+### Hot reload
+
+Quando voce edita o `eucode.json` (no proprio VS Code ou em qualquer editor externo), o plugin recarrega a lista automaticamente — sem precisar reabrir o chat.
+
+### Editar o arquivo
+
+Nas configuracoes do plugin, na secao **Comandos personalizaveis**, clique em **Abrir eucode.json**. Se o arquivo nao existir ainda, o plugin cria um vazio.
 
 ---
 
@@ -418,6 +484,15 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.8.2
+- **NOVO: Comandos personalizaveis** via `eucode.json` — atalhos `/comando` que expandem em prompts completos com AUTO/HYBRID opcionais
+- Autocomplete inline ao digitar `/` no chat (setas ↑/↓ para navegar, Tab para aceitar)
+- Escopo configuravel: `eucode.json` no workspace OU global em `~/.eucode/`
+- Hot reload automatico quando o arquivo e editado
+- Banner inline "Salvar como comando" aparece em prompts com 30+ palavras
+- Dialog para criar comando com toggles individuais (nome, descricao, AUTO, HYBRID, escopo)
+- Botao "Abrir eucode.json" na nova secao colapsavel "Comandos personalizaveis" do config
 
 ### 0.8.1
 - **NOVO: Autocomplete inline** — sugestoes de codigo como texto fantasma cinza, aceita com Tab (estilo Copilot)

@@ -263,6 +263,43 @@
         .editor-feature-info { display: flex; flex-direction: column; gap: 2px; }
         .editor-feature-name { font-size: 12px; color: #c9d1d9; font-weight: 500; }
         .editor-feature-desc { font-size: 10px; color: #4a5568; line-height: 1.35; }
+
+        .cmd-scope-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 10px;
+            background: #050510;
+            border: 1px solid #13131f;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .cmd-scope-opt {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .cmd-scope-opt input[type="radio"] { accent-color: #3a7bd5; }
+        .cmd-scope-opt strong { color: #c9d1d9; font-weight: 600; }
+        .cmd-open-file-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: none;
+            border: 1px solid #1e2a3a;
+            border-radius: 4px;
+            color: #3a7bd5;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+        }
+        .cmd-open-file-btn:hover { background: #0d1a2e; }
         .tool-row {
             display: flex;
             align-items: center;
@@ -693,6 +730,237 @@
             align-items: center;
             background: #0d0d1a;
         }
+
+        /* ── Save command banner ── */
+        #save-cmd-banner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: #1a1a0a;
+            border-top: 1px solid #2a2410;
+            border-bottom: 1px solid #2a2410;
+            font-size: 11px;
+            color: #ddc480;
+        }
+        .save-cmd-btn-yes, .save-cmd-btn-no {
+            background: none;
+            border: 1px solid #ffb84a55;
+            border-radius: 3px;
+            color: #ffb84a;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 3px 8px;
+            margin-left: auto;
+        }
+        .save-cmd-btn-yes:hover { background: #ffb84a; color: #1a1a0a; }
+        .save-cmd-btn-no { margin-left: 4px; border-color: #555; color: #888; }
+        .save-cmd-btn-no:hover { border-color: #888; color: #ccc; }
+
+        /* ── Slash command autocomplete ── */
+        #cmd-autocomplete {
+            position: absolute;
+            bottom: 70px;
+            left: 14px;
+            right: 14px;
+            max-width: 520px;
+            max-height: 240px;
+            overflow-y: auto;
+            background: #0a0a15;
+            border: 1px solid #1a2a3a;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+        }
+        .cmd-ac-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #13131f;
+        }
+        .cmd-ac-item:last-child { border-bottom: none; }
+        .cmd-ac-item:hover, .cmd-ac-item.selected { background: #0d1a2e; }
+        .cmd-ac-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            background: #13131f;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .cmd-ac-icon.auto { background: #0a1a0f; color: #22c55e; }
+        .cmd-ac-icon.hybrid { background: #001a26; color: #00d4ff; }
+        .cmd-ac-icon.both {
+            background: linear-gradient(135deg, #0a1a0f 50%, #001a26 50%);
+            color: #fff;
+        }
+        .cmd-ac-name {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            color: #3a7bd5;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .cmd-ac-desc {
+            color: #6a7f99;
+            font-size: 11px;
+            margin-left: auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 280px;
+        }
+        .cmd-ac-empty {
+            padding: 10px 12px;
+            font-size: 11px;
+            color: #4a5568;
+            font-style: italic;
+        }
+
+        /* ── New command modal ── */
+        #new-cmd-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        #new-cmd-modal.open { display: flex; }
+        .new-cmd-modal-content {
+            background: #0d0d1a;
+            border: 1px solid #1e2a3a;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .new-cmd-modal-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid #13131f;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #c9d1d9;
+        }
+        .new-cmd-close {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: #6a7f99;
+            cursor: pointer;
+            padding: 2px;
+        }
+        .new-cmd-close:hover { color: #c9d1d9; }
+        .new-cmd-modal-body {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+        }
+        .new-cmd-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #4a5568;
+            margin-top: 6px;
+        }
+        .new-cmd-input {
+            background: #0a0a15;
+            border: 1px solid #1a1a2e;
+            border-radius: 4px;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 12px;
+            padding: 7px 10px;
+            outline: none;
+        }
+        .new-cmd-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
+        .new-cmd-input:focus { border-color: #3a7bd5; }
+        .new-cmd-input[type="text"] { height: 32px; }
+        .new-cmd-toggles {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .new-cmd-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .new-cmd-toggle input[type="checkbox"] { accent-color: #3a7bd5; }
+        .new-cmd-scope {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #13131f;
+            font-size: 11px;
+            color: #6a7f99;
+        }
+        .new-cmd-scope-opt {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .new-cmd-scope-opt input[type="radio"] { accent-color: #3a7bd5; }
+        .new-cmd-error {
+            background: #1a0000;
+            border: 1px solid #9a2020;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: #cc6060;
+            margin-top: 8px;
+        }
+        .new-cmd-modal-footer {
+            padding: 12px 16px;
+            border-top: 1px solid #13131f;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .new-cmd-btn-cancel, .new-cmd-btn-save {
+            background: none;
+            border: 1px solid #1e2a3a;
+            border-radius: 4px;
+            color: #6a7f99;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 7px 14px;
+        }
+        .new-cmd-btn-cancel:hover { border-color: #3a5080; color: #7090b0; }
+        .new-cmd-btn-save {
+            border-color: #3a7bd5;
+            color: #3a7bd5;
+        }
+        .new-cmd-btn-save:hover { background: #3a7bd5; color: #fff; }
 
         .icon-btn {
             background: none;
@@ -1244,6 +1512,26 @@
                 <div class="config-hint">Ambos usam o modelo local por padrao. Se o modo Hybrid estiver ativo, a IA paga e usada como fallback quando o local nao retornar resultado util.</div>
             </div>
         </details>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Comandos personalizaveis</summary>
+            <div class="config-collapsible-body">
+                <div class="config-hint" style="margin-bottom:8px;">Digite <strong>/</strong> no chat para ver e usar seus comandos. Cada comando expande para um prompt salvo, opcionalmente com AUTO ou HYBRID ja ligados.</div>
+                <div class="cmd-scope-row">
+                    <label class="cmd-scope-opt">
+                        <input type="radio" name="config-cmd-scope" value="workspace">
+                        <span><strong>Workspace</strong> &mdash; eucode.json na raiz do projeto</span>
+                    </label>
+                    <label class="cmd-scope-opt">
+                        <input type="radio" name="config-cmd-scope" value="global">
+                        <span><strong>Global</strong> &mdash; ~/.eucode/eucode.json (todos os projetos)</span>
+                    </label>
+                </div>
+                <button id="config-open-cmd-file" class="cmd-open-file-btn">
+                    <span class="mi" style="font-size:14px">edit_note</span>
+                    Abrir eucode.json
+                </button>
+            </div>
+        </details>
         <div>
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;">
                 RAG (Contexto Vetorial)
@@ -1303,13 +1591,64 @@
         <button id="image-remove" title="Remover"><span class="mi" style="font-size:16px">close</span></button>
     </div>
 
+    <div id="save-cmd-banner" style="display:none;">
+        <span class="mi" style="font-size:14px;color:#ffb84a">bookmark_add</span>
+        <span>Prompt longo — salvar como comando para reutilizar?</span>
+        <button id="save-cmd-yes" class="save-cmd-btn-yes">Salvar</button>
+        <button id="save-cmd-no" class="save-cmd-btn-no">Agora nao</button>
+    </div>
+    <div id="cmd-autocomplete" style="display:none;"></div>
     <div id="context-bar"></div>
     <div id="input-area">
         <button id="config-btn" class="icon-btn" title="Configuracoes"><span class="mi">settings</span></button>
         <button id="image-btn" class="icon-btn" title="Anexar imagem"><span class="mi">add_photo_alternate</span></button>
-        <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa..."></textarea>
+        <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa... ( / para comandos)"></textarea>
         <button id="stop-btn"><span class="mi" style="font-size:16px">stop_circle</span>Stop</button>
         <button id="send-btn"><span class="mi" style="font-size:16px">send</span>Enviar</button>
+    </div>
+
+    <div id="new-cmd-modal" style="display:none;">
+        <div class="new-cmd-modal-content">
+            <div class="new-cmd-modal-header">
+                <span class="mi" style="font-size:18px;color:#3a7bd5">bookmark_add</span>
+                <span>Novo comando personalizavel</span>
+                <button id="new-cmd-close" class="new-cmd-close"><span class="mi" style="font-size:16px">close</span></button>
+            </div>
+            <div class="new-cmd-modal-body">
+                <label class="new-cmd-label">Comando (comecar com /)</label>
+                <input id="new-cmd-name" class="new-cmd-input mono" type="text" placeholder="/testar" spellcheck="false">
+                <label class="new-cmd-label">Descricao (opcional)</label>
+                <input id="new-cmd-desc" class="new-cmd-input" type="text" placeholder="Roda testes E2E e reporta falhas">
+                <label class="new-cmd-label">Prompt</label>
+                <textarea id="new-cmd-prompt" class="new-cmd-input" rows="5"></textarea>
+                <div class="new-cmd-toggles">
+                    <label class="new-cmd-toggle">
+                        <input type="checkbox" id="new-cmd-auto">
+                        <span>Ativar modo AUTO ao rodar</span>
+                    </label>
+                    <label class="new-cmd-toggle">
+                        <input type="checkbox" id="new-cmd-hybrid">
+                        <span>Ativar modo HYBRID ao rodar</span>
+                    </label>
+                </div>
+                <div class="new-cmd-scope">
+                    <span>Salvar em:</span>
+                    <label class="new-cmd-scope-opt">
+                        <input type="radio" name="new-cmd-scope" value="workspace" checked>
+                        <span>Workspace (eucode.json)</span>
+                    </label>
+                    <label class="new-cmd-scope-opt">
+                        <input type="radio" name="new-cmd-scope" value="global">
+                        <span>Global (~/.eucode/eucode.json)</span>
+                    </label>
+                </div>
+                <div id="new-cmd-error" class="new-cmd-error" style="display:none;"></div>
+            </div>
+            <div class="new-cmd-modal-footer">
+                <button id="new-cmd-cancel" class="new-cmd-btn-cancel">Cancelar</button>
+                <button id="new-cmd-save" class="new-cmd-btn-save">Salvar comando</button>
+            </div>
+        </div>
     </div>
     <input type="file" id="image-input" accept="image/*" style="display:none">
 
@@ -1541,6 +1880,21 @@
 
         const configInlineCompletion = document.getElementById('config-inline-completion');
         const configFixWithEucode = document.getElementById('config-fix-with-eucode');
+        const configOpenCmdFile = document.getElementById('config-open-cmd-file');
+
+        // Wire up scope radios + open file button. Scope changes apply immediately
+        // (separate command from the main Save) so the hot-reload kicks in.
+        document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
+            r.addEventListener('change', () => {
+                if (r.checked) {
+                    savedSettings.customCommandsScope = r.value;
+                    vscode.postMessage({ command: 'change_commands_scope', scope: r.value });
+                }
+            });
+        });
+        configOpenCmdFile.addEventListener('click', () => {
+            vscode.postMessage({ command: 'open_commands_file', scope: savedSettings.customCommandsScope || 'workspace' });
+        });
 
         const HYBRID_DEFAULT_MODELS = {
             anthropic: 'claude-sonnet-4-6',
@@ -1620,6 +1974,11 @@
 
                 configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
                 configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
+
+                const currentScope = savedSettings.customCommandsScope || 'workspace';
+                document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
+                    r.checked = r.value === currentScope;
+                });
             }
         });
 
@@ -2167,7 +2526,8 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace' };
+                customCommandsScope = savedSettings.customCommandsScope;
                 if (typeof msg.hybridEnabled === 'boolean') { hybridMode = msg.hybridEnabled; updateHybridBtnState(); }
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
@@ -2232,6 +2592,20 @@
                 finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'hybrid_activity') {
                 handleHybridActivity(msg);
+            } else if (msg.command === 'command_list') {
+                customCommands = Array.isArray(msg.commands) ? msg.commands : [];
+                customCommandsScope = msg.scope || 'workspace';
+                if (Array.isArray(msg.errors) && msg.errors.length > 0) {
+                    console.warn('[Eucode] eucode.json com erros:', msg.errors);
+                }
+                renderAutocomplete();
+            } else if (msg.command === 'save_command_result') {
+                if (msg.ok) {
+                    closeNewCmdModal();
+                } else {
+                    newCmdError.textContent = msg.error || 'Erro desconhecido ao salvar.';
+                    newCmdError.style.display = 'block';
+                }
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
                 if (!msg.running) {
@@ -2775,22 +3149,198 @@
             activeTerminalItem = null;
         }
 
+        // ── Custom commands (eucode.json) ──
+        let customCommands = [];
+        let customCommandsScope = 'workspace';
+        const SAVE_CMD_WORD_THRESHOLD = 30;
+        let pendingPromptForSave = '';
+
+        const acBox = document.getElementById('cmd-autocomplete');
+        const saveBanner = document.getElementById('save-cmd-banner');
+        const newCmdModal = document.getElementById('new-cmd-modal');
+        const newCmdName = document.getElementById('new-cmd-name');
+        const newCmdDesc = document.getElementById('new-cmd-desc');
+        const newCmdPrompt = document.getElementById('new-cmd-prompt');
+        const newCmdAuto = document.getElementById('new-cmd-auto');
+        const newCmdHybrid = document.getElementById('new-cmd-hybrid');
+        const newCmdError = document.getElementById('new-cmd-error');
+        let acSelectedIdx = 0;
+
+        function classifyCommandIcon(cmd) {
+            if (cmd.autoMode && cmd.hybridMode) { return { cls: 'both', icon: 'auto_awesome' }; }
+            if (cmd.autoMode) { return { cls: 'auto', icon: 'bolt' }; }
+            if (cmd.hybridMode) { return { cls: 'hybrid', icon: 'diamond' }; }
+            return { cls: '', icon: 'terminal' };
+        }
+
+        function renderAutocomplete() {
+            const raw = input.value;
+            const firstChar = raw.trimStart().charAt(0);
+            // Only show autocomplete when the input starts with "/" and there's no space yet (no args)
+            const trimmed = raw.trim();
+            if (firstChar !== '/' || trimmed.includes(' ') || agentRunning) {
+                acBox.style.display = 'none';
+                return;
+            }
+            const query = trimmed.toLowerCase();
+            const matches = customCommands.filter(c => c.command.toLowerCase().startsWith(query));
+            acBox.innerHTML = '';
+            if (matches.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'cmd-ac-empty';
+                empty.textContent = customCommands.length === 0
+                    ? 'Nenhum comando definido. Configure em eucode.json.'
+                    : `Nenhum comando casa com "${trimmed}".`;
+                acBox.appendChild(empty);
+                acBox.style.display = 'block';
+                return;
+            }
+            acSelectedIdx = Math.min(acSelectedIdx, matches.length - 1);
+            matches.forEach((cmd, i) => {
+                const item = document.createElement('div');
+                item.className = 'cmd-ac-item' + (i === acSelectedIdx ? ' selected' : '');
+                const cls = classifyCommandIcon(cmd);
+                item.innerHTML = `
+                    <div class="cmd-ac-icon ${cls.cls}"><span class="mi" style="font-size:13px">${cls.icon}</span></div>
+                    <span class="cmd-ac-name">${cmd.command}</span>
+                    <span class="cmd-ac-desc">${cmd.description ? escapeHtml(cmd.description) : ''}</span>
+                `;
+                item.addEventListener('click', () => acceptAutocomplete(cmd));
+                acBox.appendChild(item);
+            });
+            acBox.style.display = 'block';
+        }
+
+        function getAutocompleteMatches() {
+            const trimmed = input.value.trim();
+            if (!trimmed.startsWith('/') || trimmed.includes(' ')) { return []; }
+            const query = trimmed.toLowerCase();
+            return customCommands.filter(c => c.command.toLowerCase().startsWith(query));
+        }
+
+        function acceptAutocomplete(cmd) {
+            input.value = cmd.command + ' ';
+            acBox.style.display = 'none';
+            input.focus();
+        }
+
+        // Expands a /command into its prompt and applied flags. Returns null if
+        // the input is not a slash invocation.
+        function expandCustomCommand(text) {
+            const trimmed = text.trim();
+            if (!trimmed.startsWith('/')) { return null; }
+            const space = trimmed.indexOf(' ');
+            const cmdName = space === -1 ? trimmed : trimmed.slice(0, space);
+            const match = customCommands.find(c => c.command.toLowerCase() === cmdName.toLowerCase());
+            if (!match) { return null; }
+            return {
+                prompt: match.prompt,
+                autoMode: !!match.autoMode,
+                hybridMode: !!match.hybridMode,
+                displayLabel: match.command,
+            };
+        }
+
+        function showSaveBanner(prompt) {
+            pendingPromptForSave = prompt;
+            saveBanner.style.display = 'flex';
+        }
+        function hideSaveBanner() {
+            saveBanner.style.display = 'none';
+            pendingPromptForSave = '';
+        }
+
+        function openNewCmdModal(prefillPrompt) {
+            newCmdName.value = '';
+            newCmdDesc.value = '';
+            newCmdPrompt.value = prefillPrompt || '';
+            newCmdAuto.checked = false;
+            newCmdHybrid.checked = false;
+            newCmdError.style.display = 'none';
+            newCmdError.textContent = '';
+            // Default scope radio = current scope
+            document.querySelectorAll('input[name="new-cmd-scope"]').forEach(r => {
+                r.checked = r.value === customCommandsScope;
+            });
+            newCmdModal.classList.add('open');
+            newCmdModal.style.display = 'flex';
+            setTimeout(() => newCmdName.focus(), 0);
+        }
+        function closeNewCmdModal() {
+            newCmdModal.classList.remove('open');
+            newCmdModal.style.display = 'none';
+        }
+
+        document.getElementById('save-cmd-yes').addEventListener('click', () => {
+            openNewCmdModal(pendingPromptForSave);
+            hideSaveBanner();
+        });
+        document.getElementById('save-cmd-no').addEventListener('click', hideSaveBanner);
+        document.getElementById('new-cmd-close').addEventListener('click', closeNewCmdModal);
+        document.getElementById('new-cmd-cancel').addEventListener('click', closeNewCmdModal);
+        document.getElementById('new-cmd-save').addEventListener('click', () => {
+            const name = newCmdName.value.trim();
+            const prompt = newCmdPrompt.value.trim();
+            if (!name.startsWith('/') || name.length < 2) {
+                newCmdError.textContent = 'O comando precisa comecar com / e ter ao menos uma letra.';
+                newCmdError.style.display = 'block';
+                return;
+            }
+            if (!prompt) {
+                newCmdError.textContent = 'O prompt nao pode ficar vazio.';
+                newCmdError.style.display = 'block';
+                return;
+            }
+            const scope = document.querySelector('input[name="new-cmd-scope"]:checked')?.value || 'workspace';
+            vscode.postMessage({
+                command: 'save_command',
+                commandName: name,
+                prompt,
+                description: newCmdDesc.value.trim(),
+                autoMode: newCmdAuto.checked,
+                hybridMode: newCmdHybrid.checked,
+                scope,
+            });
+        });
+
         // ── Send ──
         function sendMessage() {
-            const text = input.value.trim();
-            if (!text && !pendingImage) { return; }
+            const rawText = input.value.trim();
+            if (!rawText && !pendingImage) { return; }
+            acBox.style.display = 'none';
+
+            // Expand /command into the saved prompt (and apply mode flags)
+            const expanded = expandCustomCommand(rawText);
+            const text = expanded ? expanded.prompt : rawText;
+            const effectiveAuto = expanded ? (autoMode || expanded.autoMode) : autoMode;
+            const effectiveHybrid = expanded ? (hybridMode || expanded.hybridMode) : hybridMode;
 
             // Se o agente está rodando, injeta a mensagem na execução em curso
             if (agentRunning) {
-                appendMessage(text, 'user');
+                appendMessage(expanded ? `${expanded.displayLabel} → ${text}` : text, 'user');
                 input.value = '';
                 input.style.height = 'auto';
                 vscode.postMessage({ command: 'inject_message', text });
                 return;
             }
 
+            // Detect long prompts and offer to save as command (only for raw text, not /command invocations)
+            if (!expanded && rawText) {
+                const wordCount = rawText.split(/\s+/).filter(Boolean).length;
+                if (wordCount >= SAVE_CMD_WORD_THRESHOLD) {
+                    showSaveBanner(rawText);
+                } else {
+                    hideSaveBanner();
+                }
+            } else {
+                hideSaveBanner();
+            }
+
             const imageDataUrl = pendingImage ? `data:${pendingImage.mimeType};base64,${pendingImage.base64}` : null;
-            appendMessage(text, 'user', false, imageDataUrl);
+            const userDisplay = expanded
+                ? `${expanded.displayLabel}${expanded.autoMode ? ' ⚡' : ''}${expanded.hybridMode ? ' ◆' : ''} → ${text}`
+                : rawText;
+            appendMessage(userDisplay, 'user', false, imageDataUrl);
             input.value = '';
             input.style.height = 'auto';
             sendBtn.disabled = true;
@@ -2811,8 +3361,8 @@
                 command: 'user_input',
                 text: text || '(analise esta imagem)',
                 image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
-                autoMode,
-                hybridMode,
+                autoMode: effectiveAuto,
+                hybridMode: effectiveHybrid,
             });
 
             pendingImage = null;
@@ -2822,11 +3372,41 @@
 
         sendBtn.addEventListener('click', sendMessage);
         input.addEventListener('keydown', function(e) {
+            // Autocomplete navigation when visible
+            if (acBox.style.display !== 'none' && acBox.style.display !== '') {
+                const matches = getAutocompleteMatches();
+                if (matches.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        acSelectedIdx = (acSelectedIdx + 1) % matches.length;
+                        renderAutocomplete();
+                        return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        acSelectedIdx = (acSelectedIdx - 1 + matches.length) % matches.length;
+                        renderAutocomplete();
+                        return;
+                    }
+                    if (e.key === 'Tab') {
+                        e.preventDefault();
+                        acceptAutocomplete(matches[acSelectedIdx]);
+                        return;
+                    }
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        acBox.style.display = 'none';
+                        return;
+                    }
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
         });
         input.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+            acSelectedIdx = 0;
+            renderAutocomplete();
         });
 
         vscode.postMessage({ command: 'webview_ready' });

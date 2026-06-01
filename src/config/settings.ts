@@ -39,6 +39,7 @@ export interface EucodeSettings {
     supportModel: string;
     inlineCompletionEnabled: boolean;
     fixWithEucodeEnabled: boolean;
+    customCommandsScope: 'workspace' | 'global';
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -56,6 +57,7 @@ const DEFAULTS: EucodeSettings = {
     supportModel: '',
     inlineCompletionEnabled: false,
     fixWithEucodeEnabled: false,
+    customCommandsScope: 'workspace',
 };
 
 const KEYS = {
@@ -73,6 +75,7 @@ const KEYS = {
     supportModel: 'eucode.supportModel',
     inlineCompletionEnabled: 'eucode.inlineCompletionEnabled',
     fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
+    customCommandsScope: 'eucode.customCommandsScope',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -97,6 +100,7 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         supportModel: context.globalState.get<string>(KEYS.supportModel) ?? DEFAULTS.supportModel,
         inlineCompletionEnabled: context.globalState.get<boolean>(KEYS.inlineCompletionEnabled) ?? DEFAULTS.inlineCompletionEnabled,
         fixWithEucodeEnabled: context.globalState.get<boolean>(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
+        customCommandsScope: context.globalState.get<'workspace' | 'global'>(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
     };
 }
 
@@ -115,6 +119,7 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.supportModel, settings.supportModel.trim());
     await context.globalState.update(KEYS.inlineCompletionEnabled, settings.inlineCompletionEnabled);
     await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
+    await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.2
+
+- **NOVO: Comandos personalizaveis em eucode.json** — defina atalhos `/comando` que expandem em prompts completos. Cada comando pode opcionalmente forcar AUTO e/ou HYBRID ao rodar
+- Estrutura do arquivo: array de objetos `{ command, prompt, description?, autoMode?, hybridMode? }`. Validacao com mensagens de erro nao-bloqueantes (comandos invalidos sao ignorados e logados)
+- Escopo configuravel (toggle nas configs): **workspace** (`eucode.json` na raiz do projeto, committable) ou **global** (`~/.eucode/eucode.json`, pessoal). So um ativo por vez
+- Autocomplete inline quando o usuario digita `/` no chat: dropdown mostra comandos disponiveis com icone categorizado (bolt = AUTO, diamond = HYBRID, auto_awesome = ambos, terminal = nenhum)
+- Navegacao por teclado: setas ↑/↓ para selecionar, Tab para aceitar, Esc para fechar
+- Hot reload automatico via `vscode.workspace.createFileSystemWatcher` (workspace) ou `fs.watch` (global, debounced 200ms) quando o arquivo e editado
+- Banner amarelo "Salvar como comando" aparece automaticamente quando o usuario envia prompt com 30+ palavras — clique abre dialog pre-preenchido
+- Dialog dedicado para criar comando: campos nome, descricao, prompt, toggles AUTO e HYBRID, radio de escopo. Validacao client-side + erro do backend (ex: duplicata)
+- Nova secao colapsavel "Comandos personalizaveis" no painel de config com radio de escopo e botao "Abrir eucode.json"
+- Botao "Abrir eucode.json" cria o arquivo vazio (`[\n]`) se nao existir e abre no editor para edicao
+- src/services/custom-commands.ts: loadCommands, appendCommand, parseSlashInput, watchCommandsFile
+- 3 novos handlers no extension: `save_command`, `open_commands_file`, `change_commands_scope`
+- README com secao dedicada a comandos personalizaveis (estrutura, escopo, hot reload, banner, como usar)
+
 ## 0.8.1
 
 - **NOVO: Autocomplete inline** — sugestoes de codigo enquanto voce digita (texto fantasma cinza, aceita com Tab). Debounce de 500ms, cancela requests obsoletos quando o cursor move, contexto de 30 linhas antes + 5 depois. Skip automatico em plaintext/markdown/log/git-commit
