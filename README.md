@@ -19,6 +19,8 @@ O Eucode IA e um agente autonomo com acesso completo ao seu workspace. Ele nao a
 - **Checklist de tarefas ao vivo** — exibe progresso passo a passo durante tarefas longas
 - **Permissoes dinamicas** — voce aprova cada comando individualmente ou para a sessao toda
 - **Controle de ferramentas** — habilite ou desabilite cada ferramenta individualmente nas configuracoes
+- **Autocomplete inline** — sugestoes de codigo enquanto voce digita, no padrao Copilot (texto fantasma cinza, aceita com Tab)
+- **Fix with Eucode** — lampada de Quick Fix em erros do editor e item no menu de contexto para refatorar selecao
 
 ---
 
@@ -67,6 +69,51 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 - **AUTO** controla se o agente pede aprovacao para escrever/rodar comandos
 - **HYBRID** controla se a IA paga atua como suporte para a IA local
 - Os dois podem ser ativados juntos ou separados
+
+---
+
+## Recursos do Editor (autocomplete + fix inline)
+
+Alem do agente conversacional, o Eucode IA oferece duas integracoes diretas com o editor — sem precisar abrir o chat. Ambas sao opt-in (desligadas por padrao) e configuraveis no painel de configuracoes na secao colapsavel **Recursos do Editor**.
+
+### Autocomplete inline (estilo Copilot)
+
+Sugestoes de codigo aparecem como texto fantasma cinza enquanto voce digita. Aceite com **Tab**.
+
+- Debounce de 500ms aguardando voce parar de digitar
+- Cancela requests obsoletos automaticamente quando o cursor move
+- Contexto enviado ao modelo: 30 linhas antes do cursor + 5 depois
+- Skip automatico em arquivos de texto plano, markdown, logs e mensagens de commit
+- Funciona com qualquer linguagem que o LSP do VS Code reconheca
+
+### Fix with Eucode
+
+Dois pontos de entrada:
+
+1. **Lampada de Quick Fix** — aparece em erros de TypeScript, ESLint, etc. Clique na lampada e selecione "◆ Fix with Eucode". O modelo recebe o erro + codigo e propoe correcao.
+2. **Menu de contexto (botao direito)** — selecione qualquer trecho de codigo e clique com botao direito → "◆ Refactor with Eucode". Funciona mesmo sem erro, para refatoracoes voluntarias.
+
+Antes de aplicar, voce escolhe entre:
+- **Aplicar** — substitui a selecao pela sugestao
+- **Visualizar** — abre a sugestao em uma aba lateral para comparar antes de decidir
+- **Cancelar** — descarta a sugestao
+
+A confirmacao mostra se a correcao veio do **modelo local** ou do **suporte HYBRID** (quando configurado).
+
+### Comportamento com HYBRID ativo
+
+Ambos os recursos seguem a mesma logica do modo HYBRID: **primeiro tenta o local**, e somente se o local retornar vazio ou muito fraco, faz fallback transparente para o provedor pago configurado (Claude/GPT/Gemini). Isso mantem o custo baixo — voce so paga tokens quando o local nao deu conta.
+
+Se voce **nao tem HYBRID configurado**, o resultado do local e usado direto (mesmo que fraco). Se o modelo local estiver fora do ar, a sugestao simplesmente nao aparece — sem mensagens de erro intrusivas.
+
+### Como ativar
+
+1. Abra as configuracoes (engrenagem no chat)
+2. Expanda a secao **Recursos do Editor**
+3. Ative o toggle de **Autocomplete inline** e/ou **Fix with Eucode**
+4. Salve
+
+Os toggles funcionam independentemente — voce pode habilitar so um, ou os dois.
 
 ---
 
@@ -371,6 +418,14 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.8.1
+- **NOVO: Autocomplete inline** — sugestoes de codigo como texto fantasma cinza, aceita com Tab (estilo Copilot)
+- **NOVO: Fix with Eucode** — Quick Fix em erros + item no menu de contexto para refatorar selecao
+- Ambos seguem a logica HYBRID: local primeiro, suporte como fallback automatico
+- Confirmacao do Fix com 3 botoes (Aplicar / Visualizar / Cancelar)
+- Painel de config tem nova secao colapsavel "Recursos do Editor" com toggles individuais
+- "Ferramentas disponiveis" tambem agora e colapsavel — painel mais limpo
 
 ### 0.8.0
 - **NOVO: Modo HYBRID** — IA local + IA paga (Anthropic / OpenAI / Gemini) como suporte estrategico em momentos criticos

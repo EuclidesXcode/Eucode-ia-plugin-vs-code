@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.1
+
+- **NOVO: Autocomplete inline** — sugestoes de codigo enquanto voce digita (texto fantasma cinza, aceita com Tab). Debounce de 500ms, cancela requests obsoletos quando o cursor move, contexto de 30 linhas antes + 5 depois. Skip automatico em plaintext/markdown/log/git-commit
+- **NOVO: Fix with Eucode** — lampada de Quick Fix em erros do editor + item de menu de contexto para refatorar selecao. Confirmacao com 3 botoes (Aplicar / Visualizar / Cancelar), Visualizar abre diff lateral antes de aplicar
+- Ambos os recursos seguem a logica HYBRID: local primeiro, suporte (Claude/GPT/Gemini) como fallback quando o local retorna vazio ou fraco
+- Confirmacao do Fix informa se a sugestao veio do local ou do suporte HYBRID
+- Camada unificada completion-service.ts: getCompletion(settings, req) chama o modelo local em modo non-streaming e ja faz o fallback transparente
+- Defaults: ambas as features sao opt-in (desligadas por padrao) — usuario habilita nas configuracoes
+- Novo painel colapsavel "Recursos do Editor" com toggles individuais para autocomplete e Fix
+- "Ferramentas disponiveis" tambem agora e um painel colapsavel — reduz o tamanho visual do painel de configuracoes
+- Comando `eucode-ia.fixWithEucode` exposto no command palette + menu de contexto (gated por context key)
+
 ## 0.8.0
 
 - **NOVO: Modo HYBRID** — IA local + IA paga (Anthropic / OpenAI / Gemini) como suporte estrategico. Opcao A (consultor textual silencioso): o pago nao chama tools, apenas injeta orientacao no contexto do local
