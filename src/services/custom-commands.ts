@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { getEucodePath, EUCODE_COMMANDS_FILENAME } from './workspace-init';
 
 export interface CustomCommand {
     command: string;        // e.g. "/testar"
@@ -14,13 +15,11 @@ export interface CustomCommand {
 export type CommandsScope = 'workspace' | 'global';
 
 // Resolves the path of eucode.json for the given scope.
-// - workspace: <first workspace folder>/eucode.json
+// - workspace: <first workspace folder>/.eucode/eucode.json
 // - global: ~/.eucode/eucode.json
 export function getCommandsFilePath(scope: CommandsScope): string | null {
     if (scope === 'workspace') {
-        const folders = vscode.workspace.workspaceFolders;
-        if (!folders || folders.length === 0) { return null; }
-        return path.join(folders[0].uri.fsPath, 'eucode.json');
+        return getEucodePath(EUCODE_COMMANDS_FILENAME);
     }
     return path.join(os.homedir(), '.eucode', 'eucode.json');
 }
@@ -135,7 +134,7 @@ export function watchCommandsFile(scope: CommandsScope, onChange: () => void): v
     if (scope === 'workspace') {
         const folders = vscode.workspace.workspaceFolders;
         if (!folders || folders.length === 0) { return new vscode.Disposable(() => {}); }
-        const pattern = new vscode.RelativePattern(folders[0], 'eucode.json');
+        const pattern = new vscode.RelativePattern(folders[0], '.eucode/eucode.json');
         const watcher = vscode.workspace.createFileSystemWatcher(pattern);
         watcher.onDidChange(onChange);
         watcher.onDidCreate(onChange);

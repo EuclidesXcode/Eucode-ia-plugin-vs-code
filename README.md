@@ -183,6 +183,40 @@ Nas configuracoes do plugin, na secao **Comandos personalizaveis**, clique em **
 
 ---
 
+## Memoria persistente por sessao
+
+Cada sessao de chat tem um arquivo proprio em `.eucode/memory/session_<id>.json` com 3 secoes:
+
+- **`stack`** — linguagens, frameworks e package manager detectados automaticamente do projeto na primeira rodada (lendo `package.json`, `Cargo.toml`, `pom.xml`, `pubspec.yaml`, etc)
+- **`approvedCommands`** — comandos que voce aprovou via "Permitir na sessao". Antes ficavam so em memoria e voce precisava aprovar de novo a cada reload. Agora persistem
+- **`decisions`** — notas curtas de decisoes do projeto, gravadas manualmente (voce) ou pelo agente
+
+Um resumo compacto dessa memoria e injetado no system prompt em toda rodada, dando ao agente contexto persistente sem voce precisar repetir. A memoria completa fica disponivel via tool `memory_read` se o agente quiser conferir detalhes.
+
+### Como gravar uma nota manualmente
+
+No chat, digite:
+
+```
+/lembrar Use Zustand no lugar de Redux neste projeto
+```
+
+A nota e salva em `.eucode/memory/session_<id>.json` e passa a fazer parte do contexto que o agente recebe nas proximas rodadas.
+
+### Agente gravando sozinho
+
+Quando voce informa uma decisao importante durante a conversa (ex: "usamos Material UI, nao Tailwind"), o agente pode chamar `memory_remember` para persistir essa preferencia sem voce precisar pedir.
+
+### Apagar uma sessao apaga sua memoria
+
+Quando voce remove uma sessao no painel de sessoes, o `session_<id>.json` correspondente e apagado junto. Sem garbage collection necessario.
+
+### Ver/editar a memoria
+
+Nas configuracoes → secao **Memoria da sessao**, clique em **Abrir memoria da sessao atual**. Voce pode editar o JSON diretamente; o conteudo entra no proximo prompt automaticamente.
+
+---
+
 ## Provedores suportados
 
 | Provedor | Como conectar |
@@ -322,9 +356,25 @@ Clique na engrenagem no header do chat para abrir o painel de configuracoes.
 - **API Key** — obrigatoria para Anthropic (`sk-ant-...`), opcional para servidores locais
 - **Ferramentas** — toggles liga/desliga para cada ferramenta disponivel
 
-### .eucodeIgnore — filtrar arquivos do contexto
+### .eucode/ — pasta de configuracao do plugin
 
-Crie um arquivo `.eucodeIgnore` na raiz do workspace para excluir arquivos e pastas que o agente nao deve ler ou listar. A sintaxe e identica ao `.gitignore`:
+Tudo que o Eucode IA grava no seu projeto fica organizado em uma unica pasta `.eucode/` na raiz do workspace. Ela e criada automaticamente na primeira vez que voce abre o chat:
+
+```
+seu-projeto/
+└── .eucode/
+    ├── .gitignore         # mantem memory/ fora do versionamento
+    ├── eucodeIgnore       # padroes que o agente deve ignorar
+    ├── eucode.json        # seus comandos /personalizaveis
+    └── memory/
+        └── session_*.json # memoria persistente por sessao
+```
+
+Versoes antigas do plugin gravavam `.eucodeIgnore` e `eucode.json` na raiz. Eles sao migrados automaticamente para dentro de `.eucode/` na primeira vez que voce abrir o chat — sem perder nenhuma configuracao.
+
+### eucodeIgnore — filtrar arquivos do contexto
+
+Edite `.eucode/eucodeIgnore` para excluir arquivos e pastas que o agente nao deve ler ou listar. A sintaxe e identica ao `.gitignore`:
 
 ```
 # Ignorar pastas de build e dependencias
@@ -341,7 +391,7 @@ coverage/
 *.local
 ```
 
-O plugin ja ignora automaticamente `node_modules`, `dist`, `.git`, `.next`, `__pycache__` e similares. O `.eucodeIgnore` e para regras adicionais especificas do seu projeto.
+O plugin ja ignora automaticamente `node_modules`, `dist`, `.git`, `.next`, `__pycache__` e similares. O `eucodeIgnore` e para regras adicionais especificas do seu projeto.
 
 ### LM Studio em rede local
 
@@ -484,6 +534,18 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.8.4
+- **NOVO: Memoria persistente por sessao** — `.eucode/memory/session_<id>.json` com stack detectado, comandos aprovados e decisoes; resumo injetado no system prompt + tools `memory_remember` / `memory_read`
+- Comando `/lembrar <texto>` no chat para gravar notas manualmente
+- Detecao automatica de stack (linguagens, frameworks, package manager) na primeira rodada da sessao
+- Comandos "Permitir na sessao" agora persistem entre reloads
+- **Reorganizacao:** todos os arquivos do plugin agora ficam em `.eucode/` na raiz do workspace (eucodeIgnore, eucode.json, memory/, .gitignore)
+- Migracao automatica e silenciosa dos arquivos antigos (`.eucodeIgnore` e `eucode.json` na raiz) para dentro de `.eucode/` na primeira abertura do chat
+- Notificacao com botao "Abrir pasta" quando arquivos antigos sao migrados
+- `.eucode/.gitignore` criado automaticamente para manter `memory/` fora do versionamento
+- Deletar uma sessao apaga o arquivo de memoria correspondente
+- Botao "Abrir memoria da sessao atual" nas configuracoes
 
 ### 0.8.3
 - Botao HYBRID do header agora respeita o master switch das configuracoes — desabilitado se HYBRID nao estiver ligado em Configuracoes

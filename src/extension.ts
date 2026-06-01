@@ -11,6 +11,8 @@ import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSe
 import { EucodeInlineCompletionProvider } from './providers/inline-completion-provider';
 import { EucodeFixCodeActionProvider, executeFixWithEucode } from './providers/fix-code-action-provider';
 import { loadCommands, appendCommand, getCommandsFilePath, watchCommandsFile, CustomCommand, CommandsScope } from './services/custom-commands';
+import { deleteSessionMemory, getSessionMemoryPath, rememberDecision } from './services/memory-service';
+import { ensureEucodeWorkspace, revealEucodeDir } from './services/workspace-init';
 import { DEFAULT_MODEL } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
@@ -148,6 +150,18 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.onDidReceiveMessage(async (message: any) => {
             if (message?.command === 'webview_ready') {
+                // Initialize/migrate the .eucode/ workspace folder. Idempotent —
+                // safe to call on every open. Surfaces a notification if legacy
+                // files were moved into .eucode/ this run.
+                const initResult = ensureEucodeWorkspace();
+                if (initResult.migrated.length > 0) {
+                    const moved = initResult.migrated.join(', ');
+                    vscode.window.showInformationMessage(
+                        `Eucode IA: ${moved} foram movidos para .eucode/. Tudo continua funcionando.`,
+                        'Abrir pasta'
+                    ).then(action => { if (action === 'Abrir pasta') { revealEucodeDir(); } });
+                }
+
                 webviewView.webview.postMessage({
                     command: 'load_config',
                     provider: this._settings.provider,
@@ -190,6 +204,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             }
 
             if (message?.command === 'delete_session') {
+                // Delete the per-session memory file alongside the session itself
+                deleteSessionMemory(message.id);
                 await this._historyManager.deleteSession(message.id);
                 this._sessionHistory = this._historyManager.load();
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
@@ -280,6 +296,45 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 await saveSettings(this._context, this._settings);
                 rewatchCommands();
                 pushCommandsToWebview();
+                return;
+            }
+
+            if (message?.command === 'remember_decision') {
+                const activeId = this._historyManager.getActiveId();
+                if (!activeId) {
+                    webviewView.webview.postMessage({ command: 'remember_decision_result', ok: false, error: 'Nenhuma sessao ativa.' });
+                    return;
+                }
+                const result = rememberDecision(activeId, String(message.note || ''), 'user');
+                webviewView.webview.postMessage({
+                    command: 'remember_decision_result',
+                    ok: result.ok,
+                    error: result.reason,
+                });
+                return;
+            }
+
+            if (message?.command === 'open_memory_file') {
+                const activeId = this._historyManager.getActiveId();
+                if (!activeId) {
+                    vscode.window.showWarningMessage('Eucode IA: nenhuma sessao ativa. Inicie um chat antes de abrir a memoria.');
+                    return;
+                }
+                const fp = getSessionMemoryPath(activeId);
+                if (!fp) {
+                    vscode.window.showWarningMessage('Eucode IA: abra um workspace para usar memoria de sessao.');
+                    return;
+                }
+                try {
+                    require('fs').mkdirSync(require('path').dirname(fp), { recursive: true });
+                    if (!require('fs').existsSync(fp)) {
+                        require('fs').writeFileSync(fp, JSON.stringify({ sessionId: activeId, createdAt: Date.now(), updatedAt: Date.now(), approvedCommands: [], decisions: [] }, null, 2) + '\n', 'utf8');
+                    }
+                    const doc = await vscode.workspace.openTextDocument(fp);
+                    await vscode.window.showTextDocument(doc, { preview: false });
+                } catch (e) {
+                    vscode.window.showErrorMessage(`Eucode IA: nao foi possivel abrir ${fp}: ${e instanceof Error ? e.message : String(e)}`);
+                }
                 return;
             }
 
@@ -402,7 +457,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     notifyLiveTelemetry,
                     openFileInEditor,
                     hybridConfig,
-                    notifyHybridActivity
+                    notifyHybridActivity,
+                    this._historyManager.getActiveId()
                 );
                 this._abortController = null;
                 this._injectMessage = null;

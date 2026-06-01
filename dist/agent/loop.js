@@ -39,6 +39,7 @@ const fs = __importStar(require("fs"));
 const api_client_1 = require("../services/api-client");
 const rag_client_1 = require("../services/rag-client");
 const hybrid_client_1 = require("../services/hybrid-client");
+const memory_service_1 = require("../services/memory-service");
 const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
@@ -122,7 +123,7 @@ function parseErrorLocations(output) {
     }
     return { files, summary };
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -268,6 +269,9 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 }
                 if (decision === 'session') {
                     sessionApprovedCommands.add(cmd);
+                    if (sessionId) {
+                        (0, memory_service_1.rememberApprovedCommand)(sessionId, cmd);
+                    }
                 }
             }
             onStatus(`Running: ${cmd}`);
@@ -358,6 +362,31 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }));
             onTodoUpdate(todos);
             return '[OK] Todo list updated.';
+        },
+        memory_remember: async (args) => {
+            const note = args.note || '';
+            if (!sessionId) {
+                return '[ERROR] No active session — cannot persist memory.';
+            }
+            onStatus(`Salvando na memoria: ${note.slice(0, 60)}${note.length > 60 ? '...' : ''}`);
+            const res = (0, memory_service_1.rememberDecision)(sessionId, note, 'agent');
+            if (!res.ok) {
+                if (res.reason === 'duplicate') {
+                    return '[OK] Note already in memory, nothing to do.';
+                }
+                if (res.reason === 'too_long') {
+                    return '[ERROR] Note exceeds 500 chars. Be concise.';
+                }
+                return '[ERROR] Could not save note (empty).';
+            }
+            return '[OK] Note saved to session memory.';
+        },
+        memory_read: async () => {
+            if (!sessionId) {
+                return '[ERROR] No active session.';
+            }
+            onStatus('Lendo memoria da sessao...');
+            return (0, memory_service_1.dumpMemoryAsJson)(sessionId);
         },
     };
 }
@@ -472,7 +501,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId) {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
 - Execute the task end-to-end without asking the user anything.
@@ -488,7 +517,15 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
         ragContext = (0, rag_client_1.formatRagContext)(ragResults);
     }
-    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
+    // Session memory: detect stack on first turn (idempotent) and inject
+    // a compact summary into the system prompt. The full memory is
+    // accessible to the agent via the memory_remember tool when needed.
+    let memorySummary = '';
+    if (sessionId) {
+        (0, memory_service_1.detectAndRememberStack)(sessionId);
+        memorySummary = (0, memory_service_1.buildMemorySummary)(sessionId);
+    }
+    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode include only the last 1 history pair so the model knows what
     // the user was working on — skipping history entirely left it context-blind.
     // The round's own tool chain still grows large, so keep it to 1 pair max.
@@ -508,7 +545,9 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         onInjectMessage((msg) => { injectedMessages.push(msg); });
     }
     const filesReadThisRound = new Set();
-    const sessionApprovedCommands = new Set();
+    // Pre-populate from persisted memory so previously-approved commands
+    // don't need re-confirmation across reloads of the same session.
+    const sessionApprovedCommands = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedCommands : []);
     const fileCache = new Map();
     const dirCache = new Map();
     const counters = {
@@ -519,7 +558,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         lastErrorSummary: '',
         lastEditedFile: '',
     };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',

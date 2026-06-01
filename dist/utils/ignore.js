@@ -33,18 +33,33 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IGNORE_FILENAME = void 0;
 exports.isIgnored = isIgnored;
 exports.getIgnorePatterns = getIgnorePatterns;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const constants_1 = require("./constants");
-const IGNORE_FILENAME = '.eucodeIgnore';
-exports.IGNORE_FILENAME = IGNORE_FILENAME;
+// New canonical location (preferred), falls back to legacy for backwards
+// compatibility with projects that haven't been migrated yet.
+const NEW_IGNORE_PATH = ['.eucode', 'eucodeIgnore'];
+const LEGACY_IGNORE_FILENAME = '.eucodeIgnore';
 // Cache: workspace root → set of patterns, invalidated when file changes
 const cache = new Map();
+function resolveIgnorePath(workspaceRoot) {
+    const newPath = path.join(workspaceRoot, ...NEW_IGNORE_PATH);
+    if (fs.existsSync(newPath)) {
+        return newPath;
+    }
+    const legacyPath = path.join(workspaceRoot, LEGACY_IGNORE_FILENAME);
+    if (fs.existsSync(legacyPath)) {
+        return legacyPath;
+    }
+    return null;
+}
 function loadPatterns(workspaceRoot) {
-    const filePath = path.join(workspaceRoot, IGNORE_FILENAME);
+    const filePath = resolveIgnorePath(workspaceRoot);
+    if (!filePath) {
+        return [];
+    }
     try {
         const stat = fs.statSync(filePath);
         const mtime = stat.mtimeMs;

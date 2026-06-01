@@ -42,16 +42,13 @@ const vscode = __importStar(require("vscode"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
+const workspace_init_1 = require("./workspace-init");
 // Resolves the path of eucode.json for the given scope.
-// - workspace: <first workspace folder>/eucode.json
+// - workspace: <first workspace folder>/.eucode/eucode.json
 // - global: ~/.eucode/eucode.json
 function getCommandsFilePath(scope) {
     if (scope === 'workspace') {
-        const folders = vscode.workspace.workspaceFolders;
-        if (!folders || folders.length === 0) {
-            return null;
-        }
-        return path.join(folders[0].uri.fsPath, 'eucode.json');
+        return (0, workspace_init_1.getEucodePath)(workspace_init_1.EUCODE_COMMANDS_FILENAME);
     }
     return path.join(os.homedir(), '.eucode', 'eucode.json');
 }
@@ -167,7 +164,7 @@ function watchCommandsFile(scope, onChange) {
         if (!folders || folders.length === 0) {
             return new vscode.Disposable(() => { });
         }
-        const pattern = new vscode.RelativePattern(folders[0], 'eucode.json');
+        const pattern = new vscode.RelativePattern(folders[0], '.eucode/eucode.json');
         const watcher = vscode.workspace.createFileSystemWatcher(pattern);
         watcher.onDidChange(onChange);
         watcher.onDidCreate(onChange);

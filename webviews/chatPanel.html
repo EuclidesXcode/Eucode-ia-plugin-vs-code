@@ -1524,7 +1524,7 @@
                 <div class="cmd-scope-row">
                     <label class="cmd-scope-opt">
                         <input type="radio" name="config-cmd-scope" value="workspace">
-                        <span><strong>Workspace</strong> &mdash; eucode.json na raiz do projeto</span>
+                        <span><strong>Workspace</strong> &mdash; .eucode/eucode.json (do projeto)</span>
                     </label>
                     <label class="cmd-scope-opt">
                         <input type="radio" name="config-cmd-scope" value="global">
@@ -1534,6 +1534,20 @@
                 <button id="config-open-cmd-file" class="cmd-open-file-btn">
                     <span class="mi" style="font-size:14px">edit_note</span>
                     Abrir eucode.json
+                </button>
+            </div>
+        </details>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Memoria da sessao</summary>
+            <div class="config-collapsible-body">
+                <div class="config-hint" style="margin-bottom:8px;">
+                    Decisoes, preferencias e comandos aprovados ficam em <code>.eucode/memory/session_&lt;id&gt;.json</code>.
+                    Digite <strong>/lembrar &lt;texto&gt;</strong> no chat para gravar uma nota manualmente. O agente tambem pode
+                    salvar usando a tool <code>memory_remember</code>. A memoria e injetada como contexto resumido em cada rodada.
+                </div>
+                <button id="config-open-memory-file" class="cmd-open-file-btn">
+                    <span class="mi" style="font-size:14px">psychology</span>
+                    Abrir memoria da sessao atual
                 </button>
             </div>
         </details>
@@ -1697,6 +1711,8 @@
             { name: 'run_git',           label: 'Git',                  desc: 'Operações git: status, commit, push, diff...' },
             { name: 'web_search',        label: 'Busca na web',         desc: 'Pesquisar documentação e soluções no DuckDuckGo' },
             { name: 'todo_update',       label: 'Lista de tarefas',     desc: 'Exibir checklist de progresso no chat' },
+            { name: 'memory_remember',   label: 'Salvar na memória',    desc: 'Agente persiste decisões e preferências em .eucode/memory' },
+            { name: 'memory_read',       label: 'Ler memória',          desc: 'Agente consulta a memória completa da sessão atual' },
         ];
 
         const toolsGrid = document.getElementById('tools-grid');
@@ -1907,6 +1923,10 @@
         const configInlineCompletion = document.getElementById('config-inline-completion');
         const configFixWithEucode = document.getElementById('config-fix-with-eucode');
         const configOpenCmdFile = document.getElementById('config-open-cmd-file');
+        const configOpenMemoryFile = document.getElementById('config-open-memory-file');
+        configOpenMemoryFile.addEventListener('click', () => {
+            vscode.postMessage({ command: 'open_memory_file' });
+        });
 
         // Wire up scope radios + open file button. Scope changes apply immediately
         // (separate command from the main Save) so the hot-reload kicks in.
@@ -2634,6 +2654,16 @@
                     newCmdError.textContent = msg.error || 'Erro desconhecido ao salvar.';
                     newCmdError.style.display = 'block';
                 }
+            } else if (msg.command === 'remember_decision_result') {
+                if (msg.ok) {
+                    appendMessage('◆ Nota salva em .eucode/memory para esta sessao.', 'agent');
+                } else {
+                    const why = msg.error === 'duplicate' ? 'esta nota ja estava salva.'
+                              : msg.error === 'too_long' ? 'a nota excede 500 caracteres.'
+                              : msg.error === 'empty' ? 'a nota esta vazia.'
+                              : (msg.error || 'erro desconhecido.');
+                    appendMessage(`Eucode IA: nao foi possivel salvar — ${why}`, 'agent');
+                }
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
                 if (!msg.running) {
@@ -3336,6 +3366,24 @@
             const rawText = input.value.trim();
             if (!rawText && !pendingImage) { return; }
             acBox.style.display = 'none';
+
+            // Built-in /lembrar — persiste nota na memoria da sessao sem chamar o agente.
+            // Sintaxe: /lembrar texto da nota a salvar
+            if (rawText.startsWith('/lembrar ')) {
+                const note = rawText.slice('/lembrar '.length).trim();
+                if (!note) {
+                    appendMessage(rawText, 'user');
+                    appendMessage('Eucode IA: use `/lembrar <texto>` para gravar uma nota na memoria da sessao.', 'agent');
+                    input.value = '';
+                    input.style.height = 'auto';
+                    return;
+                }
+                appendMessage(rawText, 'user');
+                input.value = '';
+                input.style.height = 'auto';
+                vscode.postMessage({ command: 'remember_decision', note });
+                return;
+            }
 
             // Expand /command into the saved prompt (and apply mode flags)
             const expanded = expandCustomCommand(rawText);

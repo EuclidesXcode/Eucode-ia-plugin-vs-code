@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { callAI, callAnthropicAI, ToolCall } from '../services/api-client';
 import { queryRag, formatRagContext } from '../services/rag-client';
 import { callSupportProvider } from '../services/hybrid-client';
+import { loadSessionMemory, rememberApprovedCommand, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
 import { AIProvider, SupportProvider } from '../config/settings';
 import { DEFAULT_MODEL } from '../utils/constants';
 import { HistoryEntry, buildMessagesFromHistory } from '../services/history-service';
@@ -142,7 +143,8 @@ function buildToolHandlers(
         lastErrorSummary: string;
         lastEditedFile: string;
     },
-    onFileTouched?: (absolutePath: string) => void
+    onFileTouched?: (absolutePath: string) => void,
+    sessionId?: string
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
         list_directory: async (args, cwd) => {
@@ -292,6 +294,7 @@ function buildToolHandlers(
                 }
                 if (decision === 'session') {
                     sessionApprovedCommands.add(cmd);
+                    if (sessionId) { rememberApprovedCommand(sessionId, cmd); }
                 }
             }
 
@@ -375,6 +378,23 @@ function buildToolHandlers(
             }));
             onTodoUpdate(todos);
             return '[OK] Todo list updated.';
+        },
+        memory_remember: async (args) => {
+            const note: string = args.note || '';
+            if (!sessionId) { return '[ERROR] No active session — cannot persist memory.'; }
+            onStatus(`Salvando na memoria: ${note.slice(0, 60)}${note.length > 60 ? '...' : ''}`);
+            const res = rememberDecision(sessionId, note, 'agent');
+            if (!res.ok) {
+                if (res.reason === 'duplicate') { return '[OK] Note already in memory, nothing to do.'; }
+                if (res.reason === 'too_long') { return '[ERROR] Note exceeds 500 chars. Be concise.'; }
+                return '[ERROR] Could not save note (empty).';
+            }
+            return '[OK] Note saved to session memory.';
+        },
+        memory_read: async () => {
+            if (!sessionId) { return '[ERROR] No active session.'; }
+            onStatus('Lendo memoria da sessao...');
+            return dumpMemoryAsJson(sessionId);
         },
     };
 }
@@ -519,7 +539,8 @@ export async function runAgentLoop(
     onLiveTelemetry?: (tokens: number, tokensPerSec: number, elapsedMs: number) => void,
     onFileTouched?: (absolutePath: string) => void,
     hybridConfig?: HybridConfig,
-    onHybridActivity?: (evt: HybridActivityEvent) => void
+    onHybridActivity?: (evt: HybridActivityEvent) => void,
+    sessionId?: string
 ): Promise<string> {
     const autoBlock = autoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
@@ -538,7 +559,16 @@ export async function runAgentLoop(
         ragContext = formatRagContext(ragResults);
     }
 
-    const systemContent = [SYSTEM_PROMPT + autoBlock, ragContext, contextBlock].filter(Boolean).join('\n\n');
+    // Session memory: detect stack on first turn (idempotent) and inject
+    // a compact summary into the system prompt. The full memory is
+    // accessible to the agent via the memory_remember tool when needed.
+    let memorySummary = '';
+    if (sessionId) {
+        detectAndRememberStack(sessionId);
+        memorySummary = buildMemorySummary(sessionId);
+    }
+
+    const systemContent = [SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode include only the last 1 history pair so the model knows what
     // the user was working on — skipping history entirely left it context-blind.
     // The round's own tool chain still grows large, so keep it to 1 pair max.
@@ -560,7 +590,11 @@ export async function runAgentLoop(
     }
 
     const filesReadThisRound = new Set<string>();
-    const sessionApprovedCommands = new Set<string>();
+    // Pre-populate from persisted memory so previously-approved commands
+    // don't need re-confirmation across reloads of the same session.
+    const sessionApprovedCommands = new Set<string>(
+        sessionId ? loadSessionMemory(sessionId).approvedCommands : []
+    );
     const fileCache = new Map<string, string>();
     const dirCache = new Map<string, string>();
     const counters = {
@@ -575,7 +609,7 @@ export async function runAgentLoop(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
         onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands,
-        fileCache, dirCache, counters, onFileTouched
+        fileCache, dirCache, counters, onFileTouched, sessionId
     );
 
     const thinkingStatus = [

@@ -48,6 +48,8 @@ const settings_1 = require("./config/settings");
 const inline_completion_provider_1 = require("./providers/inline-completion-provider");
 const fix_code_action_provider_1 = require("./providers/fix-code-action-provider");
 const custom_commands_1 = require("./services/custom-commands");
+const memory_service_1 = require("./services/memory-service");
+const workspace_init_1 = require("./services/workspace-init");
 const constants_1 = require("./utils/constants");
 class EucodeViewProvider {
     getCurrentSettings() { return this._settings; }
@@ -144,6 +146,16 @@ class EucodeViewProvider {
         this._context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()), vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles()));
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message?.command === 'webview_ready') {
+                // Initialize/migrate the .eucode/ workspace folder. Idempotent —
+                // safe to call on every open. Surfaces a notification if legacy
+                // files were moved into .eucode/ this run.
+                const initResult = (0, workspace_init_1.ensureEucodeWorkspace)();
+                if (initResult.migrated.length > 0) {
+                    const moved = initResult.migrated.join(', ');
+                    vscode.window.showInformationMessage(`Eucode IA: ${moved} foram movidos para .eucode/. Tudo continua funcionando.`, 'Abrir pasta').then(action => { if (action === 'Abrir pasta') {
+                        (0, workspace_init_1.revealEucodeDir)();
+                    } });
+                }
                 webviewView.webview.postMessage({
                     command: 'load_config',
                     provider: this._settings.provider,
@@ -183,6 +195,8 @@ class EucodeViewProvider {
                 return;
             }
             if (message?.command === 'delete_session') {
+                // Delete the per-session memory file alongside the session itself
+                (0, memory_service_1.deleteSessionMemory)(message.id);
                 await this._historyManager.deleteSession(message.id);
                 this._sessionHistory = this._historyManager.load();
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
@@ -273,6 +287,44 @@ class EucodeViewProvider {
                 pushCommandsToWebview();
                 return;
             }
+            if (message?.command === 'remember_decision') {
+                const activeId = this._historyManager.getActiveId();
+                if (!activeId) {
+                    webviewView.webview.postMessage({ command: 'remember_decision_result', ok: false, error: 'Nenhuma sessao ativa.' });
+                    return;
+                }
+                const result = (0, memory_service_1.rememberDecision)(activeId, String(message.note || ''), 'user');
+                webviewView.webview.postMessage({
+                    command: 'remember_decision_result',
+                    ok: result.ok,
+                    error: result.reason,
+                });
+                return;
+            }
+            if (message?.command === 'open_memory_file') {
+                const activeId = this._historyManager.getActiveId();
+                if (!activeId) {
+                    vscode.window.showWarningMessage('Eucode IA: nenhuma sessao ativa. Inicie um chat antes de abrir a memoria.');
+                    return;
+                }
+                const fp = (0, memory_service_1.getSessionMemoryPath)(activeId);
+                if (!fp) {
+                    vscode.window.showWarningMessage('Eucode IA: abra um workspace para usar memoria de sessao.');
+                    return;
+                }
+                try {
+                    require('fs').mkdirSync(require('path').dirname(fp), { recursive: true });
+                    if (!require('fs').existsSync(fp)) {
+                        require('fs').writeFileSync(fp, JSON.stringify({ sessionId: activeId, createdAt: Date.now(), updatedAt: Date.now(), approvedCommands: [], decisions: [] }, null, 2) + '\n', 'utf8');
+                    }
+                    const doc = await vscode.workspace.openTextDocument(fp);
+                    await vscode.window.showTextDocument(doc, { preview: false });
+                }
+                catch (e) {
+                    vscode.window.showErrorMessage(`Eucode IA: nao foi possivel abrir ${fp}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                return;
+            }
             if (message?.command === 'confirm_write_response') {
                 const resolve = this._pendingConfirms.get(message.id);
                 if (resolve) {
@@ -361,7 +413,7 @@ class EucodeViewProvider {
                     }
                     : undefined;
                 const notifyHybridActivity = (evt) => webviewView.webview.postMessage({ command: 'hybrid_activity', ...evt });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity);
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId());
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });

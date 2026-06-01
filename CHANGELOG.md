@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.4
+
+- **NOVO: Memoria persistente por sessao** em `.eucode/memory/session_<id>.json` com 3 secoes: `stack` (detectado automaticamente), `approvedCommands` (persistidos), `decisions` (notas)
+- src/services/memory-service.ts: loadSessionMemory, rememberApprovedCommand, rememberDecision, detectAndRememberStack, buildMemorySummary, dumpMemoryAsJson, deleteSessionMemory
+- Detector de stack na primeira rodada: le package.json (Node + frameworks como nextjs/react/vue/svelte/express/nestjs/jest/vitest), requirements.txt/pyproject.toml/Pipfile (Python + django/flask/fastapi), Cargo.toml (Rust), go.mod (Go), pom.xml/build.gradle (Java/Kotlin), pubspec.yaml (Dart/Flutter)
+- Resumo de memoria injetado no system prompt em toda rodada (cap de 6 decisoes + 8 comandos recentes)
+- 2 novas tools para o agente: `memory_remember` (salvar nota, max 500 chars, dedup) e `memory_read` (ler memoria completa)
+- Comando `/lembrar <texto>` no chat para o usuario gravar manualmente — interceptado antes de chamar o agente
+- Comandos "Permitir na sessao" agora persistem em disco: nao precisa reaprovar apos reload
+- **Reorganizacao de arquivos do plugin para `.eucode/`**: novo src/services/workspace-init.ts cria a pasta com layout padronizado na primeira abertura do chat
+- Layout: `.eucode/.gitignore` (ignora memory/), `.eucode/eucodeIgnore`, `.eucode/eucode.json`, `.eucode/memory/session_*.json`
+- Migracao automatica e silenciosa: `.eucodeIgnore` e `eucode.json` da raiz sao movidos para `.eucode/` (fs.rename com fallback para fs.copyFile)
+- Notificacao info com botao "Abrir pasta" lista os arquivos migrados na primeira execucao apos o update
+- utils/ignore.ts: prefere `.eucode/eucodeIgnore` mas mantem retrocompat com `.eucodeIgnore` na raiz
+- custom-commands.ts: prefere `.eucode/eucode.json` (workspace) ou `~/.eucode/eucode.json` (global)
+- Deletar sessao via painel remove o session_<id>.json correspondente (sem garbage collection)
+- Botao "Abrir memoria da sessao atual" + nova secao colapsavel "Memoria da sessao" nas configs
+- Handlers no extension: `remember_decision`, `remember_decision_result`, `open_memory_file`
+- Atualizado scope label de "eucode.json na raiz" para ".eucode/eucode.json"
+- README com nova secao "Memoria persistente por sessao" + secao ".eucode/ — pasta de configuracao"
+
 ## 0.8.3
 
 - Botao HYBRID do header agora respeita o master switch das configuracoes: se HYBRID nao estiver ativado em Configuracoes → HYBRID, o botao fica desabilitado (opacidade reduzida, cursor not-allowed)

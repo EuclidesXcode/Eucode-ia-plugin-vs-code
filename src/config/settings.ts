@@ -20,6 +20,8 @@ export const ALL_TOOL_NAMES = [
     'run_command',
     'run_git',
     'web_search',
+    'memory_remember',
+    'memory_read',
 ] as const;
 
 export type ToolName = typeof ALL_TOOL_NAMES[number];

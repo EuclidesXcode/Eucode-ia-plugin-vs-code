@@ -21,6 +21,8 @@ exports.ALL_TOOL_NAMES = [
     'run_command',
     'run_git',
     'web_search',
+    'memory_remember',
+    'memory_read',
 ];
 const DEFAULTS = {
     provider: 'lmstudio',

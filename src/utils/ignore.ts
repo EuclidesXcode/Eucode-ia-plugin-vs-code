@@ -2,13 +2,25 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { IGNORED_DIRS } from './constants';
 
-const IGNORE_FILENAME = '.eucodeIgnore';
+// New canonical location (preferred), falls back to legacy for backwards
+// compatibility with projects that haven't been migrated yet.
+const NEW_IGNORE_PATH = ['.eucode', 'eucodeIgnore'];
+const LEGACY_IGNORE_FILENAME = '.eucodeIgnore';
 
 // Cache: workspace root → set of patterns, invalidated when file changes
 const cache = new Map<string, { mtime: number; patterns: string[] }>();
 
+function resolveIgnorePath(workspaceRoot: string): string | null {
+    const newPath = path.join(workspaceRoot, ...NEW_IGNORE_PATH);
+    if (fs.existsSync(newPath)) { return newPath; }
+    const legacyPath = path.join(workspaceRoot, LEGACY_IGNORE_FILENAME);
+    if (fs.existsSync(legacyPath)) { return legacyPath; }
+    return null;
+}
+
 function loadPatterns(workspaceRoot: string): string[] {
-    const filePath = path.join(workspaceRoot, IGNORE_FILENAME);
+    const filePath = resolveIgnorePath(workspaceRoot);
+    if (!filePath) { return []; }
     try {
         const stat = fs.statSync(filePath);
         const mtime = stat.mtimeMs;
@@ -43,5 +55,3 @@ export function isIgnored(entryName: string, relPath: string, workspaceRoot: str
 export function getIgnorePatterns(workspaceRoot: string): string[] {
     return loadPatterns(workspaceRoot);
 }
-
-export { IGNORE_FILENAME };
