@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.4
+
+ENCONTRADA A CAUSA RAIZ DEFINITIVA do "Unexpected non-whitespace character after JSON at position N".
+
+0.9.2 e 0.9.3 cobriram o parser SSE, mas o erro persistia. O culpado real era OUTRO `JSON.parse`: o que reconstroi os **argumentos da tool call** apos o streaming terminar.
+
+CENARIO:
+- Modelo (Anthropic ou local) recebe `tools: [...]` + `tool_choice: 'auto'`
+- Modelo decide chamar uma tool e streama o nome + argumentos em pedacos via `tool_calls` delta / `input_json_delta`
+- Os pedacos sao acumulados em `toolArgsRaw`
+- No fim do stream, `JSON.parse(toolArgsRaw)` era chamado dentro do try externo
+- Se o modelo gerou JSON levemente malformado (acontece quando o stream e cortado, ou quando ha multiplas tool calls colidindo), o `JSON.parse` jogava excecao
+- A excecao caia no catch que retornava `__INFRA_ERROR__`, descartando TODO o texto que o modelo ja tinha gerado em paralelo
+
+FIX:
+- 3 ocorrencias de `JSON.parse(toolArgsRaw)` / `JSON.parse(raw.function.arguments)` substituidas por `tryParseJsonChunk()` que retorna `null` em vez de jogar
+- Se a parse falhar, em vez de matar a chamada, faz fallback gracioso para "resposta de texto" — devolve o texto acumulado e ignora a tool call malformada
+- `console.warn` loga os primeiros 200 chars do raw para debug futuro
+
+POR QUE ISSO ACONTECE:
+Modelos LLM (especialmente em planejamento HYBRID onde recebem instrucao "gere o plano em texto") as vezes geram texto + tentativa parcial de tool call. O Anthropic envia os 2 streams em paralelo. Quando o stream termina antes da tool call completar, `toolArgsRaw` fica com JSON parcial.
+
 ## 0.9.3
 
 Continuacao do fix do parser SSE: 0.9.2 cobria o caso `}data: ` mas

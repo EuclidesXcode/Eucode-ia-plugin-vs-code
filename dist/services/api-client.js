@@ -383,8 +383,16 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             });
             const usage = { promptTokens, completionTokens, elapsedMs: Date.now() - t0 };
             if (toolName) {
-                const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
-                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } }, usage };
+                // Tool args are streamed in chunks and accumulated. If the
+                // model produced malformed JSON, fall back to text-only
+                // response instead of throwing — better to keep the partial
+                // text than to discard everything.
+                const args = toolArgsRaw ? tryParseJsonChunk(toolArgsRaw) : {};
+                if (args !== null) {
+                    return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } }, usage };
+                }
+                // Tool args failed to parse — log and degrade to text response
+                console.warn('[API] Tool args JSON malformado, degradando para resposta de texto:', toolArgsRaw.slice(0, 200));
             }
             return { responseText: textAcc.trim(), usage };
         }
@@ -400,7 +408,7 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             if (message.tool_calls?.length > 0) {
                 const raw = message.tool_calls[0];
                 const args = typeof raw.function.arguments === 'string'
-                    ? JSON.parse(raw.function.arguments)
+                    ? (tryParseJsonChunk(raw.function.arguments) ?? {})
                     : raw.function.arguments;
                 return { responseText: '', toolCall: { id: raw.id, function: { name: raw.function.name, arguments: args } } };
             }
@@ -522,8 +530,13 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
             catch { /* malformed chunk */ }
         });
         if (toolName) {
-            const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
-            return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+            // Tool args are accumulated chunk-by-chunk. Use tolerant parser
+            // and fall back to text response if JSON is malformed.
+            const args = toolArgsRaw ? tryParseJsonChunk(toolArgsRaw) : {};
+            if (args !== null) {
+                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+            }
+            console.warn('[API Anthropic] Tool args JSON malformado, degradando para texto:', toolArgsRaw.slice(0, 200));
         }
         return { responseText: textAcc.trim() };
     }
