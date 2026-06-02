@@ -556,6 +556,24 @@
         }
         .msg-mode-badge.chat { color: #8b9eff; border-color: #4a5a8a; background: #0d0f26; }
         .message-row.is-chat .message-bubble { border-left: 2px solid #4a5a8a; padding-left: 12px; }
+        .chat-pending-dots {
+            display: inline-flex;
+            gap: 5px;
+            padding: 4px 0;
+        }
+        .chat-pending-dots span {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #8b9eff;
+            opacity: 0.4;
+            animation: chat-bounce 1.2s infinite ease-in-out;
+        }
+        .chat-pending-dots span:nth-child(2) { animation-delay: 0.18s; }
+        .chat-pending-dots span:nth-child(3) { animation-delay: 0.36s; }
+        @keyframes chat-bounce {
+            0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+            40% { opacity: 1; transform: translateY(-3px); }
+        }
 
         .message-bubble {
             padding: 11px 15px;
@@ -2356,12 +2374,21 @@
             }
 
             if (isLoading) {
-                const timeline = document.createElement('div');
-                timeline.className = 'agent-timeline';
-                timeline.id = 'agent-timeline';
-                bubble.appendChild(timeline);
                 bubble.dataset.loading = 'true';
-                addTimelineItem('Analisando sua solicitacao...', timeline);
+                if (mode === 'chat') {
+                    // CHAT: no timeline, just three pulsing dots while
+                    // we wait for the first streamed chunk to arrive.
+                    const dots = document.createElement('div');
+                    dots.className = 'chat-pending-dots';
+                    dots.innerHTML = '<span></span><span></span><span></span>';
+                    bubble.appendChild(dots);
+                } else {
+                    const timeline = document.createElement('div');
+                    timeline.className = 'agent-timeline';
+                    timeline.id = 'agent-timeline';
+                    bubble.appendChild(timeline);
+                    addTimelineItem('Analisando sua solicitacao...', timeline);
+                }
             } else if (role === 'agent') {
                 const md = document.createElement('div');
                 md.innerHTML = marked.parse(text);
@@ -2912,7 +2939,9 @@
                 }
                 streamText += msg.text;
                 if (!streamBubble) {
-                    // Primeiro chunk: cria item de resposta final na timeline
+                    // Primeiro chunk: cria container de stream. Em DEV vai como
+                    // item da timeline. Em CHAT (sem timeline), substitui os
+                    // dots pulsantes da bubble direto pelo container de texto.
                     const tl = getTimeline();
                     if (tl) {
                         const prev = tl.querySelector('.tl-item.active');
@@ -2927,6 +2956,14 @@
                         item.appendChild(body);
                         tl.appendChild(item);
                         streamBubble = body;
+                    } else {
+                        // CHAT fallback — usa a bubble da mensagem em loading
+                        const loadingBubble = chatContainer.querySelector('[data-loading]');
+                        if (loadingBubble) {
+                            const dots = loadingBubble.querySelector('.chat-pending-dots');
+                            if (dots) { dots.remove(); }
+                            streamBubble = loadingBubble;
+                        }
                     }
                 }
                 if (streamBubble && !streamRafPending) {
@@ -3012,6 +3049,23 @@
                         appendContinueButton(body);
                     }
                     activeResponse.classList.remove('active');
+                } else if (msg.mode === 'chat' && streamText && loadingBubble) {
+                    // CHAT com streaming concluido: substitui o texto puro
+                    // no bubble por markdown renderizado.
+                    const pre = loadingBubble.querySelector('.tl-stream');
+                    if (pre) { pre.remove(); }
+                    const md = document.createElement('div');
+                    md.innerHTML = marked.parse(cleanText || streamText);
+                    loadingBubble.appendChild(md);
+                    appendContinueButton(loadingBubble);
+                } else if (msg.mode === 'chat' && cleanText && loadingBubble) {
+                    // CHAT sem streaming (raro mas possivel): renderiza direto
+                    const dots = loadingBubble.querySelector('.chat-pending-dots');
+                    if (dots) { dots.remove(); }
+                    const md = document.createElement('div');
+                    md.innerHTML = marked.parse(cleanText);
+                    loadingBubble.appendChild(md);
+                    appendContinueButton(loadingBubble);
                 } else if (!streamText && cleanText) {
                     // Sem streaming: adiciona item de resposta na timeline ao inves de nova bolha
                     if (tl) {
@@ -3649,7 +3703,7 @@
             // sempre retorne a nova, evitando que dois elementos tenham o mesmo id
             const oldTimeline = document.getElementById('agent-timeline');
             if (oldTimeline) { oldTimeline.removeAttribute('id'); }
-            appendMessage('', 'agent', true);
+            appendMessage('', 'agent', true, null, chatMode ? 'chat' : null);
 
             vscode.postMessage({
                 command: 'user_input',

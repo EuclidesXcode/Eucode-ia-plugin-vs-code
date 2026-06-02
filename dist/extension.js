@@ -366,13 +366,21 @@ class EucodeViewProvider {
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now(), hasImage: true, imageSummary: response.slice(0, 300), mode: userMode });
             }
             else {
-                notify('Mapeando workspace...');
-                const ctx = (0, context_1.collectWorkspaceContext)();
-                if (ctx.openFiles.length > 0) {
+                // CHAT mode skips workspace mapping entirely — no "Mapeando workspace",
+                // no "Abertos no editor", no diagnostics. The conversation is meant
+                // to be free-form and not tied to the project.
+                const isChat = userMode === 'chat';
+                if (!isChat) {
+                    notify('Mapeando workspace...');
+                }
+                const ctx = isChat
+                    ? { openFiles: [], contextBlock: '', roots: [] }
+                    : (0, context_1.collectWorkspaceContext)();
+                if (!isChat && ctx.openFiles.length > 0) {
                     notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
                 }
                 // Inclui diagnósticos do editor no bloco de contexto quando houver
-                const diagnosticsBlock = (0, context_1.collectDiagnostics)();
+                const diagnosticsBlock = isChat ? '' : (0, context_1.collectDiagnostics)();
                 const fullContextBlock = [ctx.contextBlock, diagnosticsBlock].filter(Boolean).join('\n\n');
                 const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
                 const notifyCommandStart = (cmd) => webviewView.webview.postMessage({ command: 'command_start', cmd });
