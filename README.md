@@ -565,6 +565,11 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.8.11
+- AUTO + HYBRID mais robusto para tarefas de build/package: regras criticas no system prompt forcam sequencia read → edit → run_command → verify, sem editar duas vezes seguidas sem rodar build no meio
+- Plano HYBRID inicial agora e mais conciso (3-7 steps, paths relativos, sob 200 palavras) — libera ~700 tokens a mais no contexto do modelo local
+- Detector `buildPendingNoCommand`: se a tarefa pede build/package mas o modelo so editou sem rodar comando, nudge especifico orienta a executar `run_command` + verificar artefato no disco
+
 ### 0.8.6
 - **NOVO: Modo CHAT** — toggle DEV/CHAT no novo dropdown "Modos" do header. Em CHAT o agente conversa livremente, sem acessar arquivos ou comandos. Util para perguntas gerais, brainstorming, analise de URL (com web_search se habilitado)
 - Em CHAT: Auto e Hybrid sao automaticamente desligados (sem perder a preferencia do usuario — volta ao estado anterior em DEV)

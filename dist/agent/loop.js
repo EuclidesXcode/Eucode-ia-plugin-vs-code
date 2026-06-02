@@ -468,6 +468,31 @@ function detectEscapedToolCall(text) {
     }
     return null;
 }
+// Scans the round messages for any assistant tool_call that targets a build/
+// compile/package command. Used as a safety net so build tasks don't end
+// with only file edits and no actual command run.
+function lastBuildAttempted(messages) {
+    const buildRe = /\b(build|compile|package|tsc|vsce|webpack|rollup|esbuild|jest|vitest|pytest|cargo build|go build|mvn|gradle)\b/i;
+    for (const m of messages) {
+        const toolCalls = m.tool_calls;
+        if (!toolCalls?.length) {
+            continue;
+        }
+        for (const tc of toolCalls) {
+            const fn = tc?.function?.name;
+            if (fn !== 'run_command') {
+                continue;
+            }
+            const args = typeof tc.function?.arguments === 'string'
+                ? tc.function.arguments
+                : JSON.stringify(tc.function?.arguments || {});
+            if (buildRe.test(args)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 // Keeps only the last `maxPairs` assistant/tool pairs from the current round,
 // dropping older ones so the context window doesn't overflow on long tasks.
 // System message, history messages, and the initial user message are preserved.
@@ -514,7 +539,18 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
 - If a command fails (exit code != 0), READ the error output, diagnose the root cause, fix it with edit_file/write_local_file, and RE-RUN the command. Do NOT stop or describe — fix and retry.
 - Never end with phrases like "I'll try", "let me try", "vou tentar", "vou ajustar" — execute the action immediately instead.
 - Only finish when: (a) a build/test command exited with code 0, OR (b) the task explicitly does not require a build.
-- When truly done, respond with a one-line summary.`
+- When truly done, respond with a one-line summary.
+
+# CRITICAL — BUILD/PACKAGE TASKS
+When the user task mentions ANY of: build, compile, package, deploy, release, .vsix, npm run, gerar versao, marketplace — you MUST follow this exact sequence and NOT stop until it completes:
+1. read_local_file("package.json") to see current scripts and version
+2. edit_file if version bump is needed
+3. run_command for the appropriate build (npm run build, vsce package, npm run package, etc.)
+4. After the command finishes, use list_directory or read_local_file to VERIFY the output artifact (.vsix, dist/, etc.) actually exists on disk
+5. Only then declare done
+
+NEVER do multiple consecutive file edits without running the build between them. After ANY edit of package.json (or similar config), the NEXT tool call MUST be run_command.
+NEVER assume a file was created without verifying with list_directory or read_local_file.`
         : '';
     // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
@@ -661,13 +697,20 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     // plano de execucao. O plano vira contexto adicional injetado como
     // mensagem do usuario que o local executa passo a passo.
     if (hybridActive) {
-        const planSystem = 'You are a senior software architect helping a smaller local LLM execute a coding task. Produce a CONCISE, ACTIONABLE plan in 5-10 bullet steps. Each step must name specific files to create/edit and the exact action. No prose, no explanations — just the numbered plan. Keep under 300 words.';
-        const planUser = `User request:\n${userPrompt}\n\nWorkspace context:\n${contextBlock.slice(0, 1500)}\n\nProduce the plan now.`;
-        const plan = await askSupport('plan', planSystem, planUser, 600);
+        const planSystem = `You are a senior architect helping a small local LLM (14B, 2048 ctx) execute a coding task. The local model has very limited context space — every token in your plan reduces what it has to work with.
+
+Output a NUMBERED list of 3-7 short steps. STRICT format rules:
+- Use RELATIVE paths only (e.g. "package.json", "src/extension.ts") — never absolute paths
+- Each step: one line, one tool call (verb + relative path + brief why)
+- No prose, no headers, no introduction, no markdown bold/italic
+- Total output under 200 words
+- If the task needs a build/compile/package — explicitly include the run_command step (e.g. "3. run_command: npm run build") and a verification step (e.g. "4. list_directory to confirm output exists")`;
+        const planUser = `User request:\n${userPrompt}\n\nProject root: ${defaultCwd.split(/[/\\]/).pop()}\n\nGenerate the plan now (under 200 words, relative paths only).`;
+        const plan = await askSupport('plan', planSystem, planUser, 350);
         if (plan) {
             roundMessages.push({
                 role: 'user',
-                content: `[HYBRID PLAN from support model] Follow this plan step by step. Use tools to execute each item:\n\n${plan}`,
+                content: `[PLAN] Execute each step in order using tools:\n${plan}`,
             });
         }
     }
@@ -942,17 +985,27 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 const errorContext = (lastCommandFailed && counters.lastErrorFiles.length > 0)
                     ? `\n\nERROR LOCATION (focus here):\n  Files: ${counters.lastErrorFiles.join(', ')}\n  Message: ${counters.lastErrorSummary || '(see command output)'}`
                     : '';
+                // Detector "build task without any run_command": when the user
+                // prompt mentions build/package/compile/deploy/vsix/release but
+                // the model edited files without ever running a build command.
+                // Common failure: model bumps version in package.json and stops.
+                const taskRequiresBuild = effectiveAutoMode
+                    && /\b(build|compile|package|deploy|vsix|release|gerar versao|marketplace)\b/i.test(userPrompt);
+                const noCommandRunYet = counters.filesWritten > 0 && !lastBuildAttempted(roundMessages);
+                const buildPendingNoCommand = taskRequiresBuild && noCommandRunYet;
                 const nudge = dumpedInsteadOfWriting
                     ? 'You wrote code in the chat instead of saving it to a file. The user cannot use code in the chat. Use write_local_file (for new/full-rewrite) or edit_file (for partial edits) NOW to save that code to disk. Do not paste code in your reply — call the tool.'
                     : wrongFileEdit
                         ? `WRONG FILE. You edited "${counters.lastEditedFile}" but the error is in "${counters.lastErrorFiles[0]}". Read "${counters.lastErrorFiles[0]}" now and fix THAT file. The bug is not where you were looking.${errorContext}`
-                        : lastCommandFailed
-                            ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
-                            : buildNotYetPassed
-                                ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                                : effectiveAutoMode
-                                    ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
-                                    : 'continue';
+                        : buildPendingNoCommand
+                            ? `You edited files but have NOT yet run the build/package command that the user task requires. Call run_command now with the appropriate build command (e.g. "npm run build", "vsce package", "npm run package"). After it finishes, use list_directory to verify the output artifact exists. Do NOT keep editing without running the build.`
+                            : lastCommandFailed
+                                ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
+                                : buildNotYetPassed
+                                    ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
+                                    : effectiveAutoMode
+                                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
+                                        : 'continue';
                 roundMessages.push({ role: 'assistant', content: text });
                 roundMessages.push({ role: 'user', content: nudge });
                 lastToolName = '';

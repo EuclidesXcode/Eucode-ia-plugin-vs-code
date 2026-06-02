@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.11
+
+Foco: melhorar comportamento do AUTO+HYBRID em tarefas de build/package onde o modelo local (14B, 2048 ctx) parava apos editar arquivos sem rodar o comando de build.
+
+- **System prompt AUTO reforcado** com regras CRITICAS para tarefas de build/package/compile/deploy/vsix/release: sequencia obrigatoria de read → edit → run_command → verify; proibido editar duas vezes consecutivas sem rodar build no meio; proibido declarar pronto sem verificar artefato no disco
+- **Plano HYBRID mais conciso**: novo system prompt instrui o pago a gerar 3-7 steps em paths RELATIVOS, sob 200 palavras (antes podia gerar 1000+ tokens com paths absolutos repetidos). Cap de output reduzido de 600 para 350 tokens — sobra ~700 tokens a mais no contexto do local
+- **Plano HYBRID exige step de build + verificacao** quando a tarefa pede build/compile/package: instrucao explicita pro pago incluir `run_command` + `list_directory` no plano
+- **Novo detector `buildPendingNoCommand`** como safety net: se o prompt do usuario mentions build/package/compile/deploy/vsix/release/marketplace E o modelo editou arquivos sem rodar nenhum comando de build, o nudge agora e especifico: "Voce editou arquivos mas NAO rodou o comando de build. Execute run_command agora com o comando apropriado. Depois use list_directory para verificar o artefato"
+- Novo helper `lastBuildAttempted(messages)`: varre as tool_calls da rodada procurando `run_command` com termos de build (build, compile, package, tsc, vsce, webpack, rollup, esbuild, jest, vitest, pytest, cargo build, go build, mvn, gradle)
+
 ## 0.8.6
 
 - **NOVO: Modo CHAT** — segmented control DEV/CHAT no dropdown de Modos. Em CHAT o agente conversa livremente sem tools de codigo, sem RAG, sem memoria de sessao. Util para perguntas gerais, analise de sites (com web_search se habilitado), brainstorming
