@@ -365,7 +365,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
             if (message?.command !== 'user_input' || !message.text) { return; }
 
-            this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image });
+            const userMode: 'dev' | 'chat' = message.chatMode ? 'chat' : 'dev';
+            this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image, mode: userMode });
 
             const endpoint = buildApiEndpoint(this._settings);
             const authHeaders = buildAuthHeader(this._settings);
@@ -377,7 +378,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 const historySummary = buildHistorySummary(this._sessionHistory.slice(0, -1));
                 const systemWithHistory = [SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
                 response = await callAIWithVision(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory, activeModel);
-                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now(), hasImage: true, imageSummary: response.slice(0, 300) });
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now(), hasImage: true, imageSummary: response.slice(0, 300), mode: userMode });
             } else {
                 notify('Mapeando workspace...');
                 const ctx = collectWorkspaceContext();
@@ -458,7 +459,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     openFileInEditor,
                     hybridConfig,
                     notifyHybridActivity,
-                    this._historyManager.getActiveId()
+                    this._historyManager.getActiveId(),
+                    !!message.chatMode
                 );
                 this._abortController = null;
                 this._injectMessage = null;
@@ -468,10 +470,10 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 }
                 // Truncate long responses before saving to history to avoid inflating future prompts.
                 const historySummary = response.length > 400 ? response.slice(0, 400) + '...' : response;
-                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: historySummary, timestamp: Date.now() });
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: historySummary, timestamp: Date.now(), mode: userMode });
             }
 
-            webviewView.webview.postMessage({ command: 'agent_response', text: response });
+            webviewView.webview.postMessage({ command: 'agent_response', text: response, mode: userMode });
         }, undefined, this._context.subscriptions);
     }
 }

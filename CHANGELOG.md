@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.6
+
+- **NOVO: Modo CHAT** — segmented control DEV/CHAT no dropdown de Modos. Em CHAT o agente conversa livremente sem tools de codigo, sem RAG, sem memoria de sessao. Util para perguntas gerais, analise de sites (com web_search se habilitado), brainstorming
+- Em CHAT, AUTO e HYBRID sao automaticamente desabilitados (visualmente e funcionalmente)
+- System prompt dedicado em CHAT_SYSTEM_PROMPT — conversacional, sem ceremonia de coding agent
+- effectiveAutoMode / effectiveHybridConfig: CHAT forca ambos para off no runAgentLoop sem afetar a preferencia do usuario (volta ao estado anterior ao retornar para DEV)
+- Tools filtradas em CHAT: so web_search disponivel (se habilitado pelo usuario), tools de leitura/escrita/execucao escondidas
+- Reorganizacao do header: novo dropdown "Modos" agrupa DEV/CHAT + Auto + Hybrid em um unico botao limpo. Antes eram 2 botoes separados (Hybrid e Auto BETA) no header
+- BETA removido do botao Auto
+- Resumo compacto no botao Modos mostra o estado ativo (ex: "Modos · AUTO · HYBRID" ou "Modos · CHAT")
+- Badge "CHAT" + borda lateral azul-violeta nas mensagens enviadas em modo CHAT, para diferenciar visualmente no historico
+- HistoryEntry estendido com campo opcional `mode` ('dev' | 'chat') — persistido entre sessoes
+- agent_response inclui mode na mensagem para o webview pintar a bubble do agente
+
+## 0.8.5
+
+- Republicacao de 0.8.4 com bump de versao (sem mudancas funcionais)
+
 ## 0.8.4
 
 - **NOVO: Memoria persistente por sessao** em `.eucode/memory/session_<id>.json` com 3 secoes: `stack` (detectado automaticamente), `approvedCommands` (persistidos), `decisions` (notas)

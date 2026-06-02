@@ -102,6 +102,111 @@
         }
         .header-btn.disabled:hover { border-color: #1e2a3a; background: none; }
 
+        /* ── Modes dropdown ── */
+        .modes-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .modes-summary {
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #6a7f99;
+            margin-left: 4px;
+        }
+        .modes-summary.has-active { color: #22c55e; }
+        .modes-summary.chat { color: #8b9eff; }
+        .modes-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            min-width: 280px;
+            background: #0a0a15;
+            border: 1px solid #1e2a3a;
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            z-index: 200;
+        }
+        .modes-dropdown.open { display: block; }
+        .modes-section-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #3a5a7a;
+            margin-bottom: 6px;
+            margin-top: 4px;
+        }
+        .modes-segmented {
+            display: flex;
+            border: 1px solid #1e2a3a;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+        .modes-seg-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: #6a7f99;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            padding: 8px 10px;
+            transition: background 0.12s, color 0.12s;
+        }
+        .modes-seg-btn:hover { background: #0d1a2e; color: #c9d1d9; }
+        .modes-seg-btn.active {
+            background: #0d1a2e;
+            color: #3a7bd5;
+        }
+        .modes-seg-btn[data-mode="chat"].active {
+            color: #8b9eff;
+            background: #0d0f26;
+        }
+        .modes-toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 4px;
+            border-radius: 4px;
+        }
+        .modes-toggle-row.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+        .modes-toggle-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            flex: 1;
+        }
+        .modes-toggle-name {
+            font-size: 12px;
+            color: #c9d1d9;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .modes-toggle-desc {
+            font-size: 10px;
+            color: #4a5568;
+            line-height: 1.3;
+        }
+        .modes-chat-notice {
+            margin-top: 10px;
+            padding: 8px 10px;
+            background: #0d0f26;
+            border: 1px solid #2a2f4a;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #8b9eff;
+            line-height: 1.4;
+        }
+
         /* ── Sessions panel ── */
         #sessions-panel {
             display: none;
@@ -438,6 +543,19 @@
         }
         .agent .message-label { color: #3a7bd5; }
         .user .message-label { color: #5a8ac0; }
+        .msg-mode-badge {
+            display: inline-block;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            padding: 1px 5px;
+            border-radius: 3px;
+            border: 1px solid currentColor;
+            opacity: 0.7;
+            vertical-align: middle;
+        }
+        .msg-mode-badge.chat { color: #8b9eff; border-color: #4a5a8a; background: #0d0f26; }
+        .message-row.is-chat .message-bubble { border-left: 2px solid #4a5a8a; padding-left: 12px; }
 
         .message-bubble {
             padding: 11px 15px;
@@ -1448,8 +1566,36 @@
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
-        <button id="hybrid-btn" class="header-btn" title="Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos">◆ Hybrid</button>
-        <button id="auto-btn" class="header-btn" title="Modo automatico: escreve, testa e corrige sem pedir aprovacao"><span class="mi" style="font-size:14px">bolt</span>Auto <span style="font-size:8px;opacity:0.7;letter-spacing:0.04em">BETA</span></button>
+        <div id="modes-wrapper" class="modes-wrapper">
+            <button id="modes-btn" class="header-btn" title="Modos do agente"><span class="mi" style="font-size:14px">tune</span>Modos<span id="modes-summary" class="modes-summary"></span></button>
+            <div id="modes-dropdown" class="modes-dropdown">
+                <div class="modes-section-label">Tipo de interacao</div>
+                <div class="modes-segmented">
+                    <button id="mode-dev" class="modes-seg-btn active" data-mode="dev">DEV</button>
+                    <button id="mode-chat" class="modes-seg-btn" data-mode="chat">CHAT</button>
+                </div>
+                <div class="modes-section-label">Modos do agente</div>
+                <label class="modes-toggle-row">
+                    <div class="modes-toggle-info">
+                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#22c55e">bolt</span>Auto</span>
+                        <span class="modes-toggle-desc">Escreve, testa e corrige sem pedir aprovacao</span>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="mode-auto"><span class="slider"></span></label>
+                </label>
+                <label class="modes-toggle-row">
+                    <div class="modes-toggle-info">
+                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#00d4ff">diamond</span>Hybrid</span>
+                        <span class="modes-toggle-desc">IA paga como suporte estrategico ao local</span>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="mode-hybrid"><span class="slider"></span></label>
+                </label>
+                <div id="modes-chat-notice" class="modes-chat-notice" style="display:none;">
+                    Modo CHAT: o agente conversa livremente sem acessar arquivos ou comandos. Auto e Hybrid ficam desabilitados.
+                </div>
+            </div>
+        </div>
+        <button id="hybrid-btn" class="hidden" style="display:none"></button>
+        <button id="auto-btn" class="hidden" style="display:none"></button>
         <button id="sessions-btn" class="header-btn"><span class="mi" style="font-size:14px">forum</span>Sessoes</button>
         <button id="new-session-btn" class="header-btn"><span class="mi" style="font-size:14px">add</span>Novo chat</button>
     </div>
@@ -1782,57 +1928,104 @@
                 : '<span class="mi" style="font-size:16px">send</span>Enviar';
         }
 
-        // ── Auto mode toggle ──
+        // ── Modes dropdown (DEV/CHAT + AUTO toggle + HYBRID toggle) ──
+        // Estado:
+        //   chatMode    — quando true, agente conversa livre sem tools de codigo
+        //   autoMode    — escreve/testa/corrige sem pedir aprovacao (so em DEV)
+        //   hybridMode  — IA paga como suporte (so em DEV, gated por master switch)
+        let chatMode = false;
+        let hybridMode = false;
+
+        const modesBtn = document.getElementById('modes-btn');
+        const modesDropdown = document.getElementById('modes-dropdown');
+        const modesSummary = document.getElementById('modes-summary');
+        const modesChatNotice = document.getElementById('modes-chat-notice');
+        const modeDevBtn = document.getElementById('mode-dev');
+        const modeChatBtn = document.getElementById('mode-chat');
+        const modeAutoToggle = document.getElementById('mode-auto');
+        const modeHybridToggle = document.getElementById('mode-hybrid');
+        // Hidden compat refs for any legacy code still touching these IDs
         const autoBtn = document.getElementById('auto-btn');
-        autoBtn.addEventListener('click', () => {
-            autoMode = !autoMode;
-            autoBtn.classList.toggle('auto-active', autoMode);
-            autoBtn.title = autoMode
-                ? 'Modo automatico ATIVO — clique para desativar'
-                : 'Modo automatico: escreve, testa e corrige sem pedir aprovacao';
+        const hybridBtn = document.getElementById('hybrid-btn');
+
+        function updateModesUI() {
+            modeDevBtn.classList.toggle('active', !chatMode);
+            modeChatBtn.classList.toggle('active', chatMode);
+            modeAutoToggle.checked = autoMode && !chatMode;
+            modeHybridToggle.checked = hybridMode && !chatMode;
+
+            // In CHAT, both Auto and Hybrid are disabled visually + functionally.
+            // In DEV, Hybrid is gated by the master switch from settings.
+            const autoRow = modeAutoToggle.closest('.modes-toggle-row');
+            const hybridRow = modeHybridToggle.closest('.modes-toggle-row');
+            const hybridMasterDisabled = !savedSettings.hybridEnabled;
+
+            autoRow.classList.toggle('disabled', chatMode);
+            hybridRow.classList.toggle('disabled', chatMode || hybridMasterDisabled);
+            modesChatNotice.style.display = chatMode ? 'block' : 'none';
+
+            // Header summary chip (compact indicator next to "Modos" label)
+            const parts = [];
+            if (chatMode) { parts.push('CHAT'); }
+            else {
+                if (autoMode) { parts.push('AUTO'); }
+                if (hybridMode) { parts.push('HYBRID'); }
+            }
+            modesSummary.textContent = parts.length ? ' · ' + parts.join(' · ') : '';
+            modesSummary.classList.toggle('has-active', !chatMode && parts.length > 0);
+            modesSummary.classList.toggle('chat', chatMode);
+        }
+
+        modesBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            modesDropdown.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!modesDropdown.contains(e.target) && e.target !== modesBtn) {
+                modesDropdown.classList.remove('open');
+            }
         });
 
-        // ── Hybrid mode toggle ──
-        // Estados:
-        //   - savedSettings.hybridEnabled  = configurado nas Settings (master switch)
-        //   - hybridMode                   = ligado/desligado pelo botao do header
-        // Regra: o botao do header so pode ativar se o master switch estiver
-        // ligado nas Settings. Se o usuario desativar nas Settings, o botao
-        // tambem cai para off automaticamente.
-        let hybridMode = false;
-        const hybridBtn = document.getElementById('hybrid-btn');
-        function updateHybridBtnState() {
-            hybridBtn.classList.toggle('hybrid-active', hybridMode);
-            const disabled = !savedSettings.hybridEnabled;
-            hybridBtn.disabled = disabled;
-            hybridBtn.classList.toggle('disabled', disabled);
-            if (disabled) {
-                hybridBtn.title = 'Modo Hybrid esta desativado nas configuracoes. Ative em Configuracoes → HYBRID antes de usar.';
-            } else {
-                hybridBtn.title = hybridMode
-                    ? 'Modo Hybrid ATIVO — IA paga atuando como suporte. Clique para desativar.'
-                    : 'Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos';
-            }
-        }
-        function syncHybridModeWithSettings() {
-            // Se o master switch estiver desligado, forca o botao para off.
-            if (!savedSettings.hybridEnabled && hybridMode) {
-                hybridMode = false;
-            }
-            updateHybridBtnState();
-        }
-        hybridBtn.addEventListener('click', () => {
+        modeDevBtn.addEventListener('click', () => { chatMode = false; updateModesUI(); });
+        modeChatBtn.addEventListener('click', () => {
+            chatMode = true;
+            // CHAT desliga Auto/Hybrid sem perder a preferencia do usuario —
+            // os toggles voltam ao estado anterior ao retornar para DEV.
+            updateModesUI();
+        });
+
+        modeAutoToggle.addEventListener('change', () => {
+            if (chatMode) { modeAutoToggle.checked = false; return; }
+            autoMode = modeAutoToggle.checked;
+            updateModesUI();
+        });
+
+        modeHybridToggle.addEventListener('change', () => {
+            if (chatMode) { modeHybridToggle.checked = false; return; }
             if (!savedSettings.hybridEnabled) {
+                modeHybridToggle.checked = false;
                 alert('Ative o modo HYBRID nas configuracoes primeiro (engrenagem → secao HYBRID).');
                 return;
             }
-            if (!savedSettings.supportApiKey && !hybridMode) {
+            if (!savedSettings.supportApiKey && modeHybridToggle.checked) {
+                modeHybridToggle.checked = false;
                 alert('Configure a API key do provedor de suporte nas configuracoes primeiro (engrenagem).');
                 return;
             }
-            hybridMode = !hybridMode;
-            updateHybridBtnState();
+            hybridMode = modeHybridToggle.checked;
+            updateModesUI();
         });
+
+        // Mantido para o codigo legado que ainda chama updateHybridBtnState()
+        // e syncHybridModeWithSettings() de outros pontos do arquivo.
+        function updateHybridBtnState() { updateModesUI(); }
+        function syncHybridModeWithSettings() {
+            if (!savedSettings.hybridEnabled && hybridMode) { hybridMode = false; }
+            updateModesUI();
+        }
+
+        // Garante estado inicial coerente
+        updateModesUI();
 
         // ── Sessions panel ──
         sessionsBtn.addEventListener('click', () => sessionsPanel.classList.toggle('open'));
@@ -2067,7 +2260,7 @@
         function restoreHistory(entries) {
             const rows = chatContainer.querySelectorAll('.message-row');
             if (rows.length === 1) { rows[0].remove(); }
-            entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent'));
+            entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent', false, null, e.mode || null));
         }
 
         // ── Image ──
@@ -2117,9 +2310,9 @@
         }
 
         // ── Messages ──
-        function appendMessage(text, role, isLoading = false, imageDataUrl = null) {
+        function appendMessage(text, role, isLoading = false, imageDataUrl = null, mode = null) {
             const row = document.createElement('div');
-            row.className = `message-row ${role}`;
+            row.className = `message-row ${role}` + (mode === 'chat' ? ' is-chat' : '');
 
             const meta = document.createElement('div');
             meta.className = 'message-meta';
@@ -2135,6 +2328,14 @@
             const label = document.createElement('span');
             label.className = 'message-label';
             label.textContent = role === 'user' ? 'Voce' : 'Eucode IA';
+
+            if (mode === 'chat') {
+                const badge = document.createElement('span');
+                badge.className = 'msg-mode-badge chat';
+                badge.textContent = 'CHAT';
+                label.appendChild(document.createTextNode(' '));
+                label.appendChild(badge);
+            }
 
             if (role === 'agent') {
                 meta.appendChild(avatar);
@@ -2582,7 +2783,7 @@
                 const rows = chatContainer.querySelectorAll('.message-row');
                 rows.forEach(r => r.remove());
                 if (msg.entries && msg.entries.length > 0) {
-                    msg.entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent'));
+                    msg.entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent', false, null, e.mode || null));
                 } else {
                     appendMessage('Ola! Como posso ajudar?', 'agent');
                 }
@@ -2752,6 +2953,23 @@
                 // Pode ser o item ativo de resposta (se ainda nao foi congelado pelo CLEAR)
                 const activeResponse = tl?.querySelector('.tl-item.active.tl-response');
                 const loadingBubble = chatContainer.querySelector('[data-loading]');
+
+                // Marca a row do agente como is-chat e adiciona o badge no label
+                // quando a resposta veio do modo CHAT.
+                if (msg.mode === 'chat' && loadingBubble) {
+                    const row = loadingBubble.closest('.message-row');
+                    if (row) {
+                        row.classList.add('is-chat');
+                        const lbl = row.querySelector('.message-label');
+                        if (lbl && !lbl.querySelector('.msg-mode-badge')) {
+                            const badge = document.createElement('span');
+                            badge.className = 'msg-mode-badge chat';
+                            badge.textContent = 'CHAT';
+                            lbl.appendChild(document.createTextNode(' '));
+                            lbl.appendChild(badge);
+                        }
+                    }
+                }
 
                 // SEMPRE finalizar qualquer item ativo de status que NAO seja
                 // a resposta em streaming. Cobre o caso onde o loop retorna sem
@@ -3416,7 +3634,7 @@
             const userDisplay = expanded
                 ? `${expanded.displayLabel}${expanded.autoMode ? ' ⚡' : ''}${expanded.hybridMode ? ' ◆' : ''} → ${text}`
                 : rawText;
-            appendMessage(userDisplay, 'user', false, imageDataUrl);
+            appendMessage(userDisplay, 'user', false, imageDataUrl, chatMode ? 'chat' : null);
             input.value = '';
             input.style.height = 'auto';
             sendBtn.disabled = true;
@@ -3437,8 +3655,9 @@
                 command: 'user_input',
                 text: text || '(analise esta imagem)',
                 image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
-                autoMode: effectiveAuto,
-                hybridMode: effectiveHybrid,
+                autoMode: chatMode ? false : effectiveAuto,
+                hybridMode: chatMode ? false : effectiveHybrid,
+                chatMode,
             });
 
             pendingImage = null;

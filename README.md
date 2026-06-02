@@ -73,6 +73,36 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 
 ---
 
+## Modo CHAT (conversa livre, sem tools de codigo)
+
+No header tem um botao **Modos** que abre um dropdown com um segmented control **DEV | CHAT** + toggles de Auto e Hybrid. Em CHAT, o agente vira um assistente conversacional puro — sem acessar arquivos do projeto, sem executar comandos, sem RAG nem memoria de sessao.
+
+### Quando usar
+
+- Tirar duvidas gerais (programacao, ferramentas, conceitos)
+- Brainstorming sobre arquitetura ou design antes de codar
+- Pedir analise de URLs (com a tool `web_search` habilitada)
+- Conversar sobre qualquer coisa fora do projeto
+
+### Comportamento
+
+- **Tools de codigo escondidas** — o modelo nao ve `read_local_file`, `edit_file`, `run_command`, etc. So `web_search` fica disponivel (se voce habilitou nas configs)
+- **Sem RAG, sem memoria, sem contexto de workspace** — CHAT e isolado da tarefa de dev
+- **Auto e Hybrid sao desligados automaticamente** ao entrar em CHAT, sem perder sua preferencia. Ao voltar para DEV, o estado anterior e restaurado
+- **Visual diferenciado** — mensagens em CHAT recebem badge `CHAT` e borda lateral azul-violeta, para diferenciar no historico misturado com tarefas DEV
+- **Mesmo modelo local** — usa o mesmo provider configurado nas configs (LM Studio, Ollama, Anthropic, etc). Sem custo adicional
+
+### Como ativar
+
+1. Clique no botao **Modos** no header
+2. Selecione **CHAT** no segmented control
+3. Os toggles Auto e Hybrid ficam acinzentados — o indicador compacto ao lado do botao mostra `Modos · CHAT`
+4. Mande uma mensagem normalmente
+
+Para voltar a programar, clique em **DEV** no mesmo dropdown.
+
+---
+
 ## Recursos do Editor (autocomplete + fix inline)
 
 Alem do agente conversacional, o Eucode IA oferece duas integracoes diretas com o editor — sem precisar abrir o chat. Ambas sao opt-in (desligadas por padrao) e configuraveis no painel de configuracoes na secao colapsavel **Recursos do Editor**.
@@ -534,6 +564,14 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.8.6
+- **NOVO: Modo CHAT** — toggle DEV/CHAT no novo dropdown "Modos" do header. Em CHAT o agente conversa livremente, sem acessar arquivos ou comandos. Util para perguntas gerais, brainstorming, analise de URL (com web_search se habilitado)
+- Em CHAT: Auto e Hybrid sao automaticamente desligados (sem perder a preferencia do usuario — volta ao estado anterior em DEV)
+- Tools de codigo escondidas em CHAT: so web_search disponivel
+- Badge "CHAT" + borda lateral azul-violeta nas mensagens enviadas em modo CHAT
+- Header reorganizado: botoes Hybrid e Auto agora ficam em um unico dropdown "Modos" com toggles individuais, indicador compacto do estado ativo
+- BETA removido do botao Auto
 
 ### 0.8.4
 - **NOVO: Memoria persistente por sessao** — `.eucode/memory/session_<id>.json` com stack detectado, comandos aprovados e decisoes; resumo injetado no system prompt + tools `memory_remember` / `memory_read`

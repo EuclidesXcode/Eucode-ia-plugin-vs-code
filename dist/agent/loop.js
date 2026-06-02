@@ -501,8 +501,13 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId) {
-    const autoBlock = autoMode
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false) {
+    // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
+    // applied, no RAG, no session memory injection, no workspace context.
+    // The system prompt is just the conversational instructions.
+    const effectiveAutoMode = chatMode ? false : autoMode;
+    const effectiveHybridConfig = chatMode ? undefined : hybridConfig;
+    const autoBlock = effectiveAutoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
 - Execute the task end-to-end without asking the user anything.
 - After writing files, ALWAYS run a build/test command to verify (npm run build, npm test, tsc, etc.).
@@ -511,26 +516,27 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
 - Only finish when: (a) a build/test command exited with code 0, OR (b) the task explicitly does not require a build.
 - When truly done, respond with a one-line summary.`
         : '';
-    // Optional RAG: query vector DB and prepend relevant context
+    // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
-    if (ragEndpoint && ragCollection) {
+    if (!chatMode && ragEndpoint && ragCollection) {
         const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
         ragContext = (0, rag_client_1.formatRagContext)(ragResults);
     }
-    // Session memory: detect stack on first turn (idempotent) and inject
-    // a compact summary into the system prompt. The full memory is
-    // accessible to the agent via the memory_remember tool when needed.
+    // Session memory: detect stack + inject summary (skipped in CHAT — chat mode
+    // is meant to be a free-form conversation outside of project context).
     let memorySummary = '';
-    if (sessionId) {
+    if (!chatMode && sessionId) {
         (0, memory_service_1.detectAndRememberStack)(sessionId);
         memorySummary = (0, memory_service_1.buildMemorySummary)(sessionId);
     }
-    const systemContent = [prompt_1.SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
+    const systemContent = chatMode
+        ? prompt_1.CHAT_SYSTEM_PROMPT
+        : [prompt_1.SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode include only the last 1 history pair so the model knows what
     // the user was working on — skipping history entirely left it context-blind.
     // The round's own tool chain still grows large, so keep it to 1 pair max.
     const historySlice = sessionHistory.slice(0, -1);
-    const priorMessages = autoMode
+    const priorMessages = effectiveAutoMode
         ? (0, history_service_1.buildMessagesFromHistory)(historySlice.slice(-2)) // last user+assistant pair
         : (0, history_service_1.buildMessagesFromHistory)(historySlice);
     const roundMessages = [
@@ -558,7 +564,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         lastErrorSummary: '',
         lastEditedFile: '',
     };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',
@@ -569,7 +575,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         'Generating response...',
     ];
     let lastToolName = '';
-    const maxSteps = autoMode ? 40 : constants_2.MAX_AGENT_STEPS;
+    const maxSteps = effectiveAutoMode ? 40 : constants_2.MAX_AGENT_STEPS;
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
@@ -597,7 +603,8 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         });
     };
     // ── HYBRID helpers ─────────────────────────────────────────────────
-    const hybridActive = !!(hybridConfig?.enabled && hybridConfig.apiKey);
+    // CHAT mode forces HYBRID off via effectiveHybridConfig (set to undefined).
+    const hybridActive = !!(effectiveHybridConfig?.enabled && effectiveHybridConfig.apiKey);
     const HYBRID_STATUS_BY_REASON = {
         plan: 'Planejando estrategia da tarefa',
         verify_write: 'Verificando se a escrita foi feita corretamente',
@@ -607,27 +614,27 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
         recover_stop: 'Local travou — pedindo plano de recuperacao',
     };
     async function askSupport(reason, system, user, maxTokens = 800) {
-        if (!hybridActive || !hybridConfig) {
+        if (!hybridActive || !effectiveHybridConfig) {
             return null;
         }
         const statusText = HYBRID_STATUS_BY_REASON[reason];
         onHybridActivity?.({
-            provider: hybridConfig.provider,
+            provider: effectiveHybridConfig.provider,
             reason,
             statusText,
             success: false, // pending; UI will update on second event
         });
         const res = await (0, hybrid_client_1.callSupportProvider)({
-            provider: hybridConfig.provider,
-            apiKey: hybridConfig.apiKey,
-            model: hybridConfig.model,
+            provider: effectiveHybridConfig.provider,
+            apiKey: effectiveHybridConfig.apiKey,
+            model: effectiveHybridConfig.model,
             system,
             user,
             maxTokens,
         });
         const ok = !res.error && res.text.length > 0;
         onHybridActivity?.({
-            provider: hybridConfig.provider,
+            provider: effectiveHybridConfig.provider,
             reason,
             statusText,
             responseText: res.text,
@@ -690,9 +697,14 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             ? statusAfterTool[lastToolName]
             : thinkingStatus[step % thinkingStatus.length];
         onStatus(thinking);
-        const activeTools = enabledTools?.length
+        // In CHAT mode, only expose web_search (and only if the user
+        // explicitly enabled it). All code-editing tools are hidden.
+        const baseTools = enabledTools?.length
             ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
             : tools_definition_2.TOOLS;
+        const activeTools = chatMode
+            ? baseTools.filter(t => t.name === 'web_search')
+            : baseTools;
         // Preventive pruning calibrated for a 2048-token context window.
         // Only prune when significantly over budget, keeping the most recent pairs
         // so the model retains context of what it just read/did.
@@ -705,7 +717,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             const estimatedTokens = Math.floor(totalChars / 4);
             if (estimatedTokens > 1200) {
                 // Keep more pairs in auto mode so model doesn't lose what it just read
-                pruneRoundToolMessages(roundMessages, autoMode ? 3 : 2);
+                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
             }
         }
         // Only stream text to UI when there's a chance this is the final reply.
@@ -834,7 +846,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                 }
             }
             // In auto mode keep fewer pairs since there's no history budget to spare.
-            pruneRoundToolMessages(roundMessages, autoMode ? 3 : 6);
+            pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 6);
         }
         else if (result.responseText !== undefined) {
             const text = result.responseText || '';
@@ -875,11 +887,11 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             //   - never ran a successful build
             //   - dumped code in chat instead of using write_local_file
             // In all cases: push the model to act, don't return to the user.
-            const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
-            const lastCommandFailed = autoMode && counters.lastCommandFailed;
-            const buildNotYetPassed = autoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
-            const dumpedInsteadOfWriting = autoMode && dumpedCodeInChat;
-            if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+            const modelIsPlanning = effectiveAutoMode && counters.filesWritten === 0 && !lastToolName;
+            const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
+            const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
+            const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
+            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
                 // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
                 // Em vez de bater no cap de 5 e desistir, no penultimo
@@ -938,7 +950,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
                             ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
                             : buildNotYetPassed
                                 ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                                : autoMode
+                                : effectiveAutoMode
                                     ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
                                     : 'continue';
                 roundMessages.push({ role: 'assistant', content: text });
@@ -950,7 +962,7 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
             // In auto mode: before returning, check editor diagnostics.
             // Only relevant if the model actually wrote/edited files this round.
             // Wait 2s for the TypeScript language server to process the new files.
-            if (autoMode && counters.filesWritten > 0) {
+            if (effectiveAutoMode && counters.filesWritten > 0) {
                 await new Promise(r => setTimeout(r, 2000));
                 const diag = onGetDiagnostics();
                 // Only block on actual errors — warnings are ignored in auto mode

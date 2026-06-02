@@ -8,6 +8,9 @@ export interface HistoryEntry {
     timestamp: number;
     hasImage?: boolean;
     imageSummary?: string;
+    // 'chat' when the user is in CHAT mode (conversational, no tools),
+    // omitted (or 'dev') for the default coding-agent flow.
+    mode?: 'dev' | 'chat';
 }
 
 const HISTORY_FILE = path.join(process.env.HOME || '/tmp', '.eucode-ia-history.json');

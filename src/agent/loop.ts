@@ -11,7 +11,7 @@ import { listDirectory, readLocalFile, writeLocalFile, editLocalFile } from '../
 import { searchInWorkspace, runGit, isCommandBlocked, isGitReadOnly } from '../tools/shell-tools';
 import { webSearch } from '../tools/web-tools';
 import { runCommandTool } from './tools-definition';
-import { SYSTEM_PROMPT } from './prompt';
+import { SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT } from './prompt';
 import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS } from '../utils/constants';
 import { resolveFilePath } from '../utils/validation';
@@ -540,9 +540,16 @@ export async function runAgentLoop(
     onFileTouched?: (absolutePath: string) => void,
     hybridConfig?: HybridConfig,
     onHybridActivity?: (evt: HybridActivityEvent) => void,
-    sessionId?: string
+    sessionId?: string,
+    chatMode: boolean = false
 ): Promise<string> {
-    const autoBlock = autoMode
+    // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
+    // applied, no RAG, no session memory injection, no workspace context.
+    // The system prompt is just the conversational instructions.
+    const effectiveAutoMode = chatMode ? false : autoMode;
+    const effectiveHybridConfig = chatMode ? undefined : hybridConfig;
+
+    const autoBlock = effectiveAutoMode
         ? `\nAUTO MODE ACTIVE — strict rules:
 - Execute the task end-to-end without asking the user anything.
 - After writing files, ALWAYS run a build/test command to verify (npm run build, npm test, tsc, etc.).
@@ -552,28 +559,29 @@ export async function runAgentLoop(
 - When truly done, respond with a one-line summary.`
         : '';
 
-    // Optional RAG: query vector DB and prepend relevant context
+    // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
-    if (ragEndpoint && ragCollection) {
+    if (!chatMode && ragEndpoint && ragCollection) {
         const ragResults = await queryRag(ragEndpoint, ragCollection, userPrompt);
         ragContext = formatRagContext(ragResults);
     }
 
-    // Session memory: detect stack on first turn (idempotent) and inject
-    // a compact summary into the system prompt. The full memory is
-    // accessible to the agent via the memory_remember tool when needed.
+    // Session memory: detect stack + inject summary (skipped in CHAT — chat mode
+    // is meant to be a free-form conversation outside of project context).
     let memorySummary = '';
-    if (sessionId) {
+    if (!chatMode && sessionId) {
         detectAndRememberStack(sessionId);
         memorySummary = buildMemorySummary(sessionId);
     }
 
-    const systemContent = [SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
+    const systemContent = chatMode
+        ? CHAT_SYSTEM_PROMPT
+        : [SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode include only the last 1 history pair so the model knows what
     // the user was working on — skipping history entirely left it context-blind.
     // The round's own tool chain still grows large, so keep it to 1 pair max.
     const historySlice = sessionHistory.slice(0, -1);
-    const priorMessages = autoMode
+    const priorMessages = effectiveAutoMode
         ? buildMessagesFromHistory(historySlice.slice(-2))  // last user+assistant pair
         : buildMessagesFromHistory(historySlice);
     const roundMessages: Message[] = [
@@ -608,7 +616,7 @@ export async function runAgentLoop(
     const toolHandlers = buildToolHandlers(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
-        onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands,
+        onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands,
         fileCache, dirCache, counters, onFileTouched, sessionId
     );
 
@@ -623,7 +631,7 @@ export async function runAgentLoop(
     ];
 
     let lastToolName = '';
-    const maxSteps = autoMode ? 40 : MAX_AGENT_STEPS;
+    const maxSteps = effectiveAutoMode ? 40 : MAX_AGENT_STEPS;
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
@@ -649,7 +657,8 @@ export async function runAgentLoop(
     };
 
     // ── HYBRID helpers ─────────────────────────────────────────────────
-    const hybridActive = !!(hybridConfig?.enabled && hybridConfig.apiKey);
+    // CHAT mode forces HYBRID off via effectiveHybridConfig (set to undefined).
+    const hybridActive = !!(effectiveHybridConfig?.enabled && effectiveHybridConfig.apiKey);
     const HYBRID_STATUS_BY_REASON: Record<HybridReason, string> = {
         plan: 'Planejando estrategia da tarefa',
         verify_write: 'Verificando se a escrita foi feita corretamente',
@@ -660,25 +669,25 @@ export async function runAgentLoop(
     };
 
     async function askSupport(reason: HybridReason, system: string, user: string, maxTokens = 800): Promise<string | null> {
-        if (!hybridActive || !hybridConfig) { return null; }
+        if (!hybridActive || !effectiveHybridConfig) { return null; }
         const statusText = HYBRID_STATUS_BY_REASON[reason];
         onHybridActivity?.({
-            provider: hybridConfig.provider,
+            provider: effectiveHybridConfig.provider,
             reason,
             statusText,
             success: false, // pending; UI will update on second event
         });
         const res = await callSupportProvider({
-            provider: hybridConfig.provider,
-            apiKey: hybridConfig.apiKey,
-            model: hybridConfig.model,
+            provider: effectiveHybridConfig.provider,
+            apiKey: effectiveHybridConfig.apiKey,
+            model: effectiveHybridConfig.model,
             system,
             user,
             maxTokens,
         });
         const ok = !res.error && res.text.length > 0;
         onHybridActivity?.({
-            provider: hybridConfig.provider,
+            provider: effectiveHybridConfig.provider,
             reason,
             statusText,
             responseText: res.text,
@@ -743,9 +752,14 @@ export async function runAgentLoop(
             : thinkingStatus[step % thinkingStatus.length];
         onStatus(thinking);
 
-        const activeTools = enabledTools?.length
+        // In CHAT mode, only expose web_search (and only if the user
+        // explicitly enabled it). All code-editing tools are hidden.
+        const baseTools = enabledTools?.length
             ? TOOLS.filter(t => enabledTools.includes(t.name))
             : TOOLS;
+        const activeTools = chatMode
+            ? baseTools.filter(t => t.name === 'web_search')
+            : baseTools;
 
         // Preventive pruning calibrated for a 2048-token context window.
         // Only prune when significantly over budget, keeping the most recent pairs
@@ -759,7 +773,7 @@ export async function runAgentLoop(
             const estimatedTokens = Math.floor(totalChars / 4);
             if (estimatedTokens > 1200) {
                 // Keep more pairs in auto mode so model doesn't lose what it just read
-                pruneRoundToolMessages(roundMessages, autoMode ? 3 : 2);
+                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
             }
         }
 
@@ -901,7 +915,7 @@ export async function runAgentLoop(
             }
 
             // In auto mode keep fewer pairs since there's no history budget to spare.
-            pruneRoundToolMessages(roundMessages, autoMode ? 3 : 6);
+            pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 6);
         } else if (result.responseText !== undefined) {
             const text = result.responseText || '';
 
@@ -944,12 +958,12 @@ export async function runAgentLoop(
             //   - never ran a successful build
             //   - dumped code in chat instead of using write_local_file
             // In all cases: push the model to act, don't return to the user.
-            const modelIsPlanning = autoMode && counters.filesWritten === 0 && !lastToolName;
-            const lastCommandFailed = autoMode && counters.lastCommandFailed;
-            const buildNotYetPassed = autoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
-            const dumpedInsteadOfWriting = autoMode && dumpedCodeInChat;
+            const modelIsPlanning = effectiveAutoMode && counters.filesWritten === 0 && !lastToolName;
+            const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
+            const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
+            const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
 
-            if (detectsPendingAction(text, autoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
 
                 // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
@@ -1015,7 +1029,7 @@ export async function runAgentLoop(
                             ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
                             : buildNotYetPassed
                                 ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                                : autoMode
+                                : effectiveAutoMode
                                     ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
                                     : 'continue';
 
@@ -1029,7 +1043,7 @@ export async function runAgentLoop(
             // In auto mode: before returning, check editor diagnostics.
             // Only relevant if the model actually wrote/edited files this round.
             // Wait 2s for the TypeScript language server to process the new files.
-            if (autoMode && counters.filesWritten > 0) {
+            if (effectiveAutoMode && counters.filesWritten > 0) {
                 await new Promise(r => setTimeout(r, 2000));
                 const diag = onGetDiagnostics();
                 // Only block on actual errors — warnings are ignored in auto mode
