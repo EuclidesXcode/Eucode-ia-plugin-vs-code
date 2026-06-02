@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.9.0
+
+Minor bump por mudancas arquiteturais grandes focadas em garantir o desenvolvimento continuo com modelos locais <= 10B params:
+
+**3 novos servicos especializados (foundation para Fase 1):**
+
+- `ProjectIntelService` ([src/services/project-intel.ts](src/services/project-intel.ts)): indice leve de simbolos exportados por arquivo do workspace, com cache por mtime. Resumo compacto (40 arquivos, 140 chars/linha) injetado no system prompt em cada rodada — o modelo encontra arquivos por nome de funcao/classe sem precisar ler todos. Suporta TS/JS/Python/Go/Rust nativamente, hooks para outras linguagens. Cap de 400 arquivos e 200KB/arquivo para nao explodir em monorepos
+- `ExecutionGuardService` ([src/services/execution-guard.ts](src/services/execution-guard.ts)): centraliza 6 guards de invariante que antes estavam espalhados pelo loop.ts (dumped code in chat, wrong file edit, build pending no command, command failed, build not passed, model planning). Cada guard e uma funcao pura testavel. Inclui detector de loop (mesma tool + mesmos args 3+ vezes seguidas)
+- `TaskDecomposerService` ([src/services/task-decomposer.ts](src/services/task-decomposer.ts)): detecta macro-tarefas via heuristica local + LLM pago. Quebra em 2-8 sub-tarefas auto-contidas (cada uma cabe em uma rodada do modelo local). Inclui `validateStep()` que pede ao pago para validar resultado de cada sub-tarefa antes de avancar (step validation com aprovacao/rejeicao + correctionPrompt opcional)
+
+**Slider de Intensidade HYBRID (25/50/75/100%):**
+
+- Novo controle nas configuracoes: 4 niveis de uso do LLM pago. Permite o usuario calibrar custo vs robustez
+- `25%` — Minimo: apenas recovery critico quando o modelo trava de vez
+- `50%` (default) — Equilibrado: recovery + planejamento de tarefas grandes
+- `75%` — Agressivo: adiciona validacao entre sub-tarefas (step validation)
+- `100%` — Maximo: todos os gatilhos (planejamento, verificacao de escrita, verificacao de build, recovery, validacao)
+- Cada `HybridReason` tem um threshold minimo de intensidade. `askSupport()` faz gating automatico via `hybridAllowsTrigger()`
+- Slider segmentado de 4 botoes no painel de config, hint dinamico explica o que cada nivel faz
+
+**AUTO mode mais resiliente:**
+
+- Cap de tentativas aumentado de 5 para **15**
+- Recovery via HYBRID acontece em cada multiplo de 4 (tentativas 4, 8, 12) em vez de apenas no penultimo strike
+- Mensagem de recovery inclui contador `Tentativa N/15` para o pago entender a urgencia
+
+**ProjectIntel injetado no system prompt:**
+
+- Antes do contextBlock e ragContext, o modelo recebe lista compacta de simbolos do projeto
+- Cabecalho `# PROJECT INDEX (N files indexed)` seguido de `path — symA, symB, symC` por arquivo
+- Skip em CHAT mode (irrelevante para conversa livre)
+
 ## 0.8.11
 
 Foco: melhorar comportamento do AUTO+HYBRID em tarefas de build/package onde o modelo local (14B, 2048 ctx) parava apos editar arquivos sem rodar o comando de build.

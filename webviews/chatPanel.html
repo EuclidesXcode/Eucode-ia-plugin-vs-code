@@ -374,6 +374,37 @@
         .editor-feature-name { font-size: 12px; color: #c9d1d9; font-weight: 500; }
         .editor-feature-desc { font-size: 10px; color: #4a5568; line-height: 1.35; }
 
+        .hybrid-intensity-row {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #00d4ff22;
+        }
+        .hybrid-intensity-segmented {
+            display: flex;
+            border: 1px solid #00d4ff44;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .hybrid-int-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: #6a90b0;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            padding: 7px 4px;
+            transition: background 0.12s, color 0.12s;
+            border-right: 1px solid #00d4ff22;
+        }
+        .hybrid-int-btn:last-child { border-right: none; }
+        .hybrid-int-btn:hover { background: #001a26; color: #c9e8f5; }
+        .hybrid-int-btn.active {
+            background: #00d4ff22;
+            color: #00d4ff;
+        }
+
         .cmd-scope-row {
             display: flex;
             flex-direction: column;
@@ -1749,6 +1780,19 @@
                 <input id="config-hybrid-key" class="config-input mono" type="password" placeholder="API key do provedor de suporte" spellcheck="false" autocomplete="off">
                 <input id="config-hybrid-model" class="config-input mono" type="text" placeholder="Modelo (vazio usa o padrao do provedor)" spellcheck="false" autocomplete="off">
                 <div class="config-hint" id="config-hybrid-hint">Padrao: claude-sonnet-4-6</div>
+
+                <div class="hybrid-intensity-row">
+                    <div class="config-label" style="color:#00d4ff;margin-bottom:6px;">Intensidade do suporte</div>
+                    <div class="hybrid-intensity-segmented">
+                        <button type="button" class="hybrid-int-btn" data-val="25">25%</button>
+                        <button type="button" class="hybrid-int-btn" data-val="50">50%</button>
+                        <button type="button" class="hybrid-int-btn" data-val="75">75%</button>
+                        <button type="button" class="hybrid-int-btn" data-val="100">100%</button>
+                    </div>
+                    <div class="config-hint" id="config-hybrid-intensity-hint" style="margin-top:6px;color:#7090b0;">
+                        <strong>50%</strong> — Recovery + planejamento de tarefas grandes.
+                    </div>
+                </div>
             </div>
         </div>
         <div class="config-actions">
@@ -2130,6 +2174,28 @@
         const configHybridKey = document.getElementById('config-hybrid-key');
         const configHybridModel = document.getElementById('config-hybrid-model');
         const configHybridHint = document.getElementById('config-hybrid-hint');
+        const configHybridIntensityHint = document.getElementById('config-hybrid-intensity-hint');
+        const hybridIntBtns = Array.from(document.querySelectorAll('.hybrid-int-btn'));
+        let selectedHybridIntensity = 50;
+        const HYBRID_INTENSITY_DESC = {
+            25:  'Minimo — apenas recovery critico (modelo travado).',
+            50:  'Equilibrado — recovery + planejamento de tarefas grandes.',
+            75:  'Agressivo — adiciona validacao entre sub-tarefas.',
+            100: 'Maximo — todos os gatilhos (planejamento, verificacao, recovery, validacao).',
+        };
+        function updateHybridIntensityUI() {
+            hybridIntBtns.forEach(b => {
+                const val = Number(b.getAttribute('data-val'));
+                b.classList.toggle('active', val === selectedHybridIntensity);
+            });
+            configHybridIntensityHint.innerHTML = `<strong>${selectedHybridIntensity}%</strong> — ${HYBRID_INTENSITY_DESC[selectedHybridIntensity] || ''}`;
+        }
+        hybridIntBtns.forEach(b => {
+            b.addEventListener('click', () => {
+                selectedHybridIntensity = Number(b.getAttribute('data-val'));
+                updateHybridIntensityUI();
+            });
+        });
 
         const configInlineCompletion = document.getElementById('config-inline-completion');
         const configFixWithEucode = document.getElementById('config-fix-with-eucode');
@@ -2228,6 +2294,9 @@
                 configHybridModel.value = savedSettings.supportModel || '';
                 configHybridRows.style.display = configHybridEnabled.checked ? 'flex' : 'none';
                 updateHybridHint();
+                selectedHybridIntensity = [25, 50, 75, 100].includes(savedSettings.hybridIntensity)
+                    ? savedSettings.hybridIntensity : 50;
+                updateHybridIntensityUI();
 
                 configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
                 configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
@@ -2262,6 +2331,7 @@
                 supportProvider: configHybridProvider.value,
                 supportApiKey: configHybridKey.value.trim(),
                 supportModel: configHybridModel.value.trim(),
+                hybridIntensity: selectedHybridIntensity,
                 inlineCompletionEnabled: configInlineCompletion.checked,
                 fixWithEucodeEnabled: configFixWithEucode.checked,
             });
@@ -2800,7 +2870,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50 };
                 customCommandsScope = savedSettings.customCommandsScope;
                 syncHybridModeWithSettings();
             } else if (msg.command === 'load_sessions') {
@@ -2833,6 +2903,7 @@
                 savedSettings.supportProvider = configHybridProvider.value;
                 if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }
                 savedSettings.supportModel = configHybridModel.value.trim();
+                savedSettings.hybridIntensity = selectedHybridIntensity;
                 savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
                 // Se o usuario desativou Hybrid nas configs, o botao do header

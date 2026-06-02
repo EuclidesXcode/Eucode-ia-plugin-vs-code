@@ -179,6 +179,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     inlineCompletionEnabled: this._settings.inlineCompletionEnabled,
                     fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
                     customCommandsScope: this._settings.customCommandsScope,
+                    hybridIntensity: this._settings.hybridIntensity,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -232,6 +233,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     inlineCompletionEnabled: message.inlineCompletionEnabled ?? this._settings.inlineCompletionEnabled,
                     fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
+                    hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity) as 25 | 50 | 75 | 100,
                 };
                 await saveSettings(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
@@ -471,7 +473,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     hybridConfig,
                     notifyHybridActivity,
                     this._historyManager.getActiveId(),
-                    !!message.chatMode
+                    !!message.chatMode,
+                    this._settings.hybridIntensity
                 );
                 this._abortController = null;
                 this._injectMessage = null;

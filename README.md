@@ -565,6 +565,15 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.9.0
+- **3 novos servicos especializados** focados em sustentar tarefas longas com LLMs locais <= 10B:
+  - `ProjectIntelService`: indice leve de simbolos exportados por arquivo do workspace, injetado no system prompt — agente encontra arquivos sem precisar ler todos
+  - `ExecutionGuardService`: 6 guards de invariante centralizados (build pendente, arquivo errado, codigo no chat, etc), funcoes puras testaveis
+  - `TaskDecomposerService`: detecta macro-tarefas, quebra em 2-8 sub-tarefas auto-contidas (com ajuda do pago), inclui step validation entre sub-tarefas
+- **Slider de Intensidade HYBRID** (25/50/75/100%): usuario calibra quanto o LLM pago e invocado. Gating automatico por gatilho — 25% so usa pago em recovery critico, 100% usa em todos os gatilhos
+- **AUTO mode mais resiliente**: cap aumentado de 5 para 15 tentativas, recovery via HYBRID em cada multiplo de 4 (4, 8, 12)
+- ProjectIntel summary injetado em todo system prompt (skip em CHAT)
+
 ### 0.8.11
 - AUTO + HYBRID mais robusto para tarefas de build/package: regras criticas no system prompt forcam sequencia read → edit → run_command → verify, sem editar duas vezes seguidas sem rodar build no meio
 - Plano HYBRID inicial agora e mais conciso (3-7 steps, paths relativos, sob 200 palavras) — libera ~700 tokens a mais no contexto do modelo local

@@ -42,6 +42,12 @@ export interface EucodeSettings {
     inlineCompletionEnabled: boolean;
     fixWithEucodeEnabled: boolean;
     customCommandsScope: 'workspace' | 'global';
+    // HYBRID intensity controls how much the paid model is invoked.
+    //   25  = minimal — only critical recovery (model totally stuck)
+    //   50  = balanced — recovery + planning for macro tasks
+    //   75  = aggressive — adds step validation between decomposed sub-tasks
+    //   100 = maximum — every trigger fires (planning, verify, recover, validate)
+    hybridIntensity: 25 | 50 | 75 | 100;
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -60,6 +66,7 @@ const DEFAULTS: EucodeSettings = {
     inlineCompletionEnabled: false,
     fixWithEucodeEnabled: false,
     customCommandsScope: 'workspace',
+    hybridIntensity: 50,
 };
 
 const KEYS = {
@@ -78,6 +85,7 @@ const KEYS = {
     inlineCompletionEnabled: 'eucode.inlineCompletionEnabled',
     fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
     customCommandsScope: 'eucode.customCommandsScope',
+    hybridIntensity: 'eucode.hybridIntensity',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -103,6 +111,7 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         inlineCompletionEnabled: context.globalState.get<boolean>(KEYS.inlineCompletionEnabled) ?? DEFAULTS.inlineCompletionEnabled,
         fixWithEucodeEnabled: context.globalState.get<boolean>(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
         customCommandsScope: context.globalState.get<'workspace' | 'global'>(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
+        hybridIntensity: (context.globalState.get<25 | 50 | 75 | 100>(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
     };
 }
 
@@ -122,6 +131,7 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.inlineCompletionEnabled, settings.inlineCompletionEnabled);
     await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
+    await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

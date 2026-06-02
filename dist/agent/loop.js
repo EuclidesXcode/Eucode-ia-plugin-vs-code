@@ -40,6 +40,7 @@ const api_client_1 = require("../services/api-client");
 const rag_client_1 = require("../services/rag-client");
 const hybrid_client_1 = require("../services/hybrid-client");
 const memory_service_1 = require("../services/memory-service");
+const project_intel_1 = require("../services/project-intel");
 const constants_1 = require("../utils/constants");
 const history_service_1 = require("../services/history-service");
 const file_tools_1 = require("../tools/file-tools");
@@ -526,7 +527,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50) {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
     // The system prompt is just the conversational instructions.
@@ -565,9 +566,19 @@ NEVER assume a file was created without verifying with list_directory or read_lo
         (0, memory_service_1.detectAndRememberStack)(sessionId);
         memorySummary = (0, memory_service_1.buildMemorySummary)(sessionId);
     }
+    // ProjectIntel: scan workspace lazily and inject a compact symbol index
+    // so the model can find files by exported name without reading them.
+    let projectIntelSummary = '';
+    if (!chatMode && defaultCwd) {
+        try {
+            const intel = new project_intel_1.ProjectIntelService(defaultCwd);
+            projectIntelSummary = intel.summarizeForPrompt(40, 140);
+        }
+        catch { /* scan failures shouldn't block the round */ }
+    }
     const systemContent = chatMode
         ? prompt_1.CHAT_SYSTEM_PROMPT
-        : [prompt_1.SYSTEM_PROMPT + autoBlock, memorySummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
+        : [prompt_1.SYSTEM_PROMPT + autoBlock, memorySummary, projectIntelSummary, ragContext, contextBlock].filter(Boolean).join('\n\n');
     // In auto mode include only the last 1 history pair so the model knows what
     // the user was working on — skipping history entirely left it context-blind.
     // The round's own tool chain still grows large, so keep it to 1 pair max.
@@ -641,6 +652,23 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     // ── HYBRID helpers ─────────────────────────────────────────────────
     // CHAT mode forces HYBRID off via effectiveHybridConfig (set to undefined).
     const hybridActive = !!(effectiveHybridConfig?.enabled && effectiveHybridConfig.apiKey);
+    // ── HYBRID intensity gating ───────────────────────────────────────
+    // The user controls how much the paid model is invoked via a 4-level
+    // slider. Each trigger has a minimum intensity threshold to fire.
+    const HYBRID_TRIGGER_MIN = {
+        recover_stop: 25, // critical recovery: always fires when hybrid active
+        recover_command: 25,
+        recover_syntax: 50,
+        plan: 50,
+        verify_build: 75,
+        verify_write: 100,
+    };
+    const hybridAllowsTrigger = (reason) => {
+        if (!hybridActive) {
+            return false;
+        }
+        return hybridIntensity >= HYBRID_TRIGGER_MIN[reason];
+    };
     const HYBRID_STATUS_BY_REASON = {
         plan: 'Planejando estrategia da tarefa',
         verify_write: 'Verificando se a escrita foi feita corretamente',
@@ -651,6 +679,11 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     };
     async function askSupport(reason, system, user, maxTokens = 800) {
         if (!hybridActive || !effectiveHybridConfig) {
+            return null;
+        }
+        // Respect user-defined hybrid intensity — skip non-essential triggers
+        // when the slider is set to a lower level.
+        if (!hybridAllowsTrigger(reason)) {
             return null;
         }
         const statusText = HYBRID_STATUS_BY_REASON[reason];
@@ -937,9 +970,12 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
                 // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
-                // Em vez de bater no cap de 5 e desistir, no penultimo
-                // strike (4) consulta o pago para um plano de saida.
-                if (hybridActive && pendingActionStreak === 4) {
+                // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
+                // com recovery em CADA multiplo de 4 (4, 8, 12) — cada chamada
+                // tenta dar um plano novo se o anterior nao destravou.
+                const RECOVERY_INTERVAL = 4;
+                const HARD_CAP_AUTO = 15;
+                if (hybridActive && pendingActionStreak > 0 && pendingActionStreak % RECOVERY_INTERVAL === 0) {
                     const reason = lastCommandFailed
                         ? 'recover_command'
                         : buildNotYetPassed
@@ -949,19 +985,19 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                     const errCtx = counters.lastErrorFiles.length > 0
                         ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
                         : '';
-                    const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nWhat should the local agent do next?`;
+                    const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nAttempt: ${pendingActionStreak}/${HARD_CAP_AUTO}\n\nWhat should the local agent do next?`;
                     const recovery = await askSupport(reason, sys, usr, 500);
                     if (recovery) {
                         roundMessages.push({ role: 'assistant', content: text });
                         roundMessages.push({
                             role: 'user',
-                            content: `[HYBRID RECOVERY from support model] The support model analyzed your situation. Follow this exactly:\n\n${recovery}`,
+                            content: `[HYBRID RECOVERY from support model] Tentativa ${pendingActionStreak}/${HARD_CAP_AUTO}. Follow this exactly:\n\n${recovery}`,
                         });
                         lastToolName = '';
                         continue;
                     }
                 }
-                if (pendingActionStreak >= 5) {
+                if (pendingActionStreak >= HARD_CAP_AUTO) {
                     // Hard cap to avoid eternal loop. Surface what happened
                     // so the user knows the agent gave up and why.
                     pendingActionStreak = 0;
