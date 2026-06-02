@@ -148,15 +148,30 @@ function requestStream(
                 return;
             }
 
+            // SSE parser tolerante: separa eventos por \n e tambem detecta
+            // eventos colados ("data: A\ndata: B" virando "data: Adata: B"
+            // quando o servidor envia dois eventos no mesmo TCP packet sem
+            // \n entre eles). Sem isso, JSON.parse quebra com mensagens
+            // como "Unexpected non-whitespace character after JSON".
             let buf = '';
+            const dispatchLine = (rawLine: string) => {
+                if (!rawLine) { return; }
+                // Caso patologico: "data: {...}data: {...}" → split por "data: "
+                if (rawLine.startsWith('data: ') && rawLine.includes('}data: ')) {
+                    const parts = rawLine.split(/(?=data: )/g);
+                    for (const p of parts) { if (p.trim()) { onLine(p.trim()); } }
+                    return;
+                }
+                onLine(rawLine);
+            };
             res.on('data', (chunk: Buffer) => {
                 buf += chunk.toString('utf8');
                 const lines = buf.split('\n');
                 buf = lines.pop() ?? '';
-                for (const line of lines) { onLine(line); }
+                for (const line of lines) { dispatchLine(line); }
             });
             res.on('end', () => {
-                if (buf) { onLine(buf); }
+                if (buf) { dispatchLine(buf); }
                 resolve();
             });
         });

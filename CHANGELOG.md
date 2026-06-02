@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.2
+
+Fix urgente para o erro "Unexpected non-whitespace character after JSON at position N" que aparecia logo apos os primeiros tokens de resposta.
+
+- **Parser SSE tolerante a eventos colados**: quando o servidor (especialmente o Anthropic em respostas rapidas) envia dois eventos SSE no mesmo TCP packet sem `\n` entre eles, o split por linha resultava em strings como `data: {a:1}data: {b:2}` que quebravam o `JSON.parse`. Agora o parser detecta o padrao `}data: ` no meio e separa os eventos antes de tentar parsear
+- Aplica em `requestStream` — afeta tanto `callAI` (LM Studio/Ollama) quanto `callAnthropicAI`
+
 ## 0.9.1
 
 Foco: corrigir cenarios onde o streaming caia silenciosamente e a UI mostrava apenas "Erro de conexao com o modelo" generico, descartando texto que ja havia sido gerado.
