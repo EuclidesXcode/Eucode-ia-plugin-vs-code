@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.3
+
+Continuacao do fix do parser SSE: 0.9.2 cobria o caso `}data: ` mas
+o usuario relatou que `position 77` ainda quebrava — havia outras
+variantes de eventos colados.
+
+- **Parser SSE generico**: em vez de procurar padrao especifico
+  `}data: `, agora detecta TODAS as posicoes onde um novo prefixo SSE
+  comeca no meio de uma linha (`data:`, `event:`, `id:`, `retry:`) e
+  separa em fragmentos individuais. Cobre formato Anthropic que mistura
+  `event: foo` antes de `data: {...}`
+- **`tryParseJsonChunk()` defensivo**: nova funcao exportada que tenta
+  o fast path `JSON.parse` primeiro, e se falhar faz scan
+  caractere-a-caractere tracking de bracket depth + string boundaries
+  para extrair o primeiro objeto JSON balanceado. Lixo apos o objeto
+  e ignorado em vez de quebrar a parse
+- Aplicado nos 2 handlers SSE (callAI e callAnthropicAI). Se um chunk
+  for completamente lixo, o evento e silenciosamente skipado em vez
+  de derrubar todo o stream
+
 ## 0.9.2
 
 Fix urgente para o erro "Unexpected non-whitespace character after JSON at position N" que aparecia logo apos os primeiros tokens de resposta.

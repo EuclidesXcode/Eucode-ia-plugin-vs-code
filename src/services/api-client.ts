@@ -19,6 +19,45 @@ export interface AIResponse {
     errorDetail?: string;
 }
 
+// Tolerantly parses a JSON chunk that may have junk appended (a second
+// concatenated event, BOM, trailing whitespace, etc). Returns null if no
+// valid JSON object can be extracted from the start of the string.
+//
+// Strategy: try the fast path first (JSON.parse on the trimmed input).
+// If that fails, scan character-by-character tracking bracket depth and
+// string boundaries to find the end of the first balanced `{...}` object,
+// then parse just that prefix.
+export function tryParseJsonChunk(raw: string): unknown {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) { return null; }
+    try { return JSON.parse(trimmed); } catch { /* fall through */ }
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    const openChar = trimmed.charAt(0);
+    const closeChar = openChar === '{' ? '}' : ']';
+    for (let i = 0; i < trimmed.length; i++) {
+        const c = trimmed.charAt(i);
+        if (escape) { escape = false; continue; }
+        if (inString) {
+            if (c === '\\') { escape = true; }
+            else if (c === '"') { inString = false; }
+            continue;
+        }
+        if (c === '"') { inString = true; continue; }
+        if (c === openChar) { depth++; }
+        else if (c === closeChar) {
+            depth--;
+            if (depth === 0) {
+                const candidate = trimmed.slice(0, i + 1);
+                try { return JSON.parse(candidate); } catch { return null; }
+            }
+        }
+    }
+    return null;
+}
+
 // Maps a raw error message from the HTTP layer into a structured reason.
 // Used by both callAI and callAnthropicAI to produce consistent diagnostics.
 export function classifyApiError(rawMessage: string): { reason: AIResponse['errorReason']; userMessage: string } {
@@ -148,18 +187,28 @@ function requestStream(
                 return;
             }
 
-            // SSE parser tolerante: separa eventos por \n e tambem detecta
-            // eventos colados ("data: A\ndata: B" virando "data: Adata: B"
-            // quando o servidor envia dois eventos no mesmo TCP packet sem
-            // \n entre eles). Sem isso, JSON.parse quebra com mensagens
-            // como "Unexpected non-whitespace character after JSON".
+            // SSE parser tolerante a multiplos cenarios de eventos colados:
+            //   - "data: A\ndata: B"  (caso normal)
+            //   - "data: AAdata: B"   (eventos colados sem \n entre eles)
+            //   - "data: Aevent: foo\ndata: B"  (Anthropic mistura event: e data:)
+            //   - "{...}\n\nextra-bytes" (chunks com lixo apos JSON valido)
+            //
+            // Estrategia: para cada linha bruta, encontra TODAS as posicoes onde
+            // comeca um novo prefixo SSE ("data:", "event:", "id:", "retry:") e
+            // separa em fragmentos. Cada fragmento e despachado individualmente.
+            // No callback de parsing (onLine), se JSON.parse falhar, tenta
+            // extrair o primeiro objeto JSON valido antes de desistir.
+            const SSE_PREFIX_RE = /(?<=.)(?=(?:data:|event:|id:|retry:)\s)/g;
             let buf = '';
             const dispatchLine = (rawLine: string) => {
                 if (!rawLine) { return; }
-                // Caso patologico: "data: {...}data: {...}" → split por "data: "
-                if (rawLine.startsWith('data: ') && rawLine.includes('}data: ')) {
-                    const parts = rawLine.split(/(?=data: )/g);
-                    for (const p of parts) { if (p.trim()) { onLine(p.trim()); } }
+                if (SSE_PREFIX_RE.test(rawLine)) {
+                    SSE_PREFIX_RE.lastIndex = 0; // reset state after test()
+                    const parts = rawLine.split(SSE_PREFIX_RE);
+                    for (const p of parts) {
+                        const trimmed = p.trim();
+                        if (trimmed) { onLine(trimmed); }
+                    }
                     return;
                 }
                 onLine(rawLine);
@@ -265,7 +314,10 @@ export async function callAI(
                 const data = line.slice(6).trim();
                 if (data === '[DONE]') { return; }
                 try {
-                    const evt = JSON.parse(data);
+                    // Tolerant parse: extracts first valid JSON object even if
+                    // the chunk has trailing junk from a concatenated event.
+                    const evt = tryParseJsonChunk(data) as any;
+                    if (!evt) { return; }
                     // Capture usage when present (LM Studio sends it in last chunk)
                     if (evt?.usage) {
                         promptTokens = evt.usage.prompt_tokens ?? 0;
@@ -411,7 +463,10 @@ export async function callAnthropicAI(
             if (!line.startsWith('data: ')) { return; }
             const data = line.slice(6).trim();
             try {
-                const evt = JSON.parse(data);
+                // Tolerant parse: extracts first valid JSON object even if
+                // the chunk has trailing junk from a concatenated event.
+                const evt = tryParseJsonChunk(data) as any;
+                if (!evt) { return; }
                 const type: string = evt?.type ?? '';
 
                 if (type === 'content_block_start') {
