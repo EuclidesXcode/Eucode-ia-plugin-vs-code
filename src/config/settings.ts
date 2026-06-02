@@ -48,6 +48,12 @@ export interface EucodeSettings {
     //   75  = aggressive — adds step validation between decomposed sub-tasks
     //   100 = maximum — every trigger fires (planning, verify, recover, validate)
     hybridIntensity: 25 | 50 | 75 | 100;
+    // When true, the plugin scans the workspace at the start of each round
+    // and injects a compact symbol index into the system prompt. Helps the
+    // model find files by exported name without reading them, but adds
+    // ~700-1500 tokens to every prompt. Disable to free context on small
+    // models (≤ 4B params) or on huge monorepos where the scan is slow.
+    projectIntelEnabled: boolean;
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -67,6 +73,7 @@ const DEFAULTS: EucodeSettings = {
     fixWithEucodeEnabled: false,
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
+    projectIntelEnabled: true,
 };
 
 const KEYS = {
@@ -86,6 +93,7 @@ const KEYS = {
     fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
+    projectIntelEnabled: 'eucode.projectIntelEnabled',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -112,6 +120,7 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         fixWithEucodeEnabled: context.globalState.get<boolean>(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
         customCommandsScope: context.globalState.get<'workspace' | 'global'>(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get<25 | 50 | 75 | 100>(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
+        projectIntelEnabled: context.globalState.get<boolean>(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
     };
 }
 
@@ -132,6 +141,7 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
+    await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

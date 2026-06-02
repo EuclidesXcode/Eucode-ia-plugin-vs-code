@@ -11,6 +11,37 @@ export interface AIResponse {
     responseText: string;
     toolCall?: ToolCall;
     usage?: { promptTokens: number; completionTokens: number; elapsedMs: number };
+    // Sentinel-only fields; populated when responseText is __INFRA_ERROR__
+    // so the loop can decide whether to recover (partial text) and what
+    // message to show to the user (errorReason).
+    partialText?: string;
+    errorReason?: 'rate_limit' | 'context_too_large' | 'auth' | 'timeout' | 'connection' | 'server_error' | 'unknown';
+    errorDetail?: string;
+}
+
+// Maps a raw error message from the HTTP layer into a structured reason.
+// Used by both callAI and callAnthropicAI to produce consistent diagnostics.
+export function classifyApiError(rawMessage: string): { reason: AIResponse['errorReason']; userMessage: string } {
+    const m = rawMessage.toLowerCase();
+    if (/\b429\b|rate.?limit|too many requests/.test(m)) {
+        return { reason: 'rate_limit', userMessage: 'Limite de chamadas atingido no provedor (rate limit). Aguarde alguns segundos e tente novamente, ou troque para outro provedor.' };
+    }
+    if (/context.{0,20}(length|window|too large)|exceeds? .{0,20}(max|maximum) (tokens|context)|prompt is too long|token limit/.test(m)) {
+        return { reason: 'context_too_large', userMessage: 'A conversa excedeu o limite de tokens do modelo. Inicie uma nova sessao ou reduza arquivos abertos no editor.' };
+    }
+    if (/\b401\b|\b403\b|unauthorized|forbidden|invalid api key|authentication/.test(m)) {
+        return { reason: 'auth', userMessage: 'API key invalida ou sem permissao. Verifique a configuracao do provedor.' };
+    }
+    if (/timeout|timed out|etimedout/.test(m)) {
+        return { reason: 'timeout', userMessage: 'O modelo demorou demais para responder (timeout). Tente novamente — em modelos locais, verifique a memoria disponivel.' };
+    }
+    if (/econnrefused|enotfound|network|fetch failed|socket hang up|connection (reset|refused|closed)/.test(m)) {
+        return { reason: 'connection', userMessage: 'Nao foi possivel conectar ao provedor. Verifique se o LM Studio esta rodando ou se ha internet.' };
+    }
+    if (/\b5\d\d\b|internal server error|bad gateway|service unavailable/.test(m)) {
+        return { reason: 'server_error', userMessage: 'Erro no servidor do provedor. Tente novamente em instantes.' };
+    }
+    return { reason: 'unknown', userMessage: 'Erro ao chamar o modelo. Detalhe: ' + rawMessage.slice(0, 200) };
 }
 
 export interface ToolCall {
@@ -197,10 +228,13 @@ export async function callAI(
         function: { name: t.name, description: t.description, parameters: t.parameters },
     }));
 
+    // Streaming state lifted to outer scope so the catch block can recover
+    // any partial text that was already produced before the stream broke.
+    let textAcc = '';
+
     try {
         if (onChunk) {
             // ── Streaming path ──
-            let textAcc = '';
             let toolId = '';
             let toolName = '';
             let toolArgsRaw = '';
@@ -274,8 +308,15 @@ export async function callAI(
         if (error instanceof Error && error.message === 'ABORTED') {
             return { responseText: '__ABORTED__' };
         }
-        console.error('[API] Falha ao chamar o LLM:', error);
-        return { responseText: '__INFRA_ERROR__' };
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const { reason, userMessage } = classifyApiError(rawMessage);
+        console.error('[API] Falha ao chamar o LLM:', { reason, rawMessage, partialLen: textAcc.length });
+        return {
+            responseText: '__INFRA_ERROR__',
+            partialText: textAcc.trim(),
+            errorReason: reason,
+            errorDetail: userMessage,
+        };
     }
 }
 
@@ -339,8 +380,11 @@ export async function callAnthropicAI(
         'anthropic-version': ANTHROPIC_VERSION,
     };
 
+    // Lifted to outer scope so the catch can recover partial text from a
+    // broken stream (e.g. network blip mid-response).
+    let textAcc = '';
+
     try {
-        let textAcc = '';
         let toolId = '';
         let toolName = '';
         let toolArgsRaw = '';
@@ -389,8 +433,15 @@ export async function callAnthropicAI(
         if (error instanceof Error && error.message === 'ABORTED') {
             return { responseText: '__ABORTED__' };
         }
-        console.error('[API Anthropic] Falha:', error);
-        return { responseText: '__INFRA_ERROR__' };
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const { reason, userMessage } = classifyApiError(rawMessage);
+        console.error('[API Anthropic] Falha:', { reason, rawMessage, partialLen: textAcc.length });
+        return {
+            responseText: '__INFRA_ERROR__',
+            partialText: textAcc.trim(),
+            errorReason: reason,
+            errorDetail: userMessage,
+        };
     }
 }
 

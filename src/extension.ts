@@ -180,6 +180,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
                     customCommandsScope: this._settings.customCommandsScope,
                     hybridIntensity: this._settings.hybridIntensity,
+                    projectIntelEnabled: this._settings.projectIntelEnabled,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -234,6 +235,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                     hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity) as 25 | 50 | 75 | 100,
+                    projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
                 };
                 await saveSettings(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
@@ -474,7 +476,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     notifyHybridActivity,
                     this._historyManager.getActiveId(),
                     !!message.chatMode,
-                    this._settings.hybridIntensity
+                    this._settings.hybridIntensity,
+                    this._settings.projectIntelEnabled
                 );
                 this._abortController = null;
                 this._injectMessage = null;

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.1
+
+Foco: corrigir cenarios onde o streaming caia silenciosamente e a UI mostrava apenas "Erro de conexao com o modelo" generico, descartando texto que ja havia sido gerado.
+
+- **Preservacao de texto parcial**: quando o stream cai depois de ja ter gerado tokens (ex: rede instavel, timeout, rate limit no meio da resposta), o texto acumulado e devolvido ao usuario com aviso de interrupcao em vez de descartado. Aplica em `callAI` e `callAnthropicAI`
+- **Diagnostico de erro estruturado**: nova funcao `classifyApiError` mapeia a mensagem bruta do HTTP em causa raiz (rate_limit / context_too_large / auth / timeout / connection / server_error / unknown) e gera mensagem especifica para o usuario
+- **6 mensagens de erro especificas** no lugar da generica "Erro de conexao":
+  - `429 / rate limit` → "Limite de chamadas atingido. Aguarde alguns segundos..."
+  - `context too large` → "A conversa excedeu o limite de tokens. Inicie uma nova sessao..."
+  - `401 / 403 / unauthorized` → "API key invalida ou sem permissao..."
+  - `timeout` → "O modelo demorou demais. Em modelos locais, verifique a memoria..."
+  - `connection / ECONNREFUSED` → "Nao foi possivel conectar. Verifique se o LM Studio esta rodando..."
+  - `5xx server errors` → "Erro no servidor do provedor. Tente novamente..."
+- `console.error` agora loga objeto estruturado `{ reason, rawMessage, partialLen }` para debug
+- **ProjectIntel reduzido e configuravel**: cap de 40 → 20 arquivos, max chars/linha de 140 → 120. Libera ~700-1000 tokens em todo prompt
+- **Novo toggle "ProjectIntel" nas configuracoes** dentro de nova secao "Otimizacao de contexto". Default: ligado. Desligar e recomendado em modelos < 4B ou monorepos grandes
+- `runAgentLoop` aceita `projectIntelEnabled?: boolean` (default true)
+- `EucodeSettings.projectIntelEnabled` persistido em globalState
+
 ## 0.9.0
 
 Minor bump por mudancas arquiteturais grandes focadas em garantir o desenvolvimento continuo com modelos locais <= 10B params:

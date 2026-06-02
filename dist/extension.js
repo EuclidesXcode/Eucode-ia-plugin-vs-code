@@ -174,6 +174,7 @@ class EucodeViewProvider {
                     fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
                     customCommandsScope: this._settings.customCommandsScope,
                     hybridIntensity: this._settings.hybridIntensity,
+                    projectIntelEnabled: this._settings.projectIntelEnabled,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -224,6 +225,7 @@ class EucodeViewProvider {
                     fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                     hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity),
+                    projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
                 };
                 await (0, settings_1.saveSettings)(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
@@ -424,7 +426,7 @@ class EucodeViewProvider {
                     }
                     : undefined;
                 const notifyHybridActivity = (evt) => webviewView.webview.postMessage({ command: 'hybrid_activity', ...evt });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity);
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity, this._settings.projectIntelEnabled);
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });

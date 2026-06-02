@@ -41,6 +41,7 @@ const DEFAULTS = {
     fixWithEucodeEnabled: false,
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
+    projectIntelEnabled: true,
 };
 const KEYS = {
     provider: 'eucode.provider',
@@ -59,6 +60,7 @@ const KEYS = {
     fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
+    projectIntelEnabled: 'eucode.projectIntelEnabled',
 };
 exports.DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 function loadSettings(context) {
@@ -83,6 +85,7 @@ function loadSettings(context) {
         fixWithEucodeEnabled: context.globalState.get(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
         customCommandsScope: context.globalState.get(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
+        projectIntelEnabled: context.globalState.get(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
     };
 }
 async function saveSettings(context, settings) {
@@ -102,6 +105,7 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
+    await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
 }
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts
 function buildApiEndpoint(settings) {

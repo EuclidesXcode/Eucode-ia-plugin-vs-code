@@ -565,6 +565,12 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 ## Ultimas versoes
 
+### 0.9.1
+- Texto parcial do streaming preservado quando o stream cai no meio (antes era descartado, mostrando so "Erro de conexao")
+- 6 mensagens de erro especificas (rate limit, context too large, auth, timeout, conexao, server error) em vez da generica anterior
+- ProjectIntel default reduzido de 40 → 20 arquivos (libera ~700 tokens em todo prompt)
+- Novo toggle "ProjectIntel" na nova secao "Otimizacao de contexto" das configuracoes
+
 ### 0.9.0
 - **3 novos servicos especializados** focados em sustentar tarefas longas com LLMs locais <= 10B:
   - `ProjectIntelService`: indice leve de simbolos exportados por arquivo do workspace, injetado no system prompt — agente encontra arquivos sem precisar ler todos

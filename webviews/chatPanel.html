@@ -1713,6 +1713,22 @@
             </div>
         </details>
         <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Otimizacao de contexto</summary>
+            <div class="config-collapsible-body">
+                <div class="editor-feature-row">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">ProjectIntel (indice de simbolos)</span>
+                        <span class="editor-feature-desc">Injeta resumo de arquivos + simbolos exportados no system prompt. Desligue em modelos pequenos (&lt; 4B) ou monorepos para liberar contexto.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-project-intel">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="config-hint">Adiciona ~500-800 tokens em cada prompt. Util quando o agente precisa encontrar funcoes/classes em arquivos que nao estao abertos.</div>
+            </div>
+        </details>
+        <details class="config-collapsible">
             <summary class="config-collapsible-summary">Comandos personalizaveis</summary>
             <div class="config-collapsible-body">
                 <div class="config-hint" style="margin-bottom:8px;">Digite <strong>/</strong> no chat para ver e usar seus comandos. Cada comando expande para um prompt salvo, opcionalmente com AUTO ou HYBRID ja ligados.</div>
@@ -2199,6 +2215,7 @@
 
         const configInlineCompletion = document.getElementById('config-inline-completion');
         const configFixWithEucode = document.getElementById('config-fix-with-eucode');
+        const configProjectIntel = document.getElementById('config-project-intel');
         const configOpenCmdFile = document.getElementById('config-open-cmd-file');
         const configOpenMemoryFile = document.getElementById('config-open-memory-file');
         configOpenMemoryFile.addEventListener('click', () => {
@@ -2300,6 +2317,7 @@
 
                 configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
                 configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
+                configProjectIntel.checked = savedSettings.projectIntelEnabled !== false;
 
                 const currentScope = savedSettings.customCommandsScope || 'workspace';
                 document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
@@ -2334,6 +2352,7 @@
                 hybridIntensity: selectedHybridIntensity,
                 inlineCompletionEnabled: configInlineCompletion.checked,
                 fixWithEucodeEnabled: configFixWithEucode.checked,
+                projectIntelEnabled: configProjectIntel.checked,
             });
         });
 
@@ -2870,7 +2889,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50 };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false };
                 customCommandsScope = savedSettings.customCommandsScope;
                 syncHybridModeWithSettings();
             } else if (msg.command === 'load_sessions') {
@@ -2904,6 +2923,7 @@
                 if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }
                 savedSettings.supportModel = configHybridModel.value.trim();
                 savedSettings.hybridIntensity = selectedHybridIntensity;
+                savedSettings.projectIntelEnabled = configProjectIntel.checked;
                 savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
                 // Se o usuario desativou Hybrid nas configs, o botao do header

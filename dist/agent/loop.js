@@ -527,7 +527,7 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50, projectIntelEnabled = true) {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
     // The system prompt is just the conversational instructions.
@@ -568,11 +568,13 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     }
     // ProjectIntel: scan workspace lazily and inject a compact symbol index
     // so the model can find files by exported name without reading them.
+    // Cap reduzido de 40 para 20 arquivos (libera ~700 tokens em todo prompt).
+    // Pode ser desligado nas configuracoes para modelos < 4B ou monorepos.
     let projectIntelSummary = '';
-    if (!chatMode && defaultCwd) {
+    if (!chatMode && projectIntelEnabled && defaultCwd) {
         try {
             const intel = new project_intel_1.ProjectIntelService(defaultCwd);
-            projectIntelSummary = intel.summarizeForPrompt(40, 140);
+            projectIntelSummary = intel.summarizeForPrompt(20, 120);
         }
         catch { /* scan failures shouldn't block the round */ }
     }
@@ -817,7 +819,14 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
         }
         if (result.responseText === '__INFRA_ERROR__') {
             emitTelemetry();
-            return 'Erro de conexao com o modelo. Verifique se o LM Studio esta rodando e se o modelo tem memoria suficiente para ser carregado.';
+            // Se o stream ja tinha gerado texto antes de cair, preserva o que
+            // veio em vez de descartar — o usuario pode aproveitar a resposta
+            // parcial mesmo com erro. A mensagem de diagnostico vai junto.
+            const detail = result.errorDetail || 'Erro ao chamar o modelo.';
+            if (result.partialText && result.partialText.length > 20) {
+                return `${result.partialText}\n\n---\n\n⚠ ${detail}\n(resposta interrompida apos ${result.partialText.length} chars)`;
+            }
+            return `⚠ ${detail}`;
         }
         // Accumulate telemetry
         if (result.usage) {
