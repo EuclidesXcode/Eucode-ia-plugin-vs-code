@@ -96,6 +96,116 @@
             box-shadow: 0 0 6px #00d4ff44;
         }
         .header-btn.hybrid-active:hover { background: #002030; }
+        .header-btn.disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        .header-btn.disabled:hover { border-color: #1e2a3a; background: none; }
+
+        /* ── Modes dropdown ── */
+        .modes-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .modes-summary {
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #6a7f99;
+            margin-left: 4px;
+        }
+        .modes-summary.has-active { color: #22c55e; }
+        .modes-summary.chat { color: #8b9eff; }
+        .modes-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            min-width: 280px;
+            background: #0a0a15;
+            border: 1px solid #1e2a3a;
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            z-index: 200;
+        }
+        .modes-dropdown.open { display: block; }
+        .modes-section-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #3a5a7a;
+            margin-bottom: 6px;
+            margin-top: 4px;
+        }
+        .modes-segmented {
+            display: flex;
+            border: 1px solid #1e2a3a;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+        .modes-seg-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: #6a7f99;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            padding: 8px 10px;
+            transition: background 0.12s, color 0.12s;
+        }
+        .modes-seg-btn:hover { background: #0d1a2e; color: #c9d1d9; }
+        .modes-seg-btn.active {
+            background: #0d1a2e;
+            color: #3a7bd5;
+        }
+        .modes-seg-btn[data-mode="chat"].active {
+            color: #8b9eff;
+            background: #0d0f26;
+        }
+        .modes-toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 4px;
+            border-radius: 4px;
+        }
+        .modes-toggle-row.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+        .modes-toggle-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            flex: 1;
+        }
+        .modes-toggle-name {
+            font-size: 12px;
+            color: #c9d1d9;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .modes-toggle-desc {
+            font-size: 10px;
+            color: #4a5568;
+            line-height: 1.3;
+        }
+        .modes-chat-notice {
+            margin-top: 10px;
+            padding: 8px 10px;
+            background: #0d0f26;
+            border: 1px solid #2a2f4a;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #8b9eff;
+            line-height: 1.4;
+        }
 
         /* ── Sessions panel ── */
         #sessions-panel {
@@ -216,6 +326,121 @@
             flex-direction: column;
             gap: 8px;
         }
+        .config-collapsible {
+            border: 1px solid #1a1a2e;
+            border-radius: 4px;
+            background: #0a0a15;
+            padding: 0;
+        }
+        .config-collapsible[open] { padding-bottom: 8px; }
+        .config-collapsible-summary {
+            cursor: pointer;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #3a7bd5;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+        }
+        .config-collapsible-summary::-webkit-details-marker { display: none; }
+        .config-collapsible-summary::before {
+            content: '▸';
+            font-size: 10px;
+            transition: transform 0.15s;
+        }
+        .config-collapsible[open] > .config-collapsible-summary::before { transform: rotate(90deg); }
+        .config-collapsible-summary:hover { color: #5b9bf5; }
+        .config-collapsible-body {
+            padding: 4px 12px 0 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .editor-feature-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: #050510;
+            border: 1px solid #13131f;
+            border-radius: 4px;
+        }
+        .editor-feature-info { display: flex; flex-direction: column; gap: 2px; }
+        .editor-feature-name { font-size: 12px; color: #c9d1d9; font-weight: 500; }
+        .editor-feature-desc { font-size: 10px; color: #4a5568; line-height: 1.35; }
+
+        .hybrid-intensity-row {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #00d4ff22;
+        }
+        .hybrid-intensity-segmented {
+            display: flex;
+            border: 1px solid #00d4ff44;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .hybrid-int-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: #6a90b0;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            padding: 7px 4px;
+            transition: background 0.12s, color 0.12s;
+            border-right: 1px solid #00d4ff22;
+        }
+        .hybrid-int-btn:last-child { border-right: none; }
+        .hybrid-int-btn:hover { background: #001a26; color: #c9e8f5; }
+        .hybrid-int-btn.active {
+            background: #00d4ff22;
+            color: #00d4ff;
+        }
+
+        .cmd-scope-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 10px;
+            background: #050510;
+            border: 1px solid #13131f;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .cmd-scope-opt {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .cmd-scope-opt input[type="radio"] { accent-color: #3a7bd5; }
+        .cmd-scope-opt strong { color: #c9d1d9; font-weight: 600; }
+        .cmd-open-file-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: none;
+            border: 1px solid #1e2a3a;
+            border-radius: 4px;
+            color: #3a7bd5;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+        }
+        .cmd-open-file-btn:hover { background: #0d1a2e; }
         .tool-row {
             display: flex;
             align-items: center;
@@ -349,6 +574,37 @@
         }
         .agent .message-label { color: #3a7bd5; }
         .user .message-label { color: #5a8ac0; }
+        .msg-mode-badge {
+            display: inline-block;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            padding: 1px 5px;
+            border-radius: 3px;
+            border: 1px solid currentColor;
+            opacity: 0.7;
+            vertical-align: middle;
+        }
+        .msg-mode-badge.chat { color: #8b9eff; border-color: #4a5a8a; background: #0d0f26; }
+        .message-row.is-chat .message-bubble { border-left: 2px solid #4a5a8a; padding-left: 12px; }
+        .chat-pending-dots {
+            display: inline-flex;
+            gap: 5px;
+            padding: 4px 0;
+        }
+        .chat-pending-dots span {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #8b9eff;
+            opacity: 0.4;
+            animation: chat-bounce 1.2s infinite ease-in-out;
+        }
+        .chat-pending-dots span:nth-child(2) { animation-delay: 0.18s; }
+        .chat-pending-dots span:nth-child(3) { animation-delay: 0.36s; }
+        @keyframes chat-bounce {
+            0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+            40% { opacity: 1; transform: translateY(-3px); }
+        }
 
         .message-bubble {
             padding: 11px 15px;
@@ -647,6 +903,237 @@
             background: #0d0d1a;
         }
 
+        /* ── Save command banner ── */
+        #save-cmd-banner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: #1a1a0a;
+            border-top: 1px solid #2a2410;
+            border-bottom: 1px solid #2a2410;
+            font-size: 11px;
+            color: #ddc480;
+        }
+        .save-cmd-btn-yes, .save-cmd-btn-no {
+            background: none;
+            border: 1px solid #ffb84a55;
+            border-radius: 3px;
+            color: #ffb84a;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 3px 8px;
+            margin-left: auto;
+        }
+        .save-cmd-btn-yes:hover { background: #ffb84a; color: #1a1a0a; }
+        .save-cmd-btn-no { margin-left: 4px; border-color: #555; color: #888; }
+        .save-cmd-btn-no:hover { border-color: #888; color: #ccc; }
+
+        /* ── Slash command autocomplete ── */
+        #cmd-autocomplete {
+            position: absolute;
+            bottom: 70px;
+            left: 14px;
+            right: 14px;
+            max-width: 520px;
+            max-height: 240px;
+            overflow-y: auto;
+            background: #0a0a15;
+            border: 1px solid #1a2a3a;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+        }
+        .cmd-ac-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #13131f;
+        }
+        .cmd-ac-item:last-child { border-bottom: none; }
+        .cmd-ac-item:hover, .cmd-ac-item.selected { background: #0d1a2e; }
+        .cmd-ac-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            background: #13131f;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .cmd-ac-icon.auto { background: #0a1a0f; color: #22c55e; }
+        .cmd-ac-icon.hybrid { background: #001a26; color: #00d4ff; }
+        .cmd-ac-icon.both {
+            background: linear-gradient(135deg, #0a1a0f 50%, #001a26 50%);
+            color: #fff;
+        }
+        .cmd-ac-name {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            color: #3a7bd5;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .cmd-ac-desc {
+            color: #6a7f99;
+            font-size: 11px;
+            margin-left: auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 280px;
+        }
+        .cmd-ac-empty {
+            padding: 10px 12px;
+            font-size: 11px;
+            color: #4a5568;
+            font-style: italic;
+        }
+
+        /* ── New command modal ── */
+        #new-cmd-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        #new-cmd-modal.open { display: flex; }
+        .new-cmd-modal-content {
+            background: #0d0d1a;
+            border: 1px solid #1e2a3a;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .new-cmd-modal-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid #13131f;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #c9d1d9;
+        }
+        .new-cmd-close {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: #6a7f99;
+            cursor: pointer;
+            padding: 2px;
+        }
+        .new-cmd-close:hover { color: #c9d1d9; }
+        .new-cmd-modal-body {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+        }
+        .new-cmd-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #4a5568;
+            margin-top: 6px;
+        }
+        .new-cmd-input {
+            background: #0a0a15;
+            border: 1px solid #1a1a2e;
+            border-radius: 4px;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 12px;
+            padding: 7px 10px;
+            outline: none;
+        }
+        .new-cmd-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
+        .new-cmd-input:focus { border-color: #3a7bd5; }
+        .new-cmd-input[type="text"] { height: 32px; }
+        .new-cmd-toggles {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .new-cmd-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .new-cmd-toggle input[type="checkbox"] { accent-color: #3a7bd5; }
+        .new-cmd-scope {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #13131f;
+            font-size: 11px;
+            color: #6a7f99;
+        }
+        .new-cmd-scope-opt {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .new-cmd-scope-opt input[type="radio"] { accent-color: #3a7bd5; }
+        .new-cmd-error {
+            background: #1a0000;
+            border: 1px solid #9a2020;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: #cc6060;
+            margin-top: 8px;
+        }
+        .new-cmd-modal-footer {
+            padding: 12px 16px;
+            border-top: 1px solid #13131f;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .new-cmd-btn-cancel, .new-cmd-btn-save {
+            background: none;
+            border: 1px solid #1e2a3a;
+            border-radius: 4px;
+            color: #6a7f99;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 7px 14px;
+        }
+        .new-cmd-btn-cancel:hover { border-color: #3a5080; color: #7090b0; }
+        .new-cmd-btn-save {
+            border-color: #3a7bd5;
+            color: #3a7bd5;
+        }
+        .new-cmd-btn-save:hover { background: #3a7bd5; color: #fff; }
+
         .icon-btn {
             background: none;
             border: 1px solid #1a1a2e;
@@ -662,6 +1149,21 @@
             transition: border-color 0.15s, color 0.15s, background 0.15s;
         }
         .icon-btn:hover { border-color: #3a7bd5; color: #3a7bd5; background: #0d1a2e; }
+        .icon-btn.mic-recording {
+            border-color: #ff4757;
+            color: #ff4757;
+            background: #1a0a0d;
+            animation: mic-pulse 1s ease-in-out infinite;
+        }
+        .icon-btn.mic-transcribing {
+            border-color: #00d4ff;
+            color: #00d4ff;
+            background: #001a26;
+        }
+        @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(255, 71, 87, 0); }
+        }
 
         #user-input {
             flex: 1;
@@ -1128,8 +1630,36 @@
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
-        <button id="hybrid-btn" class="header-btn" title="Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos">◆ Hybrid</button>
-        <button id="auto-btn" class="header-btn" title="Modo automatico: escreve, testa e corrige sem pedir aprovacao"><span class="mi" style="font-size:14px">bolt</span>Auto <span style="font-size:8px;opacity:0.7;letter-spacing:0.04em">BETA</span></button>
+        <div id="modes-wrapper" class="modes-wrapper">
+            <button id="modes-btn" class="header-btn" title="Modos do agente"><span class="mi" style="font-size:14px">tune</span>Modos<span id="modes-summary" class="modes-summary"></span></button>
+            <div id="modes-dropdown" class="modes-dropdown">
+                <div class="modes-section-label">Tipo de interacao</div>
+                <div class="modes-segmented">
+                    <button id="mode-dev" class="modes-seg-btn active" data-mode="dev">DEV</button>
+                    <button id="mode-chat" class="modes-seg-btn" data-mode="chat">CHAT</button>
+                </div>
+                <div class="modes-section-label">Modos do agente</div>
+                <label class="modes-toggle-row">
+                    <div class="modes-toggle-info">
+                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#22c55e">bolt</span>Auto</span>
+                        <span class="modes-toggle-desc">Escreve, testa e corrige sem pedir aprovacao</span>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="mode-auto"><span class="slider"></span></label>
+                </label>
+                <label class="modes-toggle-row">
+                    <div class="modes-toggle-info">
+                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#00d4ff">diamond</span>Hybrid</span>
+                        <span class="modes-toggle-desc">IA paga como suporte estrategico ao local</span>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="mode-hybrid"><span class="slider"></span></label>
+                </label>
+                <div id="modes-chat-notice" class="modes-chat-notice" style="display:none;">
+                    Modo CHAT: o agente conversa livremente sem acessar arquivos ou comandos. Auto e Hybrid ficam desabilitados.
+                </div>
+            </div>
+        </div>
+        <button id="hybrid-btn" class="hidden" style="display:none"></button>
+        <button id="auto-btn" class="hidden" style="display:none"></button>
         <button id="sessions-btn" class="header-btn"><span class="mi" style="font-size:14px">forum</span>Sessoes</button>
         <button id="new-session-btn" class="header-btn"><span class="mi" style="font-size:14px">add</span>Novo chat</button>
     </div>
@@ -1165,9 +1695,173 @@
             <div class="config-label" id="config-key-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
             <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
         </div>
-        <div>
-            <div class="config-label">Ferramentas disponíveis</div>
-            <div class="tools-grid" id="tools-grid"></div>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Ferramentas disponíveis</summary>
+            <div class="config-collapsible-body">
+                <div class="tools-grid" id="tools-grid"></div>
+            </div>
+        </details>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Recursos do Editor</summary>
+            <div class="config-collapsible-body">
+                <div class="editor-feature-row">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Autocomplete inline</span>
+                        <span class="editor-feature-desc">Sugestoes de codigo enquanto voce digita (texto fantasma cinza, aceita com Tab)</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-inline-completion">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="editor-feature-row">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Fix with Eucode</span>
+                        <span class="editor-feature-desc">Lampada de Quick Fix em erros e item no menu de contexto para refatorar selecao</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-fix-with-eucode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="config-hint">Ambos usam o modelo local por padrao. Se o modo Hybrid estiver ativo, a IA paga e usada como fallback quando o local nao retornar resultado util.</div>
+            </div>
+        </details>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Otimizacao de contexto</summary>
+            <div class="config-collapsible-body">
+                <div class="editor-feature-row">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">ProjectIntel (indice de simbolos)</span>
+                        <span class="editor-feature-desc">Injeta resumo de arquivos + simbolos exportados no system prompt. Desligue em modelos pequenos (&lt; 4B) ou monorepos para liberar contexto.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-project-intel">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="config-hint">Adiciona ~500-800 tokens em cada prompt. Util quando o agente precisa encontrar funcoes/classes em arquivos que nao estao abertos.</div>
+            </div>
+        </details>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Comandos personalizaveis</summary>
+            <div class="config-collapsible-body">
+                <div class="config-hint" style="margin-bottom:8px;">Digite <strong>/</strong> no chat para ver e usar seus comandos. Cada comando expande para um prompt salvo, opcionalmente com AUTO ou HYBRID ja ligados.</div>
+                <div class="cmd-scope-row">
+                    <label class="cmd-scope-opt">
+                        <input type="radio" name="config-cmd-scope" value="workspace">
+                        <span><strong>Workspace</strong> &mdash; .eucode/eucode.json (do projeto)</span>
+                    </label>
+                    <label class="cmd-scope-opt">
+                        <input type="radio" name="config-cmd-scope" value="global">
+                        <span><strong>Global</strong> &mdash; ~/.eucode/eucode.json (todos os projetos)</span>
+                    </label>
+                </div>
+                <button id="config-open-cmd-file" class="cmd-open-file-btn">
+                    <span class="mi" style="font-size:14px">edit_note</span>
+                    Abrir eucode.json
+                </button>
+            </div>
+        </details>
+        <details class="config-collapsible">
+            <summary class="config-collapsible-summary">Memoria da sessao</summary>
+            <div class="config-collapsible-body">
+                <div class="config-hint" style="margin-bottom:8px;">
+                    Decisoes, preferencias e comandos aprovados ficam em <code>.eucode/memory/session_&lt;id&gt;.json</code>.
+                    Digite <strong>/lembrar &lt;texto&gt;</strong> no chat para gravar uma nota manualmente. O agente tambem pode
+                    salvar usando a tool <code>memory_remember</code>. A memoria e injetada como contexto resumido em cada rodada.
+                </div>
+                <button id="config-open-memory-file" class="cmd-open-file-btn">
+                    <span class="mi" style="font-size:14px">psychology</span>
+                    Abrir memoria da sessao atual
+                </button>
+            </div>
+        </details>
+        <div style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#ff4757;">
+                <span>🎙 JARVIS — Modo de voz <span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:2px 6px;border-radius:3px;letter-spacing:0.06em;margin-left:6px;vertical-align:middle;">BETA</span></span>
+                <label class="switch" style="margin-left:auto">
+                    <input type="checkbox" id="config-jarvis-enabled">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="config-hint" style="margin-top:6px;margin-bottom:8px;color:#aa7080;">
+                Pressione o microfone no chat e fale — o audio e transcrito localmente via Whisper no LM Studio. O agente pode responder em voz alta. <strong style="color:#ff8e8e;">Feature em BETA</strong> — reporte bugs no GitHub.
+            </div>
+            <div id="config-jarvis-rows" style="display:none;gap:8px;flex-direction:column;">
+                <div class="editor-feature-row" style="border-color:#3a2030;">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Falar respostas em voz alta (TTS)</span>
+                        <span class="editor-feature-desc">Le respostas do agente usando voz do sistema. So texto puro, ignora blocos de codigo.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-jarvis-autospeak">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Endpoint do Whisper (LM Studio)</label>
+                    <input id="config-whisper-endpoint" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Modelo Whisper (id carregado no LM Studio)</label>
+                    <input id="config-whisper-model" class="config-input mono" type="text" placeholder="whisper-1" spellcheck="false">
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Idioma esperado (ISO: pt, en, es… vazio = auto)</label>
+                    <input id="config-whisper-language" class="config-input mono" type="text" placeholder="pt" spellcheck="false">
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Microfone (captura via ffmpeg)</label>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <select id="config-mic-device" class="config-input mono" style="flex:1;">
+                            <option value="">Padrão do sistema</option>
+                        </select>
+                        <button id="config-mic-refresh" class="icon-btn" title="Atualizar lista de microfones" type="button" style="flex:0 0 auto;"><span class="mi">refresh</span></button>
+                    </div>
+                    <span class="editor-feature-desc" style="font-size:9px;">Requer ffmpeg (brew install ffmpeg). A captura roda fora do webview.</span>
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Voz do JARVIS (fala da timeline e respostas)</label>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <select id="config-tts-voice" class="config-input mono" style="flex:1;">
+                            <option value="">Automática (masculina, se houver)</option>
+                        </select>
+                        <button id="config-tts-test" class="icon-btn" title="Testar voz" type="button" style="flex:0 0 auto;"><span class="mi">volume_up</span></button>
+                    </div>
+                    <span class="editor-feature-desc" style="font-size:9px;">Para voz masculina em PT-BR, baixe "Felipe" em Ajustes do Sistema → Acessibilidade → Conteúdo Falado → Vozes do sistema.</span>
+                </div>
+                <div class="editor-feature-row" style="border-color:#3a2030;">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Servidor de voz (para app mobile)</span>
+                        <span class="editor-feature-desc">Sobe um servidor HTTP local que aceita comandos do app mobile.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-voice-server-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="config-voice-server-rows" style="display:none;gap:6px;flex-direction:column;">
+                    <div>
+                        <label class="config-label" style="font-size:10px;">Porta</label>
+                        <input id="config-voice-server-port" class="config-input mono" type="number" min="1024" max="65535" value="9876">
+                    </div>
+                    <div class="editor-feature-row" style="border-color:#3a2030;">
+                        <div class="editor-feature-info">
+                            <span class="editor-feature-name">Expor na rede local</span>
+                            <span class="editor-feature-desc">Ative para o app mobile na mesma WiFi conectar. Sem isso, so localhost.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="config-voice-server-expose">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <button type="button" id="config-show-pairing" class="cmd-open-file-btn">Mostrar dados de pareamento</button>
+                    <div id="config-pairing-info" style="display:none;background:#0a0a15;border:1px solid #1a1a2e;border-radius:4px;padding:8px 10px;font-size:11px;color:#7090b0;">
+                        <div id="config-pairing-content" style="font-family:monospace;line-height:1.6;"></div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div>
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;">
@@ -1203,6 +1897,19 @@
                 <input id="config-hybrid-key" class="config-input mono" type="password" placeholder="API key do provedor de suporte" spellcheck="false" autocomplete="off">
                 <input id="config-hybrid-model" class="config-input mono" type="text" placeholder="Modelo (vazio usa o padrao do provedor)" spellcheck="false" autocomplete="off">
                 <div class="config-hint" id="config-hybrid-hint">Padrao: claude-sonnet-4-6</div>
+
+                <div class="hybrid-intensity-row">
+                    <div class="config-label" style="color:#00d4ff;margin-bottom:6px;">Intensidade do suporte</div>
+                    <div class="hybrid-intensity-segmented">
+                        <button type="button" class="hybrid-int-btn" data-val="25">25%</button>
+                        <button type="button" class="hybrid-int-btn" data-val="50">50%</button>
+                        <button type="button" class="hybrid-int-btn" data-val="75">75%</button>
+                        <button type="button" class="hybrid-int-btn" data-val="100">100%</button>
+                    </div>
+                    <div class="config-hint" id="config-hybrid-intensity-hint" style="margin-top:6px;color:#7090b0;">
+                        <strong>50%</strong> — Recovery + planejamento de tarefas grandes.
+                    </div>
+                </div>
             </div>
         </div>
         <div class="config-actions">
@@ -1228,13 +1935,65 @@
         <button id="image-remove" title="Remover"><span class="mi" style="font-size:16px">close</span></button>
     </div>
 
+    <div id="save-cmd-banner" style="display:none;">
+        <span class="mi" style="font-size:14px;color:#ffb84a">bookmark_add</span>
+        <span>Prompt longo — salvar como comando para reutilizar?</span>
+        <button id="save-cmd-yes" class="save-cmd-btn-yes">Salvar</button>
+        <button id="save-cmd-no" class="save-cmd-btn-no">Agora nao</button>
+    </div>
+    <div id="cmd-autocomplete" style="display:none;"></div>
     <div id="context-bar"></div>
     <div id="input-area">
         <button id="config-btn" class="icon-btn" title="Configuracoes"><span class="mi">settings</span></button>
         <button id="image-btn" class="icon-btn" title="Anexar imagem"><span class="mi">add_photo_alternate</span></button>
-        <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa..."></textarea>
+        <button id="mic-btn" class="icon-btn" title="Modo JARVIS — BETA (push-to-talk)" style="display:none"><span class="mi">mic</span></button>
+        <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa... ( / para comandos)"></textarea>
         <button id="stop-btn"><span class="mi" style="font-size:16px">stop_circle</span>Stop</button>
         <button id="send-btn"><span class="mi" style="font-size:16px">send</span>Enviar</button>
+    </div>
+
+    <div id="new-cmd-modal" style="display:none;">
+        <div class="new-cmd-modal-content">
+            <div class="new-cmd-modal-header">
+                <span class="mi" style="font-size:18px;color:#3a7bd5">bookmark_add</span>
+                <span>Novo comando personalizavel</span>
+                <button id="new-cmd-close" class="new-cmd-close"><span class="mi" style="font-size:16px">close</span></button>
+            </div>
+            <div class="new-cmd-modal-body">
+                <label class="new-cmd-label">Comando (comecar com /)</label>
+                <input id="new-cmd-name" class="new-cmd-input mono" type="text" placeholder="/testar" spellcheck="false">
+                <label class="new-cmd-label">Descricao (opcional)</label>
+                <input id="new-cmd-desc" class="new-cmd-input" type="text" placeholder="Roda testes E2E e reporta falhas">
+                <label class="new-cmd-label">Prompt</label>
+                <textarea id="new-cmd-prompt" class="new-cmd-input" rows="5"></textarea>
+                <div class="new-cmd-toggles">
+                    <label class="new-cmd-toggle">
+                        <input type="checkbox" id="new-cmd-auto">
+                        <span>Ativar modo AUTO ao rodar</span>
+                    </label>
+                    <label class="new-cmd-toggle">
+                        <input type="checkbox" id="new-cmd-hybrid">
+                        <span>Ativar modo HYBRID ao rodar</span>
+                    </label>
+                </div>
+                <div class="new-cmd-scope">
+                    <span>Salvar em:</span>
+                    <label class="new-cmd-scope-opt">
+                        <input type="radio" name="new-cmd-scope" value="workspace" checked>
+                        <span>Workspace (eucode.json)</span>
+                    </label>
+                    <label class="new-cmd-scope-opt">
+                        <input type="radio" name="new-cmd-scope" value="global">
+                        <span>Global (~/.eucode/eucode.json)</span>
+                    </label>
+                </div>
+                <div id="new-cmd-error" class="new-cmd-error" style="display:none;"></div>
+            </div>
+            <div class="new-cmd-modal-footer">
+                <button id="new-cmd-cancel" class="new-cmd-btn-cancel">Cancelar</button>
+                <button id="new-cmd-save" class="new-cmd-btn-save">Salvar comando</button>
+            </div>
+        </div>
     </div>
     <input type="file" id="image-input" accept="image/*" style="display:none">
 
@@ -1278,6 +2037,8 @@
             { name: 'run_git',           label: 'Git',                  desc: 'Operações git: status, commit, push, diff...' },
             { name: 'web_search',        label: 'Busca na web',         desc: 'Pesquisar documentação e soluções no DuckDuckGo' },
             { name: 'todo_update',       label: 'Lista de tarefas',     desc: 'Exibir checklist de progresso no chat' },
+            { name: 'memory_remember',   label: 'Salvar na memória',    desc: 'Agente persiste decisões e preferências em .eucode/memory' },
+            { name: 'memory_read',       label: 'Ler memória',          desc: 'Agente consulta a memória completa da sessão atual' },
         ];
 
         const toolsGrid = document.getElementById('tools-grid');
@@ -1323,6 +2084,210 @@
             vscode.postMessage({ command: 'stop' });
         });
 
+        // ── JARVIS: push-to-talk (record → transcribe → fill input) ────
+        const micBtn = document.getElementById('mic-btn');
+        let isRecording = false;
+
+        // Logs de diagnostico do JARVIS. Desligados em release; ative
+        // JARVIS_DEBUG=true para investigar microfone/voz no Debug Console.
+        const JARVIS_DEBUG = false;
+        function jlog(...args) {
+            if (!JARVIS_DEBUG) { return; }
+            console.log('[JARVIS]', ...args);
+            // Espelha no host (Debug Console) pois o console do webview e separado
+            try {
+                const text = args.map(a => {
+                    try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+                    catch (_) { return String(a); }
+                }).join(' ');
+                vscode.postMessage({ command: 'jarvis_log', text });
+            } catch (_) { /* noop */ }
+        }
+
+        function updateMicButtonVisibility() {
+            const on = !!(savedSettings && savedSettings.jarvisEnabled);
+            micBtn.style.display = on ? '' : 'none';
+        }
+
+        // ── Captura nativa via host (ffmpeg) ───────────────────────────────
+        // O webview do VSCode bloqueia getUserMedia (Electron nega midia ao
+        // iframe — confirmado: NotAllowedError sem prompt do macOS). Entao a
+        // gravacao acontece no processo da extensao via ffmpeg, e o webview
+        // so coordena via postMessage.
+        function startRecording() {
+            jlog('startRecording() -> pedindo gravacao nativa ao host (ffmpeg)');
+            isRecording = true;
+            micBtn.classList.remove('mic-transcribing');
+            micBtn.classList.add('mic-recording');
+            micBtn.title = 'Gravando... clique para parar e transcrever';
+            vscode.postMessage({ command: 'voice_record_start' });
+        }
+
+        function stopRecording() {
+            if (!isRecording) { return; }
+            jlog('stopRecording() -> parando gravacao nativa');
+            isRecording = false;
+            micBtn.classList.remove('mic-recording');
+            micBtn.classList.add('mic-transcribing');
+            micBtn.title = 'Transcrevendo audio...';
+            vscode.postMessage({ command: 'voice_record_stop' });
+        }
+
+        function resetMicButton() {
+            isRecording = false;
+            micBtn.classList.remove('mic-recording', 'mic-transcribing');
+            micBtn.title = 'Modo JARVIS — BETA (push-to-talk)';
+        }
+
+        // JARVIS: envia a fala transcrita imediatamente, sem deixar o texto no
+        // campo de input. Se o usuario ja tinha digitado algo, antepoe ao texto.
+        function sendTranscriptDirectly(text) {
+            const t = (text || '').trim();
+            if (!t) { return; }
+            const input = document.getElementById('user-input');
+            if (!input) { return; }
+            const typed = input.value.trim();
+            input.value = typed ? (typed + ' ' + t) : t;
+            sendMessage();
+            // Garante input limpo caso sendMessage tenha apenas injetado.
+            input.value = '';
+            input.style.height = 'auto';
+        }
+
+        // Insere o texto transcrito no input e foca, pronto para enviar.
+        function fillInputWithTranscript(text) {
+            const t = (text || '').trim();
+            if (!t) { return; }
+            const input = document.getElementById('user-input');
+            if (!input) { return; }
+            input.value = input.value ? (input.value.trimEnd() + ' ' + t) : t;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+        }
+
+        micBtn.addEventListener('click', () => {
+            jlog('mic-btn clicado | isRecording =', isRecording);
+            if (isRecording) { stopRecording(); }
+            else { startRecording(); }
+        });
+
+        // Confirma que o listener foi registrado e mostra o botao de imediato
+        // (independente do load_config) para diagnostico.
+        jlog('mic-btn listener registrado | micBtn encontrado =', !!micBtn);
+        updateMicButtonVisibility();
+
+        // ── TTS: fala respostas do agente quando jarvisAutoSpeak ativo ──
+        // Estrategia: pega o texto recebido em agent_response, remove blocos
+        // de codigo (``` ... ```), inline code e markdown pesado, e fala o
+        // restante com speechSynthesis nativo do navegador.
+        function cleanForSpeech(text) {
+            if (!text) { return ''; }
+            let out = text;
+            // Remove blocos de codigo
+            out = out.replace(/```[\s\S]*?```/g, ' [bloco de codigo omitido] ');
+            // Remove inline code
+            out = out.replace(/`[^`]+`/g, '');
+            // Remove markdown headers/bullets
+            out = out.replace(/^#{1,6}\s+/gm, '');
+            out = out.replace(/^[\*\-]\s+/gm, '');
+            // Remove links markdown, deixa so o texto
+            out = out.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+            // Colapsa whitespace
+            out = out.replace(/\n{2,}/g, '. ').replace(/\s+/g, ' ').trim();
+            // Cap defensivo — TTS lento em respostas muito longas
+            if (out.length > 1500) { out = out.slice(0, 1500) + '...'; }
+            return out;
+        }
+
+        // ── Seleção de voz (preferencia: masculina e moderna) ─────────────
+        // speechSynthesis.getVoices() pode vir vazio no primeiro acesso; o
+        // evento onvoiceschanged preenche depois. Guardamos a voz escolhida.
+        let _ttsVoice = null;
+        let _ttsVoicesReady = false;
+
+        // Vozes masculinas/modernas conhecidas por plataforma (pt-BR e en).
+        // No macOS, "Luciana" e "Felipe" sao PT-BR; "Daniel"/"Alex"/"Aaron"
+        // sao masculinas modernas. Priorizamos masculinas.
+        const PREFERRED_VOICES_PT = ['Felipe', 'Luciana']; // Felipe = masculino PT-BR
+        const PREFERRED_VOICES_EN = ['Aaron', 'Alex', 'Daniel', 'Google US English'];
+        const MALE_HINTS = ['felipe', 'daniel', 'alex', 'aaron', 'fred', 'male', 'homem', 'masculino', 'thomas', 'jorge', 'diego'];
+
+        function pickVoice() {
+            if (typeof speechSynthesis === 'undefined') { return null; }
+            const voices = speechSynthesis.getVoices() || [];
+            if (!voices.length) { return null; }
+            _ttsVoicesReady = true;
+
+            // 1) Voz escolhida explicitamente nas configs (por nome)
+            const chosenName = savedSettings && savedSettings.jarvisTtsVoice;
+            if (chosenName) {
+                const exact = voices.find(v => v.name === chosenName);
+                if (exact) { return exact; }
+            }
+
+            const wantPt = !(savedSettings && savedSettings.whisperLanguage === 'en');
+            const langPrefix = wantPt ? 'pt' : 'en';
+            const preferred = wantPt ? PREFERRED_VOICES_PT : PREFERRED_VOICES_EN;
+
+            // 2) Lista de preferidas por nome, no idioma certo
+            for (const name of preferred) {
+                const v = voices.find(v => v.name === name && v.lang.toLowerCase().startsWith(langPrefix));
+                if (v) { return v; }
+            }
+            // 3) Qualquer voz do idioma que pareca masculina pelo nome
+            const sameLang = voices.filter(v => v.lang.toLowerCase().startsWith(langPrefix));
+            const male = sameLang.find(v => MALE_HINTS.some(h => v.name.toLowerCase().includes(h)));
+            if (male) { return male; }
+            // 4) Primeira voz do idioma
+            if (sameLang[0]) { return sameLang[0]; }
+            // 5) Qualquer voz
+            return voices[0];
+        }
+
+        function ensureVoice() {
+            if (_ttsVoice) { return _ttsVoice; }
+            _ttsVoice = pickVoice();
+            return _ttsVoice;
+        }
+
+        if (typeof speechSynthesis !== 'undefined') {
+            speechSynthesis.onvoiceschanged = () => {
+                _ttsVoice = pickVoice();
+                if (_ttsVoice) { jlog('TTS voz selecionada: ' + _ttsVoice.name + ' (' + _ttsVoice.lang + ')'); }
+            };
+            // dispara o carregamento
+            try { speechSynthesis.getVoices(); } catch (_) { /* noop */ }
+        }
+
+        // Aplica voz + parametros "modernos" (pitch levemente grave, rate natural).
+        function applyVoiceParams(utter) {
+            const v = ensureVoice();
+            if (v) { utter.voice = v; utter.lang = v.lang; }
+            else { utter.lang = (savedSettings && savedSettings.whisperLanguage === 'en') ? 'en-US' : 'pt-BR'; }
+            utter.rate = (savedSettings && savedSettings.jarvisTtsRate) ? savedSettings.jarvisTtsRate : 1.03;
+            utter.pitch = 0.9; // levemente mais grave = mais masculino/moderno
+            utter.volume = 1.0;
+        }
+
+        function speakIfJarvisAutoSpeak(text) {
+            const on = !!(savedSettings && savedSettings.jarvisEnabled && savedSettings.jarvisAutoSpeak);
+            jlog('speakIfJarvisAutoSpeak | autoSpeak=' + on + ' | textLen=' + (text ? text.length : 0) + ' | voicesReady=' + _ttsVoicesReady);
+            if (!on) { return; }
+            if (typeof speechSynthesis === 'undefined') { jlog('TTS: speechSynthesis indisponivel'); return; }
+            const clean = cleanForSpeech(text);
+            if (!clean) { jlog('TTS: texto vazio apos limpeza — nao fala'); return; }
+            try {
+                // Fala apenas a resposta final do LLM. Cancela qualquer fala
+                // anterior antes de iniciar a nova.
+                speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(clean);
+                applyVoiceParams(utter);
+                speechSynthesis.speak(utter);
+            } catch (e) {
+                console.warn('TTS falhou:', e);
+            }
+        }
+
         function updateContextBar(files) {
             contextBar.innerHTML = '';
             if (!files || files.length === 0) {
@@ -1347,36 +2312,104 @@
                 : '<span class="mi" style="font-size:16px">send</span>Enviar';
         }
 
-        // ── Auto mode toggle ──
+        // ── Modes dropdown (DEV/CHAT + AUTO toggle + HYBRID toggle) ──
+        // Estado:
+        //   chatMode    — quando true, agente conversa livre sem tools de codigo
+        //   autoMode    — escreve/testa/corrige sem pedir aprovacao (so em DEV)
+        //   hybridMode  — IA paga como suporte (so em DEV, gated por master switch)
+        let chatMode = false;
+        let hybridMode = false;
+
+        const modesBtn = document.getElementById('modes-btn');
+        const modesDropdown = document.getElementById('modes-dropdown');
+        const modesSummary = document.getElementById('modes-summary');
+        const modesChatNotice = document.getElementById('modes-chat-notice');
+        const modeDevBtn = document.getElementById('mode-dev');
+        const modeChatBtn = document.getElementById('mode-chat');
+        const modeAutoToggle = document.getElementById('mode-auto');
+        const modeHybridToggle = document.getElementById('mode-hybrid');
+        // Hidden compat refs for any legacy code still touching these IDs
         const autoBtn = document.getElementById('auto-btn');
-        autoBtn.addEventListener('click', () => {
-            autoMode = !autoMode;
-            autoBtn.classList.toggle('auto-active', autoMode);
-            autoBtn.title = autoMode
-                ? 'Modo automatico ATIVO — clique para desativar'
-                : 'Modo automatico: escreve, testa e corrige sem pedir aprovacao';
+        const hybridBtn = document.getElementById('hybrid-btn');
+
+        function updateModesUI() {
+            modeDevBtn.classList.toggle('active', !chatMode);
+            modeChatBtn.classList.toggle('active', chatMode);
+            modeAutoToggle.checked = autoMode && !chatMode;
+            modeHybridToggle.checked = hybridMode && !chatMode;
+
+            // In CHAT, both Auto and Hybrid are disabled visually + functionally.
+            // In DEV, Hybrid is gated by the master switch from settings.
+            const autoRow = modeAutoToggle.closest('.modes-toggle-row');
+            const hybridRow = modeHybridToggle.closest('.modes-toggle-row');
+            const hybridMasterDisabled = !savedSettings.hybridEnabled;
+
+            autoRow.classList.toggle('disabled', chatMode);
+            hybridRow.classList.toggle('disabled', chatMode || hybridMasterDisabled);
+            modesChatNotice.style.display = chatMode ? 'block' : 'none';
+
+            // Header summary chip (compact indicator next to "Modos" label)
+            const parts = [];
+            if (chatMode) { parts.push('CHAT'); }
+            else {
+                if (autoMode) { parts.push('AUTO'); }
+                if (hybridMode) { parts.push('HYBRID'); }
+            }
+            modesSummary.textContent = parts.length ? ' · ' + parts.join(' · ') : '';
+            modesSummary.classList.toggle('has-active', !chatMode && parts.length > 0);
+            modesSummary.classList.toggle('chat', chatMode);
+        }
+
+        modesBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            modesDropdown.classList.toggle('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!modesDropdown.contains(e.target) && e.target !== modesBtn) {
+                modesDropdown.classList.remove('open');
+            }
         });
 
-        // ── Hybrid mode toggle ──
-        let hybridMode = false;
-        const hybridBtn = document.getElementById('hybrid-btn');
-        function updateHybridBtnState() {
-            hybridBtn.classList.toggle('hybrid-active', hybridMode);
-            hybridBtn.title = hybridMode
-                ? 'Modo Hybrid ATIVO — IA paga atuando como suporte. Clique para desativar.'
-                : 'Modo Hybrid: usa IA paga como suporte para a IA local em momentos criticos';
-        }
-        hybridBtn.addEventListener('click', () => {
-            if (!savedSettings.supportApiKey && !hybridMode) {
+        modeDevBtn.addEventListener('click', () => { chatMode = false; updateModesUI(); });
+        modeChatBtn.addEventListener('click', () => {
+            chatMode = true;
+            // CHAT desliga Auto/Hybrid sem perder a preferencia do usuario —
+            // os toggles voltam ao estado anterior ao retornar para DEV.
+            updateModesUI();
+        });
+
+        modeAutoToggle.addEventListener('change', () => {
+            if (chatMode) { modeAutoToggle.checked = false; return; }
+            autoMode = modeAutoToggle.checked;
+            updateModesUI();
+        });
+
+        modeHybridToggle.addEventListener('change', () => {
+            if (chatMode) { modeHybridToggle.checked = false; return; }
+            if (!savedSettings.hybridEnabled) {
+                modeHybridToggle.checked = false;
+                alert('Ative o modo HYBRID nas configuracoes primeiro (engrenagem → secao HYBRID).');
+                return;
+            }
+            if (!savedSettings.supportApiKey && modeHybridToggle.checked) {
+                modeHybridToggle.checked = false;
                 alert('Configure a API key do provedor de suporte nas configuracoes primeiro (engrenagem).');
                 return;
             }
-            hybridMode = !hybridMode;
-            savedSettings.hybridEnabled = hybridMode;
-            updateHybridBtnState();
-            // Persiste a preferencia
-            vscode.postMessage({ command: 'set_hybrid', enabled: hybridMode });
+            hybridMode = modeHybridToggle.checked;
+            updateModesUI();
         });
+
+        // Mantido para o codigo legado que ainda chama updateHybridBtnState()
+        // e syncHybridModeWithSettings() de outros pontos do arquivo.
+        function updateHybridBtnState() { updateModesUI(); }
+        function syncHybridModeWithSettings() {
+            if (!savedSettings.hybridEnabled && hybridMode) { hybridMode = false; }
+            updateModesUI();
+        }
+
+        // Garante estado inicial coerente
+        updateModesUI();
 
         // ── Sessions panel ──
         sessionsBtn.addEventListener('click', () => sessionsPanel.classList.toggle('open'));
@@ -1463,6 +2496,150 @@
         const configHybridKey = document.getElementById('config-hybrid-key');
         const configHybridModel = document.getElementById('config-hybrid-model');
         const configHybridHint = document.getElementById('config-hybrid-hint');
+        const configHybridIntensityHint = document.getElementById('config-hybrid-intensity-hint');
+        const hybridIntBtns = Array.from(document.querySelectorAll('.hybrid-int-btn'));
+        let selectedHybridIntensity = 50;
+        const HYBRID_INTENSITY_DESC = {
+            25:  'Minimo — apenas recovery critico (modelo travado).',
+            50:  'Equilibrado — recovery + planejamento de tarefas grandes.',
+            75:  'Agressivo — adiciona validacao entre sub-tarefas.',
+            100: 'Maximo — todos os gatilhos (planejamento, verificacao, recovery, validacao).',
+        };
+        function updateHybridIntensityUI() {
+            hybridIntBtns.forEach(b => {
+                const val = Number(b.getAttribute('data-val'));
+                b.classList.toggle('active', val === selectedHybridIntensity);
+            });
+            configHybridIntensityHint.innerHTML = `<strong>${selectedHybridIntensity}%</strong> — ${HYBRID_INTENSITY_DESC[selectedHybridIntensity] || ''}`;
+        }
+        hybridIntBtns.forEach(b => {
+            b.addEventListener('click', () => {
+                selectedHybridIntensity = Number(b.getAttribute('data-val'));
+                updateHybridIntensityUI();
+            });
+        });
+
+        const configInlineCompletion = document.getElementById('config-inline-completion');
+        const configFixWithEucode = document.getElementById('config-fix-with-eucode');
+        const configProjectIntel = document.getElementById('config-project-intel');
+        const configOpenCmdFile = document.getElementById('config-open-cmd-file');
+        const configOpenMemoryFile = document.getElementById('config-open-memory-file');
+        configOpenMemoryFile.addEventListener('click', () => {
+            vscode.postMessage({ command: 'open_memory_file' });
+        });
+
+        // ── JARVIS config elements ─────────────────────────────────────
+        const configJarvisEnabled = document.getElementById('config-jarvis-enabled');
+        const configJarvisRows = document.getElementById('config-jarvis-rows');
+        const configJarvisAutoSpeak = document.getElementById('config-jarvis-autospeak');
+        const configWhisperEndpoint = document.getElementById('config-whisper-endpoint');
+        const configWhisperModel = document.getElementById('config-whisper-model');
+        const configWhisperLanguage = document.getElementById('config-whisper-language');
+        const configMicDevice = document.getElementById('config-mic-device');
+        const configMicRefresh = document.getElementById('config-mic-refresh');
+        const configTtsVoice = document.getElementById('config-tts-voice');
+        const configTtsTest = document.getElementById('config-tts-test');
+        const configVoiceServerEnabled = document.getElementById('config-voice-server-enabled');
+        const configVoiceServerRows = document.getElementById('config-voice-server-rows');
+        const configVoiceServerPort = document.getElementById('config-voice-server-port');
+        const configVoiceServerExpose = document.getElementById('config-voice-server-expose');
+        const configShowPairing = document.getElementById('config-show-pairing');
+        const configPairingInfo = document.getElementById('config-pairing-info');
+        const configPairingContent = document.getElementById('config-pairing-content');
+
+        // Popula o dropdown de microfones com a lista vinda do host (ffmpeg).
+        // Preserva a selecao salva (savedSettings.micDeviceIndex).
+        function renderMicDevices(devices, selected) {
+            const sel = selected != null ? String(selected) : (savedSettings.micDeviceIndex || '');
+            configMicDevice.innerHTML = '';
+            const def = document.createElement('option');
+            def.value = '';
+            def.textContent = 'Padrão do sistema';
+            configMicDevice.appendChild(def);
+            (devices || []).forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = String(d.index);
+                opt.textContent = '[' + d.index + '] ' + d.label;
+                configMicDevice.appendChild(opt);
+            });
+            configMicDevice.value = sel;
+            // Se a selecao salva nao existe mais na lista, volta para o padrao.
+            if (configMicDevice.value !== sel) { configMicDevice.value = ''; }
+        }
+
+        function requestMicDevices() {
+            vscode.postMessage({ command: 'voice_list_devices' });
+        }
+
+        configMicRefresh.addEventListener('click', requestMicDevices);
+
+        // Popula o dropdown de vozes do TTS com as vozes do sistema.
+        function renderTtsVoices() {
+            if (typeof speechSynthesis === 'undefined') { return; }
+            const voices = speechSynthesis.getVoices() || [];
+            const selected = (savedSettings && savedSettings.jarvisTtsVoice) || '';
+            configTtsVoice.innerHTML = '';
+            const auto = document.createElement('option');
+            auto.value = '';
+            auto.textContent = 'Automática (masculina, se houver)';
+            configTtsVoice.appendChild(auto);
+            // Ordena: PT-BR primeiro, depois EN, depois o resto.
+            const rank = (v) => v.lang.toLowerCase().startsWith('pt') ? 0 : (v.lang.toLowerCase().startsWith('en') ? 1 : 2);
+            voices.slice().sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)).forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.name;
+                opt.textContent = v.name + ' (' + v.lang + ')';
+                configTtsVoice.appendChild(opt);
+            });
+            configTtsVoice.value = selected;
+            if (configTtsVoice.value !== selected) { configTtsVoice.value = ''; }
+        }
+
+        if (typeof speechSynthesis !== 'undefined') {
+            const prev = speechSynthesis.onvoiceschanged;
+            speechSynthesis.onvoiceschanged = function() {
+                if (typeof prev === 'function') { try { prev(); } catch (_) {} }
+                renderTtsVoices();
+            };
+        }
+
+        configTtsTest.addEventListener('click', () => {
+            if (typeof speechSynthesis === 'undefined') { return; }
+            speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance('Olá, eu sou o JARVIS. Vou narrar suas tarefas.');
+            const name = configTtsVoice.value;
+            const voices = speechSynthesis.getVoices() || [];
+            const v = name ? voices.find(x => x.name === name) : null;
+            if (v) { u.voice = v; u.lang = v.lang; }
+            else { u.lang = 'pt-BR'; }
+            u.pitch = 0.9; u.rate = 1.03;
+            speechSynthesis.speak(u);
+        });
+
+        configJarvisEnabled.addEventListener('change', () => {
+            configJarvisRows.style.display = configJarvisEnabled.checked ? 'flex' : 'none';
+            if (configJarvisEnabled.checked) { requestMicDevices(); }
+        });
+        configVoiceServerEnabled.addEventListener('change', () => {
+            configVoiceServerRows.style.display = configVoiceServerEnabled.checked ? 'flex' : 'none';
+        });
+        configShowPairing.addEventListener('click', () => {
+            vscode.postMessage({ command: 'voice_pairing_info' });
+        });
+
+        // Wire up scope radios + open file button. Scope changes apply immediately
+        // (separate command from the main Save) so the hot-reload kicks in.
+        document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
+            r.addEventListener('change', () => {
+                if (r.checked) {
+                    savedSettings.customCommandsScope = r.value;
+                    vscode.postMessage({ command: 'change_commands_scope', scope: r.value });
+                }
+            });
+        });
+        configOpenCmdFile.addEventListener('click', () => {
+            vscode.postMessage({ command: 'open_commands_file', scope: savedSettings.customCommandsScope || 'workspace' });
+        });
 
         const HYBRID_DEFAULT_MODELS = {
             anthropic: 'claude-sonnet-4-6',
@@ -1477,7 +2654,10 @@
         function updateHybridHint() {
             const p = configHybridProvider.value;
             configHybridHint.textContent = `Padrao: ${HYBRID_DEFAULT_MODELS[p]}`;
-            configHybridKey.placeholder = HYBRID_PLACEHOLDERS[p];
+            // Preserva os pontinhos se ja ha chave de suporte salva.
+            configHybridKey.placeholder = savedSettings.supportApiKey
+                ? '•'.repeat(28)
+                : HYBRID_PLACEHOLDERS[p];
             configHybridModel.placeholder = `Modelo (vazio = ${HYBRID_DEFAULT_MODELS[p]})`;
         }
 
@@ -1489,13 +2669,31 @@
         });
         configHybridProvider.addEventListener('change', updateHybridHint);
 
+        // Placeholder mascarado quando ha chave salva; senao o hint normal.
+        // Mantem o value vazio (a chave nunca volta ao webview/input).
+        const MASKED_KEY = '•'.repeat(28);
+        function emptyKeyHint(provider) {
+            return provider === 'anthropic' ? 'sk-ant-...' : 'sk-...';
+        }
+        function applyKeyPlaceholders() {
+            // Provedor principal
+            configKeyInput.placeholder = savedSettings.apiKey
+                ? MASKED_KEY
+                : emptyKeyHint(configProvider.value);
+            // Hybrid / provedor de suporte
+            configHybridKey.placeholder = savedSettings.supportApiKey
+                ? MASKED_KEY
+                : (HYBRID_PLACEHOLDERS[configHybridProvider.value] || 'API key do provedor de suporte');
+        }
+
         function updateConfigUI(provider) {
             const isAnthropic = provider === 'anthropic';
             configHostRow.style.display = isAnthropic ? 'none' : '';
             configKeyLabel.innerHTML = isAnthropic
                 ? 'API Key'
                 : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
-            configKeyInput.placeholder = isAnthropic ? 'sk-ant-...' : 'sk-...';
+            // Se ja ha chave salva, preserva os pontinhos; senao mostra o hint.
+            configKeyInput.placeholder = savedSettings.apiKey ? MASKED_KEY : (isAnthropic ? 'sk-ant-...' : 'sk-...');
             configModelHint.textContent = isAnthropic
                 ? 'Modelo Claude a usar. Clique num atalho abaixo ou digite o ID.'
                 : 'Nome exato do modelo carregado. Vazio usa o padrao do servidor.';
@@ -1527,6 +2725,10 @@
                 configKeyInput.value = '';
                 configFeedback.textContent = '';
                 updateConfigUI(savedSettings.provider);
+                // Mostra pontinhos no placeholder quando ja existe chave salva,
+                // para o usuario saber que ela continua guardada (o value fica
+                // vazio de proposito — a chave nunca volta ao input por seguranca).
+                applyKeyPlaceholders();
                 renderToolsGrid(savedSettings.enabledTools || ALL_TOOLS.map(t => t.name));
                 configRagEnabled.checked = !!savedSettings.ragEnabled;
                 configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
@@ -1536,9 +2738,38 @@
                 configHybridEnabled.checked = !!savedSettings.hybridEnabled;
                 configHybridProvider.value = savedSettings.supportProvider || 'anthropic';
                 configHybridKey.value = '';
+                // (pontinhos do hybrid sao aplicados em applyKeyPlaceholders)
                 configHybridModel.value = savedSettings.supportModel || '';
                 configHybridRows.style.display = configHybridEnabled.checked ? 'flex' : 'none';
                 updateHybridHint();
+                selectedHybridIntensity = [25, 50, 75, 100].includes(savedSettings.hybridIntensity)
+                    ? savedSettings.hybridIntensity : 50;
+                updateHybridIntensityUI();
+
+                configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
+                configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
+                configProjectIntel.checked = savedSettings.projectIntelEnabled !== false;
+
+                configJarvisEnabled.checked = !!savedSettings.jarvisEnabled;
+                configJarvisAutoSpeak.checked = savedSettings.jarvisAutoSpeak !== false;
+                configWhisperEndpoint.value = savedSettings.whisperEndpoint || 'http://localhost:1234';
+                configWhisperModel.value = savedSettings.whisperModel || 'whisper-1';
+                configWhisperLanguage.value = savedSettings.whisperLanguage || 'pt';
+                // Mostra ao menos a selecao salva; pede a lista real ao host se JARVIS ativo.
+                renderMicDevices([], savedSettings.micDeviceIndex || '');
+                if (savedSettings.jarvisEnabled) { requestMicDevices(); }
+                renderTtsVoices();
+                configVoiceServerEnabled.checked = !!savedSettings.voiceServerEnabled;
+                configVoiceServerPort.value = savedSettings.voiceServerPort || 9876;
+                configVoiceServerExpose.checked = !!savedSettings.voiceServerExposeNetwork;
+                configJarvisRows.style.display = configJarvisEnabled.checked ? 'flex' : 'none';
+                configVoiceServerRows.style.display = configVoiceServerEnabled.checked ? 'flex' : 'none';
+                configPairingInfo.style.display = 'none';
+
+                const currentScope = savedSettings.customCommandsScope || 'workspace';
+                document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
+                    r.checked = r.value === currentScope;
+                });
             }
         });
 
@@ -1565,6 +2796,20 @@
                 supportProvider: configHybridProvider.value,
                 supportApiKey: configHybridKey.value.trim(),
                 supportModel: configHybridModel.value.trim(),
+                hybridIntensity: selectedHybridIntensity,
+                inlineCompletionEnabled: configInlineCompletion.checked,
+                fixWithEucodeEnabled: configFixWithEucode.checked,
+                projectIntelEnabled: configProjectIntel.checked,
+                jarvisEnabled: configJarvisEnabled.checked,
+                jarvisAutoSpeak: configJarvisAutoSpeak.checked,
+                jarvisTtsVoice: configTtsVoice.value || '',
+                whisperEndpoint: configWhisperEndpoint.value.trim() || 'http://localhost:1234',
+                whisperModel: configWhisperModel.value.trim() || 'whisper-1',
+                whisperLanguage: configWhisperLanguage.value.trim(),
+                micDeviceIndex: configMicDevice.value || '',
+                voiceServerEnabled: configVoiceServerEnabled.checked,
+                voiceServerPort: parseInt(configVoiceServerPort.value, 10) || 9876,
+                voiceServerExposeNetwork: configVoiceServerExpose.checked,
             });
         });
 
@@ -1579,7 +2824,7 @@
         function restoreHistory(entries) {
             const rows = chatContainer.querySelectorAll('.message-row');
             if (rows.length === 1) { rows[0].remove(); }
-            entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent'));
+            entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent', false, null, e.mode || null));
         }
 
         // ── Image ──
@@ -1629,9 +2874,9 @@
         }
 
         // ── Messages ──
-        function appendMessage(text, role, isLoading = false, imageDataUrl = null) {
+        function appendMessage(text, role, isLoading = false, imageDataUrl = null, mode = null) {
             const row = document.createElement('div');
-            row.className = `message-row ${role}`;
+            row.className = `message-row ${role}` + (mode === 'chat' ? ' is-chat' : '');
 
             const meta = document.createElement('div');
             meta.className = 'message-meta';
@@ -1647,6 +2892,14 @@
             const label = document.createElement('span');
             label.className = 'message-label';
             label.textContent = role === 'user' ? 'Voce' : 'Eucode IA';
+
+            if (mode === 'chat') {
+                const badge = document.createElement('span');
+                badge.className = 'msg-mode-badge chat';
+                badge.textContent = 'CHAT';
+                label.appendChild(document.createTextNode(' '));
+                label.appendChild(badge);
+            }
 
             if (role === 'agent') {
                 meta.appendChild(avatar);
@@ -1667,12 +2920,21 @@
             }
 
             if (isLoading) {
-                const timeline = document.createElement('div');
-                timeline.className = 'agent-timeline';
-                timeline.id = 'agent-timeline';
-                bubble.appendChild(timeline);
                 bubble.dataset.loading = 'true';
-                addTimelineItem('Analisando sua solicitacao...', timeline);
+                if (mode === 'chat') {
+                    // CHAT: no timeline, just three pulsing dots while
+                    // we wait for the first streamed chunk to arrive.
+                    const dots = document.createElement('div');
+                    dots.className = 'chat-pending-dots';
+                    dots.innerHTML = '<span></span><span></span><span></span>';
+                    bubble.appendChild(dots);
+                } else {
+                    const timeline = document.createElement('div');
+                    timeline.className = 'agent-timeline';
+                    timeline.id = 'agent-timeline';
+                    bubble.appendChild(timeline);
+                    addTimelineItem('Analisando sua solicitacao...', timeline);
+                }
             } else if (role === 'agent') {
                 const md = document.createElement('div');
                 md.innerHTML = marked.parse(text);
@@ -2084,8 +3346,12 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '' };
-                if (typeof msg.hybridEnabled === 'boolean') { hybridMode = msg.hybridEnabled; updateHybridBtnState(); }
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '' };
+                customCommandsScope = savedSettings.customCommandsScope;
+                jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
+                    '| whisperEndpoint =', savedSettings.whisperEndpoint);
+                syncHybridModeWithSettings();
+                updateMicButtonVisibility();
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -2093,7 +3359,7 @@
                 const rows = chatContainer.querySelectorAll('.message-row');
                 rows.forEach(r => r.remove());
                 if (msg.entries && msg.entries.length > 0) {
-                    msg.entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent'));
+                    msg.entries.forEach(e => appendMessage(e.content, e.role === 'user' ? 'user' : 'agent', false, null, e.mode || null));
                 } else {
                     appendMessage('Ola! Como posso ajudar?', 'agent');
                 }
@@ -2108,6 +3374,9 @@
                 savedSettings.provider = configProvider.value;
                 savedSettings.apiHost = configHostInput.value.trim();
                 savedSettings.model = configModelInput.value.trim();
+                // Se digitou nova chave, reflete; senao mantem a existente
+                // (campo vazio = "nao alterar"). Assim os pontinhos persistem.
+                if (configKeyInput.value.trim()) { savedSettings.apiKey = configKeyInput.value.trim(); }
                 savedSettings.enabledTools = getEnabledTools();
                 savedSettings.ragEnabled = configRagEnabled.checked;
                 savedSettings.ragEndpoint = configRagEndpoint.value.trim();
@@ -2116,8 +3385,31 @@
                 savedSettings.supportProvider = configHybridProvider.value;
                 if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }
                 savedSettings.supportModel = configHybridModel.value.trim();
-                hybridMode = savedSettings.hybridEnabled;
-                updateHybridBtnState();
+                savedSettings.hybridIntensity = selectedHybridIntensity;
+                savedSettings.projectIntelEnabled = configProjectIntel.checked;
+                savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
+                savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
+                savedSettings.jarvisEnabled = configJarvisEnabled.checked;
+                savedSettings.jarvisAutoSpeak = configJarvisAutoSpeak.checked;
+                savedSettings.jarvisTtsVoice = configTtsVoice.value || '';
+                _ttsVoice = null; // forca re-selecao com a nova preferencia
+                savedSettings.whisperEndpoint = configWhisperEndpoint.value.trim() || 'http://localhost:1234';
+                savedSettings.whisperModel = configWhisperModel.value.trim() || 'whisper-1';
+                savedSettings.whisperLanguage = configWhisperLanguage.value.trim();
+                savedSettings.micDeviceIndex = configMicDevice.value || '';
+                savedSettings.voiceServerEnabled = configVoiceServerEnabled.checked;
+                savedSettings.voiceServerPort = parseInt(configVoiceServerPort.value, 10) || 9876;
+                savedSettings.voiceServerExposeNetwork = configVoiceServerExpose.checked;
+                // Se o usuario desativou Hybrid nas configs, o botao do header
+                // tambem cai para off. Se ativou, mantemos o botao no estado
+                // anterior (usuario precisa clicar no botao do header para usar).
+                syncHybridModeWithSettings();
+                updateMicButtonVisibility();
+                // Limpa os campos de chave e mostra os pontinhos, confirmando
+                // visualmente que a(s) chave(s) seguem salvas.
+                configKeyInput.value = '';
+                configHybridKey.value = '';
+                applyKeyPlaceholders();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -2147,6 +3439,30 @@
                 finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'hybrid_activity') {
                 handleHybridActivity(msg);
+            } else if (msg.command === 'command_list') {
+                customCommands = Array.isArray(msg.commands) ? msg.commands : [];
+                customCommandsScope = msg.scope || 'workspace';
+                if (Array.isArray(msg.errors) && msg.errors.length > 0) {
+                    console.warn('[Eucode] eucode.json com erros:', msg.errors);
+                }
+                renderAutocomplete();
+            } else if (msg.command === 'save_command_result') {
+                if (msg.ok) {
+                    closeNewCmdModal();
+                } else {
+                    newCmdError.textContent = msg.error || 'Erro desconhecido ao salvar.';
+                    newCmdError.style.display = 'block';
+                }
+            } else if (msg.command === 'remember_decision_result') {
+                if (msg.ok) {
+                    appendMessage('◆ Nota salva em .eucode/memory para esta sessao.', 'agent');
+                } else {
+                    const why = msg.error === 'duplicate' ? 'esta nota ja estava salva.'
+                              : msg.error === 'too_long' ? 'a nota excede 500 caracteres.'
+                              : msg.error === 'empty' ? 'a nota esta vazia.'
+                              : (msg.error || 'erro desconhecido.');
+                    appendMessage(`Eucode IA: nao foi possivel salvar — ${why}`, 'agent');
+                }
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
                 if (!msg.running) {
@@ -2194,7 +3510,9 @@
                 }
                 streamText += msg.text;
                 if (!streamBubble) {
-                    // Primeiro chunk: cria item de resposta final na timeline
+                    // Primeiro chunk: cria container de stream. Em DEV vai como
+                    // item da timeline. Em CHAT (sem timeline), substitui os
+                    // dots pulsantes da bubble direto pelo container de texto.
                     const tl = getTimeline();
                     if (tl) {
                         const prev = tl.querySelector('.tl-item.active');
@@ -2209,6 +3527,14 @@
                         item.appendChild(body);
                         tl.appendChild(item);
                         streamBubble = body;
+                    } else {
+                        // CHAT fallback — usa a bubble da mensagem em loading
+                        const loadingBubble = chatContainer.querySelector('[data-loading]');
+                        if (loadingBubble) {
+                            const dots = loadingBubble.querySelector('.chat-pending-dots');
+                            if (dots) { dots.remove(); }
+                            streamBubble = loadingBubble;
+                        }
                     }
                 }
                 if (streamBubble && !streamRafPending) {
@@ -2226,15 +3552,98 @@
                         chatContainer.scrollTop = chatContainer.scrollHeight;
                     });
                 }
+            } else if (msg.command === 'voice_devices_result') {
+                if (msg.ok) {
+                    renderMicDevices(msg.devices || [], msg.selected != null ? msg.selected : (savedSettings.micDeviceIndex || ''));
+                } else {
+                    jlog('voice_devices_result erro: ' + (msg.error || ''));
+                    renderMicDevices([], savedSettings.micDeviceIndex || '');
+                }
+                return;
+            } else if (msg.command === 'voice_record_started') {
+                jlog('host confirmou: gravando');
+                return;
+            } else if (msg.command === 'voice_record_error') {
+                resetMicButton();
+                alert('Microfone (JARVIS): ' + (msg.error || 'erro desconhecido'));
+                return;
+            } else if (msg.command === 'voice_record_result') {
+                resetMicButton();
+                if (msg.ok && msg.text) {
+                    // JARVIS: ao parar de falar, envia direto (sem passar pelo input).
+                    sendTranscriptDirectly(msg.text);
+                } else if (!msg.ok) {
+                    alert('Falha ao transcrever: ' + (msg.error || 'erro desconhecido'));
+                }
+                return;
+            } else if (msg.command === 'voice_transcribe_result') {
+                micBtn.classList.remove('mic-transcribing', 'mic-recording');
+                micBtn.title = 'Modo JARVIS — BETA (push-to-talk)';
+                if (msg.ok && msg.text) {
+                    const current = input.value.trim();
+                    input.value = current ? (current + ' ' + msg.text) : msg.text;
+                    input.style.height = 'auto';
+                    input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+                    input.focus();
+                } else if (!msg.ok) {
+                    alert('Falha ao transcrever: ' + (msg.error || 'erro desconhecido'));
+                }
+                return;
+            } else if (msg.command === 'voice_text_received') {
+                // Texto veio do mobile app via voice-server — coloca no input
+                // e auto-envia se nao houver agente rodando.
+                input.value = msg.text || '';
+                if (!agentRunning) { sendMessage(); }
+                return;
+            } else if (msg.command === 'voice_pairing_info_result') {
+                const ips = (msg.localIps || []).join(', ') || 'nenhum encontrado';
+                const recommendedHost = msg.bindAll && msg.localIps && msg.localIps[0] ? msg.localIps[0] : '127.0.0.1';
+                const url = 'http://' + recommendedHost + ':' + msg.port;
+                configPairingInfo.style.display = 'block';
+                configPairingContent.innerHTML =
+                    '<div><b>Status:</b> ' + (msg.running ? '<span style="color:#22c55e">rodando</span>' : '<span style="color:#ff4757">parado</span>') + '</div>' +
+                    '<div><b>URL:</b> ' + url + '</div>' +
+                    '<div><b>Token:</b> <span style="word-break:break-all">' + msg.token + '</span></div>' +
+                    '<div><b>IPs locais:</b> ' + ips + '</div>' +
+                    '<div style="margin-top:6px;color:#888;font-size:10px;">Use estes dados no app mobile. Authorization: Bearer &lt;token&gt;.</div>';
+                return;
+            } else if (msg.command === 'voice_server_status') {
+                if (!msg.running && msg.error) {
+                    console.warn('[voice-server] falhou:', msg.error);
+                }
+                return;
             } else if (msg.command === 'agent_response') {
                 finalizeTerminal();
                 setAgentRunning(false);
                 sendBtn.disabled = false;
 
+                // Fala a resposta em voz alta quando JARVIS + autospeak ativos.
+                // Provedores com streaming mandam msg.text vazio aqui (o texto
+                // foi acumulado em streamText via stream_chunk). Por isso o
+                // fallback — senao o TTS nao fala com esses provedores.
+                speakIfJarvisAutoSpeak(msg.text || streamText);
+
                 const tl = getTimeline();
                 // Pode ser o item ativo de resposta (se ainda nao foi congelado pelo CLEAR)
                 const activeResponse = tl?.querySelector('.tl-item.active.tl-response');
                 const loadingBubble = chatContainer.querySelector('[data-loading]');
+
+                // Marca a row do agente como is-chat e adiciona o badge no label
+                // quando a resposta veio do modo CHAT.
+                if (msg.mode === 'chat' && loadingBubble) {
+                    const row = loadingBubble.closest('.message-row');
+                    if (row) {
+                        row.classList.add('is-chat');
+                        const lbl = row.querySelector('.message-label');
+                        if (lbl && !lbl.querySelector('.msg-mode-badge')) {
+                            const badge = document.createElement('span');
+                            badge.className = 'msg-mode-badge chat';
+                            badge.textContent = 'CHAT';
+                            lbl.appendChild(document.createTextNode(' '));
+                            lbl.appendChild(badge);
+                        }
+                    }
+                }
 
                 // SEMPRE finalizar qualquer item ativo de status que NAO seja
                 // a resposta em streaming. Cobre o caso onde o loop retorna sem
@@ -2277,6 +3686,23 @@
                         appendContinueButton(body);
                     }
                     activeResponse.classList.remove('active');
+                } else if (msg.mode === 'chat' && streamText && loadingBubble) {
+                    // CHAT com streaming concluido: substitui o texto puro
+                    // no bubble por markdown renderizado.
+                    const pre = loadingBubble.querySelector('.tl-stream');
+                    if (pre) { pre.remove(); }
+                    const md = document.createElement('div');
+                    md.innerHTML = marked.parse(cleanText || streamText);
+                    loadingBubble.appendChild(md);
+                    appendContinueButton(loadingBubble);
+                } else if (msg.mode === 'chat' && cleanText && loadingBubble) {
+                    // CHAT sem streaming (raro mas possivel): renderiza direto
+                    const dots = loadingBubble.querySelector('.chat-pending-dots');
+                    if (dots) { dots.remove(); }
+                    const md = document.createElement('div');
+                    md.innerHTML = marked.parse(cleanText);
+                    loadingBubble.appendChild(md);
+                    appendContinueButton(loadingBubble);
                 } else if (!streamText && cleanText) {
                     // Sem streaming: adiciona item de resposta na timeline ao inves de nova bolha
                     if (tl) {
@@ -2364,6 +3790,8 @@
             item.appendChild(body);
             timeline.appendChild(item);
             chatContainer.scrollTop = chatContainer.scrollHeight;
+            // Nota: a timeline NAO e narrada. O TTS fala apenas a resposta
+            // final do LLM (ver speakIfJarvisAutoSpeak no handler agent_response).
             return item;
         }
 
@@ -2690,22 +4118,216 @@
             activeTerminalItem = null;
         }
 
+        // ── Custom commands (eucode.json) ──
+        let customCommands = [];
+        let customCommandsScope = 'workspace';
+        const SAVE_CMD_WORD_THRESHOLD = 30;
+        let pendingPromptForSave = '';
+
+        const acBox = document.getElementById('cmd-autocomplete');
+        const saveBanner = document.getElementById('save-cmd-banner');
+        const newCmdModal = document.getElementById('new-cmd-modal');
+        const newCmdName = document.getElementById('new-cmd-name');
+        const newCmdDesc = document.getElementById('new-cmd-desc');
+        const newCmdPrompt = document.getElementById('new-cmd-prompt');
+        const newCmdAuto = document.getElementById('new-cmd-auto');
+        const newCmdHybrid = document.getElementById('new-cmd-hybrid');
+        const newCmdError = document.getElementById('new-cmd-error');
+        let acSelectedIdx = 0;
+
+        function classifyCommandIcon(cmd) {
+            if (cmd.autoMode && cmd.hybridMode) { return { cls: 'both', icon: 'auto_awesome' }; }
+            if (cmd.autoMode) { return { cls: 'auto', icon: 'bolt' }; }
+            if (cmd.hybridMode) { return { cls: 'hybrid', icon: 'diamond' }; }
+            return { cls: '', icon: 'terminal' };
+        }
+
+        function renderAutocomplete() {
+            const raw = input.value;
+            const firstChar = raw.trimStart().charAt(0);
+            // Only show autocomplete when the input starts with "/" and there's no space yet (no args)
+            const trimmed = raw.trim();
+            if (firstChar !== '/' || trimmed.includes(' ') || agentRunning) {
+                acBox.style.display = 'none';
+                return;
+            }
+            const query = trimmed.toLowerCase();
+            const matches = customCommands.filter(c => c.command.toLowerCase().startsWith(query));
+            acBox.innerHTML = '';
+            if (matches.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'cmd-ac-empty';
+                empty.textContent = customCommands.length === 0
+                    ? 'Nenhum comando definido. Configure em eucode.json.'
+                    : `Nenhum comando casa com "${trimmed}".`;
+                acBox.appendChild(empty);
+                acBox.style.display = 'block';
+                return;
+            }
+            acSelectedIdx = Math.min(acSelectedIdx, matches.length - 1);
+            matches.forEach((cmd, i) => {
+                const item = document.createElement('div');
+                item.className = 'cmd-ac-item' + (i === acSelectedIdx ? ' selected' : '');
+                const cls = classifyCommandIcon(cmd);
+                item.innerHTML = `
+                    <div class="cmd-ac-icon ${cls.cls}"><span class="mi" style="font-size:13px">${cls.icon}</span></div>
+                    <span class="cmd-ac-name">${cmd.command}</span>
+                    <span class="cmd-ac-desc">${cmd.description ? escapeHtml(cmd.description) : ''}</span>
+                `;
+                item.addEventListener('click', () => acceptAutocomplete(cmd));
+                acBox.appendChild(item);
+            });
+            acBox.style.display = 'block';
+        }
+
+        function getAutocompleteMatches() {
+            const trimmed = input.value.trim();
+            if (!trimmed.startsWith('/') || trimmed.includes(' ')) { return []; }
+            const query = trimmed.toLowerCase();
+            return customCommands.filter(c => c.command.toLowerCase().startsWith(query));
+        }
+
+        function acceptAutocomplete(cmd) {
+            input.value = cmd.command + ' ';
+            acBox.style.display = 'none';
+            input.focus();
+        }
+
+        // Expands a /command into its prompt and applied flags. Returns null if
+        // the input is not a slash invocation.
+        function expandCustomCommand(text) {
+            const trimmed = text.trim();
+            if (!trimmed.startsWith('/')) { return null; }
+            const space = trimmed.indexOf(' ');
+            const cmdName = space === -1 ? trimmed : trimmed.slice(0, space);
+            const match = customCommands.find(c => c.command.toLowerCase() === cmdName.toLowerCase());
+            if (!match) { return null; }
+            return {
+                prompt: match.prompt,
+                autoMode: !!match.autoMode,
+                hybridMode: !!match.hybridMode,
+                displayLabel: match.command,
+            };
+        }
+
+        function showSaveBanner(prompt) {
+            pendingPromptForSave = prompt;
+            saveBanner.style.display = 'flex';
+        }
+        function hideSaveBanner() {
+            saveBanner.style.display = 'none';
+            pendingPromptForSave = '';
+        }
+
+        function openNewCmdModal(prefillPrompt) {
+            newCmdName.value = '';
+            newCmdDesc.value = '';
+            newCmdPrompt.value = prefillPrompt || '';
+            newCmdAuto.checked = false;
+            newCmdHybrid.checked = false;
+            newCmdError.style.display = 'none';
+            newCmdError.textContent = '';
+            // Default scope radio = current scope
+            document.querySelectorAll('input[name="new-cmd-scope"]').forEach(r => {
+                r.checked = r.value === customCommandsScope;
+            });
+            newCmdModal.classList.add('open');
+            newCmdModal.style.display = 'flex';
+            setTimeout(() => newCmdName.focus(), 0);
+        }
+        function closeNewCmdModal() {
+            newCmdModal.classList.remove('open');
+            newCmdModal.style.display = 'none';
+        }
+
+        document.getElementById('save-cmd-yes').addEventListener('click', () => {
+            openNewCmdModal(pendingPromptForSave);
+            hideSaveBanner();
+        });
+        document.getElementById('save-cmd-no').addEventListener('click', hideSaveBanner);
+        document.getElementById('new-cmd-close').addEventListener('click', closeNewCmdModal);
+        document.getElementById('new-cmd-cancel').addEventListener('click', closeNewCmdModal);
+        document.getElementById('new-cmd-save').addEventListener('click', () => {
+            const name = newCmdName.value.trim();
+            const prompt = newCmdPrompt.value.trim();
+            if (!name.startsWith('/') || name.length < 2) {
+                newCmdError.textContent = 'O comando precisa comecar com / e ter ao menos uma letra.';
+                newCmdError.style.display = 'block';
+                return;
+            }
+            if (!prompt) {
+                newCmdError.textContent = 'O prompt nao pode ficar vazio.';
+                newCmdError.style.display = 'block';
+                return;
+            }
+            const scope = document.querySelector('input[name="new-cmd-scope"]:checked')?.value || 'workspace';
+            vscode.postMessage({
+                command: 'save_command',
+                commandName: name,
+                prompt,
+                description: newCmdDesc.value.trim(),
+                autoMode: newCmdAuto.checked,
+                hybridMode: newCmdHybrid.checked,
+                scope,
+            });
+        });
+
         // ── Send ──
         function sendMessage() {
-            const text = input.value.trim();
-            if (!text && !pendingImage) { return; }
+            const rawText = input.value.trim();
+            if (!rawText && !pendingImage) { return; }
+            acBox.style.display = 'none';
+
+            // Built-in /lembrar — persiste nota na memoria da sessao sem chamar o agente.
+            // Sintaxe: /lembrar texto da nota a salvar
+            if (rawText.startsWith('/lembrar ')) {
+                const note = rawText.slice('/lembrar '.length).trim();
+                if (!note) {
+                    appendMessage(rawText, 'user');
+                    appendMessage('Eucode IA: use `/lembrar <texto>` para gravar uma nota na memoria da sessao.', 'agent');
+                    input.value = '';
+                    input.style.height = 'auto';
+                    return;
+                }
+                appendMessage(rawText, 'user');
+                input.value = '';
+                input.style.height = 'auto';
+                vscode.postMessage({ command: 'remember_decision', note });
+                return;
+            }
+
+            // Expand /command into the saved prompt (and apply mode flags)
+            const expanded = expandCustomCommand(rawText);
+            const text = expanded ? expanded.prompt : rawText;
+            const effectiveAuto = expanded ? (autoMode || expanded.autoMode) : autoMode;
+            const effectiveHybrid = expanded ? (hybridMode || expanded.hybridMode) : hybridMode;
 
             // Se o agente está rodando, injeta a mensagem na execução em curso
             if (agentRunning) {
-                appendMessage(text, 'user');
+                appendMessage(expanded ? `${expanded.displayLabel} → ${text}` : text, 'user');
                 input.value = '';
                 input.style.height = 'auto';
                 vscode.postMessage({ command: 'inject_message', text });
                 return;
             }
 
+            // Detect long prompts and offer to save as command (only for raw text, not /command invocations)
+            if (!expanded && rawText) {
+                const wordCount = rawText.split(/\s+/).filter(Boolean).length;
+                if (wordCount >= SAVE_CMD_WORD_THRESHOLD) {
+                    showSaveBanner(rawText);
+                } else {
+                    hideSaveBanner();
+                }
+            } else {
+                hideSaveBanner();
+            }
+
             const imageDataUrl = pendingImage ? `data:${pendingImage.mimeType};base64,${pendingImage.base64}` : null;
-            appendMessage(text, 'user', false, imageDataUrl);
+            const userDisplay = expanded
+                ? `${expanded.displayLabel}${expanded.autoMode ? ' ⚡' : ''}${expanded.hybridMode ? ' ◆' : ''} → ${text}`
+                : rawText;
+            appendMessage(userDisplay, 'user', false, imageDataUrl, chatMode ? 'chat' : null);
             input.value = '';
             input.style.height = 'auto';
             sendBtn.disabled = true;
@@ -2720,14 +4342,15 @@
             // sempre retorne a nova, evitando que dois elementos tenham o mesmo id
             const oldTimeline = document.getElementById('agent-timeline');
             if (oldTimeline) { oldTimeline.removeAttribute('id'); }
-            appendMessage('', 'agent', true);
+            appendMessage('', 'agent', true, null, chatMode ? 'chat' : null);
 
             vscode.postMessage({
                 command: 'user_input',
                 text: text || '(analise esta imagem)',
                 image: pendingImage ? { base64: pendingImage.base64, mimeType: pendingImage.mimeType } : null,
-                autoMode,
-                hybridMode,
+                autoMode: chatMode ? false : effectiveAuto,
+                hybridMode: chatMode ? false : effectiveHybrid,
+                chatMode,
             });
 
             pendingImage = null;
@@ -2737,11 +4360,41 @@
 
         sendBtn.addEventListener('click', sendMessage);
         input.addEventListener('keydown', function(e) {
+            // Autocomplete navigation when visible
+            if (acBox.style.display !== 'none' && acBox.style.display !== '') {
+                const matches = getAutocompleteMatches();
+                if (matches.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        acSelectedIdx = (acSelectedIdx + 1) % matches.length;
+                        renderAutocomplete();
+                        return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        acSelectedIdx = (acSelectedIdx - 1 + matches.length) % matches.length;
+                        renderAutocomplete();
+                        return;
+                    }
+                    if (e.key === 'Tab') {
+                        e.preventDefault();
+                        acceptAutocomplete(matches[acSelectedIdx]);
+                        return;
+                    }
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        acBox.style.display = 'none';
+                        return;
+                    }
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
         });
         input.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+            acSelectedIdx = 0;
+            renderAutocomplete();
         });
 
         vscode.postMessage({ command: 'webview_ready' });

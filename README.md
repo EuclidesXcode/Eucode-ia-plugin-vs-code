@@ -19,6 +19,9 @@ O Eucode IA e um agente autonomo com acesso completo ao seu workspace. Ele nao a
 - **Checklist de tarefas ao vivo** — exibe progresso passo a passo durante tarefas longas
 - **Permissoes dinamicas** — voce aprova cada comando individualmente ou para a sessao toda
 - **Controle de ferramentas** — habilite ou desabilite cada ferramenta individualmente nas configuracoes
+- **Autocomplete inline** — sugestoes de codigo enquanto voce digita, no padrao Copilot (texto fantasma cinza, aceita com Tab)
+- **Fix with Eucode** — lampada de Quick Fix em erros do editor e item no menu de contexto para refatorar selecao
+- **Comandos personalizaveis** — defina atalhos `/comando` em `eucode.json` que expandem em prompts completos, com AUTO/HYBRID embutidos
 
 ---
 
@@ -67,6 +70,344 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 - **AUTO** controla se o agente pede aprovacao para escrever/rodar comandos
 - **HYBRID** controla se a IA paga atua como suporte para a IA local
 - Os dois podem ser ativados juntos ou separados
+
+---
+
+## 🎙 Modo JARVIS (BETA) — voz local (Whisper) + leitura em voz alta
+
+> ⚠ **Feature em BETA.** O fluxo push-to-talk funciona, mas algumas integracoes (servidor de voz, app mobile, ajustes de qualidade) ainda estao em estabilizacao. Reporte bugs no GitHub.
+
+Pressione o botao de microfone no chat e fale com o Eucode IA. O audio e transcrito **localmente** via Whisper rodando no LM Studio (zero custo, sem enviar audio pra cloud). O agente pode responder em voz alta usando o TTS nativo do sistema.
+
+### Como ativar
+
+1. Abra as configuracoes (engrenagem)
+2. Role ate a secao **🎙 JARVIS** e ative o toggle principal
+3. Configure:
+   - **Endpoint do Whisper** — geralmente `http://localhost:1234` (mesmo do LM Studio)
+   - **Modelo Whisper** — `whisper-1` ou o id do modelo carregado no LM Studio
+   - **Idioma** — `pt`, `en`, ou vazio para auto-detectar
+4. Salve. O botao de microfone aparece no chat
+5. Pressione o botao, fale, pressione de novo pra encerrar. O texto transcrito vai pro input — voce edita ou da Enter pra enviar
+
+### Como configurar o Whisper no LM Studio (passo a passo)
+
+O LM Studio expoe um endpoint compativel com a API da OpenAI em `/v1/audio/transcriptions`. Voce so precisa baixar um modelo Whisper.
+
+**1. Baixar o modelo no LM Studio:**
+
+- Abra o LM Studio
+- Va em **Discover** (lupa na barra lateral)
+- Pesquise por `ggerganov/whisper` ou `whisper`
+- **Modelos recomendados:**
+  - `ggerganov/whisper.cpp` — variantes `tiny`, `base`, `small`, `medium`, `large-v3`
+  - Para **portugues + velocidade**: `whisper-small` (~500MB) — qualidade ok, rapido
+  - Para **portugues + qualidade**: `whisper-medium` (~1.5GB) — equilibrio ideal
+  - Para **maxima qualidade**: `whisper-large-v3` (~3GB) — mais lento mas excelente
+- Clique em Download
+
+**2. Carregar o modelo:**
+
+- Va na aba **Local Server** (icone de servidor)
+- No topo, selecione o modelo Whisper baixado no dropdown ao lado do modelo de chat (LM Studio suporta carregar varios modelos simultaneamente)
+- Clique em **Start Server**
+- Anote o endpoint mostrado (geralmente `http://localhost:1234`)
+
+**3. Identificar o ID do modelo:**
+
+- No LM Studio Local Server, expanda os detalhes do modelo carregado
+- O `id` aparece em formato `ggerganov/whisper.cpp/ggml-model-Q4_K_M.bin` ou similar
+- Copie esse id para o campo **Modelo Whisper** nas configuracoes do plugin
+- Se nao funcionar, tente apenas `whisper-1` (alias OpenAI-compativel)
+
+**4. Testar:**
+
+- Abra o chat do Eucode IA
+- Ative o microfone
+- Fale "ola Eucode" e pressione pra parar
+- O texto deve aparecer no input em 1-3 segundos
+
+### Alternativa para Mac com Apple Silicon — whisper-server standalone (recomendado)
+
+O LM Studio na versao 0.4.x tem um bug recorrente no carregamento de modelos ASR (`AsrProcess Failed to load model TypeError: ... is not a constructor`). Se voce esta no Mac com chip M1/M2/M3/M4/M5, o caminho mais confiavel e usar o **`whisper-server`** standalone via Homebrew. Ele roda em paralelo ao LM Studio (que continua servindo o LLM de chat), usa GPU Metal automaticamente e nunca apresenta esse erro.
+
+**Setup em 4 comandos:**
+
+```bash
+# 1. Instalar whisper.cpp via Homebrew (vem com whisper-server, whisper-cli e outros binarios)
+brew install whisper-cpp
+
+# 2. Criar pasta para os modelos
+mkdir -p ~/whisper-models
+
+# 3. Baixar o modelo GGML small (~465MB, qualidade boa pra portugues, rapido)
+curl -L -o ~/whisper-models/ggml-small.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+
+# 4. Subir o servidor na porta 1235 (deixa a 1234 livre pro LM Studio do chat)
+whisper-server --port 1235 --model ~/whisper-models/ggml-small.bin --language pt
+```
+
+Deixe o terminal aberto enquanto usar o JARVIS. Se quiser modelos maiores:
+
+| Modelo | Tamanho | Qualidade | Velocidade |
+|---|---|---|---|
+| `ggml-tiny.bin` | ~75MB | Baixa | Muito rapida |
+| `ggml-base.bin` | ~140MB | Media-baixa | Rapida |
+| `ggml-small.bin` (recomendado) | ~465MB | Boa | Rapida |
+| `ggml-medium.bin` | ~1.5GB | Alta | Media |
+| `ggml-large-v3.bin` | ~3GB | Maxima | Lenta |
+
+Troque o arquivo no comando `curl` e no `--model` do servidor.
+
+**Configurar no plugin:**
+
+| Campo | Valor |
+|---|---|
+| Endpoint do Whisper | `http://localhost:1235` |
+| Modelo Whisper | `whisper-1` (campo ignorado pelo whisper-server, mantenha por compatibilidade) |
+| Idioma | `pt` |
+
+O plugin detecta automaticamente o path correto do servidor (`/inference` no whisper-server vs `/v1/audio/transcriptions` no LM Studio) — voce nao precisa configurar nada extra.
+
+**Auto-iniciar no boot do Mac (opcional):**
+
+Crie `~/Library/LaunchAgents/com.eucode.whisper-server.plist` com:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eucode.whisper-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/whisper-server</string>
+        <string>--port</string>
+        <string>1235</string>
+        <string>--model</string>
+        <string>/Users/SEU_USUARIO/whisper-models/ggml-small.bin</string>
+        <string>--language</string>
+        <string>pt</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/whisper-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/whisper-server.err</string>
+</dict>
+</plist>
+```
+
+Troque `SEU_USUARIO` pelo seu nome de usuario, depois rode:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.eucode.whisper-server.plist
+```
+
+A partir do proximo boot, o whisper-server sobe automaticamente.
+
+### Servidor de voz (para app mobile)
+
+Dentro da secao JARVIS, ha um sub-toggle **"Servidor de voz (para app mobile)"**. Quando ativado, o plugin sobe um servidor HTTP local na porta `9876` (configuravel) que aceita:
+
+- `POST /voice-input` — envia texto pra ser processado pelo agente
+- `POST /transcribe` — envia audio pra ser transcrito pelo Whisper
+
+Toggle **"Expor na rede local"** controla onde o servidor escuta:
+- **OFF (padrao):** `127.0.0.1` — so apps na mesma maquina
+- **ON:** `0.0.0.0` — apps mobile na mesma WiFi conseguem conectar
+
+Clique em **"Mostrar dados de pareamento"** para ver:
+- **URL** completa (ex: `http://192.168.0.10:9876`)
+- **Token** de autenticacao (todo request precisa de header `Authorization: Bearer <token>`)
+- **IPs locais** detectados na sua maquina
+
+O app mobile (a desenvolver) consome esses dois endpoints. Mais detalhes do protocolo no codigo: [src/services/voice-server.ts](src/services/voice-server.ts).
+
+### Privacidade
+
+- **Audio nao sai da sua maquina** quando o Whisper esta no LM Studio local
+- TTS usa o motor de voz nativo do VS Code/sistema (offline)
+- O token de pareamento e armazenado apenas no `globalState` do VS Code
+
+---
+
+## Modo CHAT (conversa livre, sem tools de codigo)
+
+No header tem um botao **Modos** que abre um dropdown com um segmented control **DEV | CHAT** + toggles de Auto e Hybrid. Em CHAT, o agente vira um assistente conversacional puro — sem acessar arquivos do projeto, sem executar comandos, sem RAG nem memoria de sessao.
+
+### Quando usar
+
+- Tirar duvidas gerais (programacao, ferramentas, conceitos)
+- Brainstorming sobre arquitetura ou design antes de codar
+- Pedir analise de URLs (com a tool `web_search` habilitada)
+- Conversar sobre qualquer coisa fora do projeto
+
+### Comportamento
+
+- **Tools de codigo escondidas** — o modelo nao ve `read_local_file`, `edit_file`, `run_command`, etc. So `web_search` fica disponivel (se voce habilitou nas configs)
+- **Sem RAG, sem memoria, sem contexto de workspace** — CHAT e isolado da tarefa de dev
+- **Auto e Hybrid sao desligados automaticamente** ao entrar em CHAT, sem perder sua preferencia. Ao voltar para DEV, o estado anterior e restaurado
+- **Visual diferenciado** — mensagens em CHAT recebem badge `CHAT` e borda lateral azul-violeta, para diferenciar no historico misturado com tarefas DEV
+- **Mesmo modelo local** — usa o mesmo provider configurado nas configs (LM Studio, Ollama, Anthropic, etc). Sem custo adicional
+
+### Como ativar
+
+1. Clique no botao **Modos** no header
+2. Selecione **CHAT** no segmented control
+3. Os toggles Auto e Hybrid ficam acinzentados — o indicador compacto ao lado do botao mostra `Modos · CHAT`
+4. Mande uma mensagem normalmente
+
+Para voltar a programar, clique em **DEV** no mesmo dropdown.
+
+---
+
+## Recursos do Editor (autocomplete + fix inline)
+
+Alem do agente conversacional, o Eucode IA oferece duas integracoes diretas com o editor — sem precisar abrir o chat. Ambas sao opt-in (desligadas por padrao) e configuraveis no painel de configuracoes na secao colapsavel **Recursos do Editor**.
+
+### Autocomplete inline (estilo Copilot)
+
+Sugestoes de codigo aparecem como texto fantasma cinza enquanto voce digita. Aceite com **Tab**.
+
+- Debounce de 500ms aguardando voce parar de digitar
+- Cancela requests obsoletos automaticamente quando o cursor move
+- Contexto enviado ao modelo: 30 linhas antes do cursor + 5 depois
+- Skip automatico em arquivos de texto plano, markdown, logs e mensagens de commit
+- Funciona com qualquer linguagem que o LSP do VS Code reconheca
+
+### Fix with Eucode
+
+Dois pontos de entrada:
+
+1. **Lampada de Quick Fix** — aparece em erros de TypeScript, ESLint, etc. Clique na lampada e selecione "◆ Fix with Eucode". O modelo recebe o erro + codigo e propoe correcao.
+2. **Menu de contexto (botao direito)** — selecione qualquer trecho de codigo e clique com botao direito → "◆ Refactor with Eucode". Funciona mesmo sem erro, para refatoracoes voluntarias.
+
+Antes de aplicar, voce escolhe entre:
+- **Aplicar** — substitui a selecao pela sugestao
+- **Visualizar** — abre a sugestao em uma aba lateral para comparar antes de decidir
+- **Cancelar** — descarta a sugestao
+
+A confirmacao mostra se a correcao veio do **modelo local** ou do **suporte HYBRID** (quando configurado).
+
+### Comportamento com HYBRID ativo
+
+Ambos os recursos seguem a mesma logica do modo HYBRID: **primeiro tenta o local**, e somente se o local retornar vazio ou muito fraco, faz fallback transparente para o provedor pago configurado (Claude/GPT/Gemini). Isso mantem o custo baixo — voce so paga tokens quando o local nao deu conta.
+
+Se voce **nao tem HYBRID configurado**, o resultado do local e usado direto (mesmo que fraco). Se o modelo local estiver fora do ar, a sugestao simplesmente nao aparece — sem mensagens de erro intrusivas.
+
+### Como ativar
+
+1. Abra as configuracoes (engrenagem no chat)
+2. Expanda a secao **Recursos do Editor**
+3. Ative o toggle de **Autocomplete inline** e/ou **Fix with Eucode**
+4. Salve
+
+Os toggles funcionam independentemente — voce pode habilitar so um, ou os dois.
+
+---
+
+## Comandos personalizaveis (`eucode.json`)
+
+Voce pode definir comandos de atalho em um arquivo `eucode.json`. Digite `/` no chat para ver a lista, navegue com setas, aceite com Tab. O comando expande para o `prompt` salvo e (opcionalmente) ja ativa AUTO e/ou HYBRID.
+
+### Estrutura do arquivo
+
+```json
+[
+  {
+    "command": "/testar",
+    "prompt": "Quero que faca o teste de ponta a ponta. Rode npm test, analise as falhas e corrija ate todos os testes passarem.",
+    "description": "Roda testes E2E e corrige falhas",
+    "autoMode": true,
+    "hybridMode": false
+  },
+  {
+    "command": "/refatorar-arquitetura",
+    "prompt": "Analise a estrutura atual do projeto e proponha uma refatoracao da arquitetura. Foque em separacao de responsabilidades e testabilidade.",
+    "description": "Plano de refatoracao arquitetural (recomenda HYBRID)",
+    "autoMode": false,
+    "hybridMode": true
+  }
+]
+```
+
+**Campos:**
+
+| Campo | Tipo | Obrigatorio | Descricao |
+|---|---|---|---|
+| `command` | string | sim | Nome do atalho, deve comecar com `/` |
+| `prompt` | string | sim | Texto enviado ao agente quando voce invoca o comando |
+| `description` | string | nao | Texto curto que aparece no autocomplete |
+| `autoMode` | boolean | nao | Forca o modo AUTO ao rodar este comando |
+| `hybridMode` | boolean | nao | Forca o modo HYBRID ao rodar este comando |
+
+### Escopo: workspace ou global
+
+Voce escolhe onde os comandos ficam armazenados nas configuracoes do plugin:
+
+- **Workspace** (padrao): `eucode.json` na raiz do projeto. Committable, time compartilha
+- **Global**: `~/.eucode/eucode.json`. Pessoal do usuario, vale para qualquer projeto aberto
+
+O toggle de escopo nas configuracoes troca qual arquivo o plugin esta usando. Apenas um dos dois esta ativo por vez.
+
+### Salvar prompts longos como comando
+
+Sempre que voce escreve um prompt com **30+ palavras** e envia, um banner amarelo aparece sugerindo "Salvar como comando". Um clique abre o dialog ja preenchido com o seu prompt, e voce define o nome do comando, descricao, e quais modos ativar.
+
+### Como usar
+
+1. Digite `/` no chat — o autocomplete mostra a lista
+2. Use setas ↑/↓ para navegar, Tab para aceitar, Enter para enviar
+3. O agente recebe o `prompt` expandido, com AUTO/HYBRID aplicados se voce configurou
+4. Voce ve no chat o atalho usado: `/testar ⚡ → Quero que faca o teste...`
+
+### Hot reload
+
+Quando voce edita o `eucode.json` (no proprio VS Code ou em qualquer editor externo), o plugin recarrega a lista automaticamente — sem precisar reabrir o chat.
+
+### Editar o arquivo
+
+Nas configuracoes do plugin, na secao **Comandos personalizaveis**, clique em **Abrir eucode.json**. Se o arquivo nao existir ainda, o plugin cria um vazio.
+
+---
+
+## Memoria persistente por sessao
+
+Cada sessao de chat tem um arquivo proprio em `.eucode/memory/session_<id>.json` com 3 secoes:
+
+- **`stack`** — linguagens, frameworks e package manager detectados automaticamente do projeto na primeira rodada (lendo `package.json`, `Cargo.toml`, `pom.xml`, `pubspec.yaml`, etc)
+- **`approvedCommands`** — comandos que voce aprovou via "Permitir na sessao". Antes ficavam so em memoria e voce precisava aprovar de novo a cada reload. Agora persistem
+- **`decisions`** — notas curtas de decisoes do projeto, gravadas manualmente (voce) ou pelo agente
+
+Um resumo compacto dessa memoria e injetado no system prompt em toda rodada, dando ao agente contexto persistente sem voce precisar repetir. A memoria completa fica disponivel via tool `memory_read` se o agente quiser conferir detalhes.
+
+### Como gravar uma nota manualmente
+
+No chat, digite:
+
+```
+/lembrar Use Zustand no lugar de Redux neste projeto
+```
+
+A nota e salva em `.eucode/memory/session_<id>.json` e passa a fazer parte do contexto que o agente recebe nas proximas rodadas.
+
+### Agente gravando sozinho
+
+Quando voce informa uma decisao importante durante a conversa (ex: "usamos Material UI, nao Tailwind"), o agente pode chamar `memory_remember` para persistir essa preferencia sem voce precisar pedir.
+
+### Apagar uma sessao apaga sua memoria
+
+Quando voce remove uma sessao no painel de sessoes, o `session_<id>.json` correspondente e apagado junto. Sem garbage collection necessario.
+
+### Ver/editar a memoria
+
+Nas configuracoes → secao **Memoria da sessao**, clique em **Abrir memoria da sessao atual**. Voce pode editar o JSON diretamente; o conteudo entra no proximo prompt automaticamente.
 
 ---
 
@@ -209,9 +550,25 @@ Clique na engrenagem no header do chat para abrir o painel de configuracoes.
 - **API Key** — obrigatoria para Anthropic (`sk-ant-...`), opcional para servidores locais
 - **Ferramentas** — toggles liga/desliga para cada ferramenta disponivel
 
-### .eucodeIgnore — filtrar arquivos do contexto
+### .eucode/ — pasta de configuracao do plugin
 
-Crie um arquivo `.eucodeIgnore` na raiz do workspace para excluir arquivos e pastas que o agente nao deve ler ou listar. A sintaxe e identica ao `.gitignore`:
+Tudo que o Eucode IA grava no seu projeto fica organizado em uma unica pasta `.eucode/` na raiz do workspace. Ela e criada automaticamente na primeira vez que voce abre o chat:
+
+```
+seu-projeto/
+└── .eucode/
+    ├── .gitignore         # mantem memory/ fora do versionamento
+    ├── eucodeIgnore       # padroes que o agente deve ignorar
+    ├── eucode.json        # seus comandos /personalizaveis
+    └── memory/
+        └── session_*.json # memoria persistente por sessao
+```
+
+Versoes antigas do plugin gravavam `.eucodeIgnore` e `eucode.json` na raiz. Eles sao migrados automaticamente para dentro de `.eucode/` na primeira vez que voce abrir o chat — sem perder nenhuma configuracao.
+
+### eucodeIgnore — filtrar arquivos do contexto
+
+Edite `.eucode/eucodeIgnore` para excluir arquivos e pastas que o agente nao deve ler ou listar. A sintaxe e identica ao `.gitignore`:
 
 ```
 # Ignorar pastas de build e dependencias
@@ -228,7 +585,7 @@ coverage/
 *.local
 ```
 
-O plugin ja ignora automaticamente `node_modules`, `dist`, `.git`, `.next`, `__pycache__` e similares. O `.eucodeIgnore` e para regras adicionais especificas do seu projeto.
+O plugin ja ignora automaticamente `node_modules`, `dist`, `.git`, `.next`, `__pycache__` e similares. O `eucodeIgnore` e para regras adicionais especificas do seu projeto.
 
 ### LM Studio em rede local
 
@@ -371,6 +728,89 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.10.2
+- **JARVIS marcado como BETA** com selo visual no painel de configuracoes e tooltip do microfone
+- **Guia completo de whisper-server standalone para Apple Silicon** no README — alternativa recomendada ao LM Studio (que tem bug no carregamento ASR), com setup em 4 comandos brew + auto-start via LaunchAgent
+
+### 0.10.1
+- Fallback automatico de endpoint Whisper: tenta `/v1/audio/transcriptions` (LM Studio/OpenAI) e cai para `/inference` (whisper.cpp standalone) se 404
+- Permite usar `whisper-server` do brew como alternativa ao LM Studio sem mudar configuracao do plugin
+
+### 0.10.0
+- **NOVO: Modo JARVIS** — botao de microfone no chat (push-to-talk), STT 100% local via Whisper no LM Studio, TTS automatico do agente via `speechSynthesis`
+- **Servidor de voz local** com endpoints `/voice-input` e `/transcribe`, protegidos por token bearer e bind seletivo (loopback ou rede)
+- Preparado pra app mobile na mesma WiFi: token de pareamento UUID, header `Authorization`, IPs locais detectados automaticamente
+- README com passo a passo completo de configuracao do Whisper no LM Studio (download, carregamento, id do modelo, teste)
+
+### 0.9.1
+- Texto parcial do streaming preservado quando o stream cai no meio (antes era descartado, mostrando so "Erro de conexao")
+- 6 mensagens de erro especificas (rate limit, context too large, auth, timeout, conexao, server error) em vez da generica anterior
+- ProjectIntel default reduzido de 40 → 20 arquivos (libera ~700 tokens em todo prompt)
+- Novo toggle "ProjectIntel" na nova secao "Otimizacao de contexto" das configuracoes
+
+### 0.9.0
+- **3 novos servicos especializados** focados em sustentar tarefas longas com LLMs locais <= 10B:
+  - `ProjectIntelService`: indice leve de simbolos exportados por arquivo do workspace, injetado no system prompt — agente encontra arquivos sem precisar ler todos
+  - `ExecutionGuardService`: 6 guards de invariante centralizados (build pendente, arquivo errado, codigo no chat, etc), funcoes puras testaveis
+  - `TaskDecomposerService`: detecta macro-tarefas, quebra em 2-8 sub-tarefas auto-contidas (com ajuda do pago), inclui step validation entre sub-tarefas
+- **Slider de Intensidade HYBRID** (25/50/75/100%): usuario calibra quanto o LLM pago e invocado. Gating automatico por gatilho — 25% so usa pago em recovery critico, 100% usa em todos os gatilhos
+- **AUTO mode mais resiliente**: cap aumentado de 5 para 15 tentativas, recovery via HYBRID em cada multiplo de 4 (4, 8, 12)
+- ProjectIntel summary injetado em todo system prompt (skip em CHAT)
+
+### 0.8.11
+- AUTO + HYBRID mais robusto para tarefas de build/package: regras criticas no system prompt forcam sequencia read → edit → run_command → verify, sem editar duas vezes seguidas sem rodar build no meio
+- Plano HYBRID inicial agora e mais conciso (3-7 steps, paths relativos, sob 200 palavras) — libera ~700 tokens a mais no contexto do modelo local
+- Detector `buildPendingNoCommand`: se a tarefa pede build/package mas o modelo so editou sem rodar comando, nudge especifico orienta a executar `run_command` + verificar artefato no disco
+
+### 0.8.6
+- **NOVO: Modo CHAT** — toggle DEV/CHAT no novo dropdown "Modos" do header. Em CHAT o agente conversa livremente, sem acessar arquivos ou comandos. Util para perguntas gerais, brainstorming, analise de URL (com web_search se habilitado)
+- Em CHAT: Auto e Hybrid sao automaticamente desligados (sem perder a preferencia do usuario — volta ao estado anterior em DEV)
+- Tools de codigo escondidas em CHAT: so web_search disponivel
+- Badge "CHAT" + borda lateral azul-violeta nas mensagens enviadas em modo CHAT
+- Header reorganizado: botoes Hybrid e Auto agora ficam em um unico dropdown "Modos" com toggles individuais, indicador compacto do estado ativo
+- BETA removido do botao Auto
+
+### 0.8.4
+- **NOVO: Memoria persistente por sessao** — `.eucode/memory/session_<id>.json` com stack detectado, comandos aprovados e decisoes; resumo injetado no system prompt + tools `memory_remember` / `memory_read`
+- Comando `/lembrar <texto>` no chat para gravar notas manualmente
+- Detecao automatica de stack (linguagens, frameworks, package manager) na primeira rodada da sessao
+- Comandos "Permitir na sessao" agora persistem entre reloads
+- **Reorganizacao:** todos os arquivos do plugin agora ficam em `.eucode/` na raiz do workspace (eucodeIgnore, eucode.json, memory/, .gitignore)
+- Migracao automatica e silenciosa dos arquivos antigos (`.eucodeIgnore` e `eucode.json` na raiz) para dentro de `.eucode/` na primeira abertura do chat
+- Notificacao com botao "Abrir pasta" quando arquivos antigos sao migrados
+- `.eucode/.gitignore` criado automaticamente para manter `memory/` fora do versionamento
+- Deletar uma sessao apaga o arquivo de memoria correspondente
+- Botao "Abrir memoria da sessao atual" nas configuracoes
+
+### 0.8.3
+- Botao HYBRID do header agora respeita o master switch das configuracoes — desabilitado se HYBRID nao estiver ligado em Configuracoes
+- Desativar HYBRID nas configs forca o botao do header para off automaticamente
+- Tooltip e alerta orientam o usuario quando ele tenta usar o botao desabilitado
+
+### 0.8.2
+- **NOVO: Comandos personalizaveis** via `eucode.json` — atalhos `/comando` que expandem em prompts completos com AUTO/HYBRID opcionais
+- Autocomplete inline ao digitar `/` no chat (setas ↑/↓ para navegar, Tab para aceitar)
+- Escopo configuravel: `eucode.json` no workspace OU global em `~/.eucode/`
+- Hot reload automatico quando o arquivo e editado
+- Banner inline "Salvar como comando" aparece em prompts com 30+ palavras
+- Dialog para criar comando com toggles individuais (nome, descricao, AUTO, HYBRID, escopo)
+- Botao "Abrir eucode.json" na nova secao colapsavel "Comandos personalizaveis" do config
+
+### 0.8.1
+- **NOVO: Autocomplete inline** — sugestoes de codigo como texto fantasma cinza, aceita com Tab (estilo Copilot)
+- **NOVO: Fix with Eucode** — Quick Fix em erros + item no menu de contexto para refatorar selecao
+- Ambos seguem a logica HYBRID: local primeiro, suporte como fallback automatico
+- Confirmacao do Fix com 3 botoes (Aplicar / Visualizar / Cancelar)
+- Painel de config tem nova secao colapsavel "Recursos do Editor" com toggles individuais
+- "Ferramentas disponiveis" tambem agora e colapsavel — painel mais limpo
+
+### 0.8.0
+- **NOVO: Modo HYBRID** — IA local + IA paga (Anthropic / OpenAI / Gemini) como suporte estrategico em momentos criticos
+- 5 gatilhos: planejamento inicial, verificacao apos escrita, recuperacao de erro de comando/sintaxe, recuperacao quando o local trava
+- Botao HYBRID no header e secao dedicada nas configuracoes
+- Timeline com items de suporte cyan azul-neon alinhados a direita, com badge do provedor + motivo + meta
+- Telemetria comparativa final: divisao Local x Suporte em 3 dimensoes (chamadas / tokens / tempo)
 
 ### 0.7.4
 - Detector de arquivo errado em modo AUTO: agente para de "corrigir" o arquivo errado quando o erro aponta para outro

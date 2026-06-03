@@ -34,6 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ANTHROPIC_VERSION = exports.ANTHROPIC_API_BASE = void 0;
+exports.tryParseJsonChunk = tryParseJsonChunk;
+exports.classifyApiError = classifyApiError;
 exports.checkConnection = checkConnection;
 exports.checkAnthropicConnection = checkAnthropicConnection;
 exports.callAI = callAI;
@@ -41,6 +43,89 @@ exports.callAnthropicAI = callAnthropicAI;
 exports.callAIWithVision = callAIWithVision;
 const https = __importStar(require("https"));
 const http = __importStar(require("http"));
+// Tolerantly parses a JSON chunk that may have junk appended (a second
+// concatenated event, BOM, trailing whitespace, etc). Returns null if no
+// valid JSON object can be extracted from the start of the string.
+//
+// Strategy: try the fast path first (JSON.parse on the trimmed input).
+// If that fails, scan character-by-character tracking bracket depth and
+// string boundaries to find the end of the first balanced `{...}` object,
+// then parse just that prefix.
+function tryParseJsonChunk(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        return null;
+    }
+    try {
+        return JSON.parse(trimmed);
+    }
+    catch { /* fall through */ }
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    const openChar = trimmed.charAt(0);
+    const closeChar = openChar === '{' ? '}' : ']';
+    for (let i = 0; i < trimmed.length; i++) {
+        const c = trimmed.charAt(i);
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        if (inString) {
+            if (c === '\\') {
+                escape = true;
+            }
+            else if (c === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (c === '"') {
+            inString = true;
+            continue;
+        }
+        if (c === openChar) {
+            depth++;
+        }
+        else if (c === closeChar) {
+            depth--;
+            if (depth === 0) {
+                const candidate = trimmed.slice(0, i + 1);
+                try {
+                    return JSON.parse(candidate);
+                }
+                catch {
+                    return null;
+                }
+            }
+        }
+    }
+    return null;
+}
+// Maps a raw error message from the HTTP layer into a structured reason.
+// Used by both callAI and callAnthropicAI to produce consistent diagnostics.
+function classifyApiError(rawMessage) {
+    const m = rawMessage.toLowerCase();
+    if (/\b429\b|rate.?limit|too many requests/.test(m)) {
+        return { reason: 'rate_limit', userMessage: 'Limite de chamadas atingido no provedor (rate limit). Aguarde alguns segundos e tente novamente, ou troque para outro provedor.' };
+    }
+    if (/context.{0,20}(length|window|too large)|exceeds? .{0,20}(max|maximum) (tokens|context)|prompt is too long|token limit/.test(m)) {
+        return { reason: 'context_too_large', userMessage: 'A conversa excedeu o limite de tokens do modelo. Inicie uma nova sessao ou reduza arquivos abertos no editor.' };
+    }
+    if (/\b401\b|\b403\b|unauthorized|forbidden|invalid api key|authentication/.test(m)) {
+        return { reason: 'auth', userMessage: 'API key invalida ou sem permissao. Verifique a configuracao do provedor.' };
+    }
+    if (/timeout|timed out|etimedout/.test(m)) {
+        return { reason: 'timeout', userMessage: 'O modelo demorou demais para responder (timeout). Tente novamente — em modelos locais, verifique a memoria disponivel.' };
+    }
+    if (/econnrefused|enotfound|network|fetch failed|socket hang up|connection (reset|refused|closed)/.test(m)) {
+        return { reason: 'connection', userMessage: 'Nao foi possivel conectar ao provedor. Verifique se o LM Studio esta rodando ou se ha internet.' };
+    }
+    if (/\b5\d\d\b|internal server error|bad gateway|service unavailable/.test(m)) {
+        return { reason: 'server_error', userMessage: 'Erro no servidor do provedor. Tente novamente em instantes.' };
+    }
+    return { reason: 'unknown', userMessage: 'Erro ao chamar o modelo. Detalhe: ' + rawMessage.slice(0, 200) };
+}
 exports.ANTHROPIC_API_BASE = 'https://api.anthropic.com';
 exports.ANTHROPIC_VERSION = '2023-06-01';
 function request(url, method, body, headers, timeoutMs, signal) {
@@ -130,18 +215,47 @@ function requestStream(url, body, headers, signal, onLine) {
                 });
                 return;
             }
+            // SSE parser tolerante a multiplos cenarios de eventos colados:
+            //   - "data: A\ndata: B"  (caso normal)
+            //   - "data: AAdata: B"   (eventos colados sem \n entre eles)
+            //   - "data: Aevent: foo\ndata: B"  (Anthropic mistura event: e data:)
+            //   - "{...}\n\nextra-bytes" (chunks com lixo apos JSON valido)
+            //
+            // Estrategia: para cada linha bruta, encontra TODAS as posicoes onde
+            // comeca um novo prefixo SSE ("data:", "event:", "id:", "retry:") e
+            // separa em fragmentos. Cada fragmento e despachado individualmente.
+            // No callback de parsing (onLine), se JSON.parse falhar, tenta
+            // extrair o primeiro objeto JSON valido antes de desistir.
+            const SSE_PREFIX_RE = /(?<=.)(?=(?:data:|event:|id:|retry:)\s)/g;
             let buf = '';
+            const dispatchLine = (rawLine) => {
+                if (!rawLine) {
+                    return;
+                }
+                if (SSE_PREFIX_RE.test(rawLine)) {
+                    SSE_PREFIX_RE.lastIndex = 0; // reset state after test()
+                    const parts = rawLine.split(SSE_PREFIX_RE);
+                    for (const p of parts) {
+                        const trimmed = p.trim();
+                        if (trimmed) {
+                            onLine(trimmed);
+                        }
+                    }
+                    return;
+                }
+                onLine(rawLine);
+            };
             res.on('data', (chunk) => {
                 buf += chunk.toString('utf8');
                 const lines = buf.split('\n');
                 buf = lines.pop() ?? '';
                 for (const line of lines) {
-                    onLine(line);
+                    dispatchLine(line);
                 }
             });
             res.on('end', () => {
                 if (buf) {
-                    onLine(buf);
+                    dispatchLine(buf);
                 }
                 resolve();
             });
@@ -203,10 +317,12 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters },
     }));
+    // Streaming state lifted to outer scope so the catch block can recover
+    // any partial text that was already produced before the stream broke.
+    let textAcc = '';
     try {
         if (onChunk) {
             // ── Streaming path ──
-            let textAcc = '';
             let toolId = '';
             let toolName = '';
             let toolArgsRaw = '';
@@ -225,7 +341,12 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
                     return;
                 }
                 try {
-                    const evt = JSON.parse(data);
+                    // Tolerant parse: extracts first valid JSON object even if
+                    // the chunk has trailing junk from a concatenated event.
+                    const evt = tryParseJsonChunk(data);
+                    if (!evt) {
+                        return;
+                    }
                     // Capture usage when present (LM Studio sends it in last chunk)
                     if (evt?.usage) {
                         promptTokens = evt.usage.prompt_tokens ?? 0;
@@ -262,8 +383,16 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             });
             const usage = { promptTokens, completionTokens, elapsedMs: Date.now() - t0 };
             if (toolName) {
-                const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
-                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } }, usage };
+                // Tool args are streamed in chunks and accumulated. If the
+                // model produced malformed JSON, fall back to text-only
+                // response instead of throwing — better to keep the partial
+                // text than to discard everything.
+                const args = toolArgsRaw ? tryParseJsonChunk(toolArgsRaw) : {};
+                if (args !== null) {
+                    return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } }, usage };
+                }
+                // Tool args failed to parse — log and degrade to text response
+                console.warn('[API] Tool args JSON malformado, degradando para resposta de texto:', toolArgsRaw.slice(0, 200));
             }
             return { responseText: textAcc.trim(), usage };
         }
@@ -279,7 +408,7 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             if (message.tool_calls?.length > 0) {
                 const raw = message.tool_calls[0];
                 const args = typeof raw.function.arguments === 'string'
-                    ? JSON.parse(raw.function.arguments)
+                    ? (tryParseJsonChunk(raw.function.arguments) ?? {})
                     : raw.function.arguments;
                 return { responseText: '', toolCall: { id: raw.id, function: { name: raw.function.name, arguments: args } } };
             }
@@ -290,8 +419,15 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
         if (error instanceof Error && error.message === 'ABORTED') {
             return { responseText: '__ABORTED__' };
         }
-        console.error('[API] Falha ao chamar o LLM:', error);
-        return { responseText: '__INFRA_ERROR__' };
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const { reason, userMessage } = classifyApiError(rawMessage);
+        console.error('[API] Falha ao chamar o LLM:', { reason, rawMessage, partialLen: textAcc.length });
+        return {
+            responseText: '__INFRA_ERROR__',
+            partialText: textAcc.trim(),
+            errorReason: reason,
+            errorDetail: userMessage,
+        };
     }
 }
 async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, onLiveTelemetry) {
@@ -344,8 +480,10 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
         'x-api-key': apiKey,
         'anthropic-version': exports.ANTHROPIC_VERSION,
     };
+    // Lifted to outer scope so the catch can recover partial text from a
+    // broken stream (e.g. network blip mid-response).
+    let textAcc = '';
     try {
-        let textAcc = '';
         let toolId = '';
         let toolName = '';
         let toolArgsRaw = '';
@@ -358,7 +496,12 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
             }
             const data = line.slice(6).trim();
             try {
-                const evt = JSON.parse(data);
+                // Tolerant parse: extracts first valid JSON object even if
+                // the chunk has trailing junk from a concatenated event.
+                const evt = tryParseJsonChunk(data);
+                if (!evt) {
+                    return;
+                }
                 const type = evt?.type ?? '';
                 if (type === 'content_block_start') {
                     currentBlockType = evt.content_block?.type ?? '';
@@ -387,8 +530,13 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
             catch { /* malformed chunk */ }
         });
         if (toolName) {
-            const args = toolArgsRaw ? JSON.parse(toolArgsRaw) : {};
-            return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+            // Tool args are accumulated chunk-by-chunk. Use tolerant parser
+            // and fall back to text response if JSON is malformed.
+            const args = toolArgsRaw ? tryParseJsonChunk(toolArgsRaw) : {};
+            if (args !== null) {
+                return { responseText: '', toolCall: { id: toolId, function: { name: toolName, arguments: args } } };
+            }
+            console.warn('[API Anthropic] Tool args JSON malformado, degradando para texto:', toolArgsRaw.slice(0, 200));
         }
         return { responseText: textAcc.trim() };
     }
@@ -396,8 +544,15 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
         if (error instanceof Error && error.message === 'ABORTED') {
             return { responseText: '__ABORTED__' };
         }
-        console.error('[API Anthropic] Falha:', error);
-        return { responseText: '__INFRA_ERROR__' };
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const { reason, userMessage } = classifyApiError(rawMessage);
+        console.error('[API Anthropic] Falha:', { reason, rawMessage, partialLen: textAcc.length });
+        return {
+            responseText: '__INFRA_ERROR__',
+            partialText: textAcc.trim(),
+            errorReason: reason,
+            errorDetail: userMessage,
+        };
     }
 }
 async function callAIWithVision(endpoint, authHeaders, userText, imageBase64, imageMimeType, systemContent, model) {

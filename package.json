@@ -2,7 +2,7 @@
     "name": "eucode-ia-plugin-vs-code",
     "displayName": "Eucode IA",
     "description": "Agente de IA para engenharia de software integrado ao VS Code. Roda 100% local via LM Studio — le arquivos, edita codigo, executa comandos e analisa imagens sem enviar dados para servidores externos.",
-    "version": "0.7.4",
+    "version": "0.11.1",
     "publisher": "EucodeIA",
     "license": "MIT",
     "icon": "icon.png",
@@ -40,8 +40,22 @@
                 "command": "eucode-ia.openChat",
                 "title": "Eucode IA: Abrir Chat",
                 "icon": "images/eucode-icon.svg"
+            },
+            {
+                "command": "eucode-ia.fixWithEucode",
+                "title": "◆ Fix with Eucode",
+                "category": "Eucode IA"
             }
         ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "eucode-ia.fixWithEucode",
+                    "when": "editorHasSelection && eucodeFixEnabled",
+                    "group": "1_modification@99"
+                }
+            ]
+        },
         "viewsContainers": {
             "activitybar": [
                 {

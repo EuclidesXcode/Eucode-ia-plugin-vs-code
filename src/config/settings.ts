@@ -20,6 +20,8 @@ export const ALL_TOOL_NAMES = [
     'run_command',
     'run_git',
     'web_search',
+    'memory_remember',
+    'memory_read',
 ] as const;
 
 export type ToolName = typeof ALL_TOOL_NAMES[number];
@@ -37,6 +39,34 @@ export interface EucodeSettings {
     supportProvider: SupportProvider;
     supportApiKey: string;
     supportModel: string;
+    inlineCompletionEnabled: boolean;
+    fixWithEucodeEnabled: boolean;
+    customCommandsScope: 'workspace' | 'global';
+    // HYBRID intensity controls how much the paid model is invoked.
+    //   25  = minimal — only critical recovery (model totally stuck)
+    //   50  = balanced — recovery + planning for macro tasks
+    //   75  = aggressive — adds step validation between decomposed sub-tasks
+    //   100 = maximum — every trigger fires (planning, verify, recover, validate)
+    hybridIntensity: 25 | 50 | 75 | 100;
+    // When true, the plugin scans the workspace at the start of each round
+    // and injects a compact symbol index into the system prompt. Helps the
+    // model find files by exported name without reading them, but adds
+    // ~700-1500 tokens to every prompt. Disable to free context on small
+    // models (≤ 4B params) or on huge monorepos where the scan is slow.
+    projectIntelEnabled: boolean;
+    // ── JARVIS (voice mode) ─────────────────────────────────────────────
+    jarvisEnabled: boolean;          // master switch for voice features
+    jarvisAutoSpeak: boolean;        // TTS reads agent responses out loud
+    jarvisTtsVoice: string;          // empty = system default
+    jarvisTtsRate: number;           // 0.5 to 2.0
+    voiceServerEnabled: boolean;     // local HTTP server for STT and mobile clients
+    voiceServerPort: number;         // default 9876
+    voiceServerExposeNetwork: boolean; // bind 0.0.0.0 (mobile on LAN) vs 127.0.0.1
+    voicePairingToken: string;       // generated once, persisted; required by all server endpoints
+    whisperEndpoint: string;         // LM Studio base URL for /v1/audio/transcriptions
+    whisperModel: string;            // e.g. "whisper-1" or your local model id
+    whisperLanguage: string;         // ISO code like "pt", "en"; empty = auto-detect
+    micDeviceIndex: string;          // avfoundation audio device index for capture; '' = default (:0)
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -52,6 +82,23 @@ const DEFAULTS: EucodeSettings = {
     supportProvider: 'anthropic',
     supportApiKey: '',
     supportModel: '',
+    inlineCompletionEnabled: false,
+    fixWithEucodeEnabled: false,
+    customCommandsScope: 'workspace',
+    hybridIntensity: 50,
+    projectIntelEnabled: true,
+    jarvisEnabled: false,
+    jarvisAutoSpeak: true,
+    jarvisTtsVoice: '',
+    jarvisTtsRate: 1.0,
+    voiceServerEnabled: false,
+    voiceServerPort: 9876,
+    voiceServerExposeNetwork: false,
+    voicePairingToken: '',
+    whisperEndpoint: 'http://localhost:1234',
+    whisperModel: 'whisper-1',
+    whisperLanguage: 'pt',
+    micDeviceIndex: '',
 };
 
 const KEYS = {
@@ -67,6 +114,23 @@ const KEYS = {
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
     supportModel: 'eucode.supportModel',
+    inlineCompletionEnabled: 'eucode.inlineCompletionEnabled',
+    fixWithEucodeEnabled: 'eucode.fixWithEucodeEnabled',
+    customCommandsScope: 'eucode.customCommandsScope',
+    hybridIntensity: 'eucode.hybridIntensity',
+    projectIntelEnabled: 'eucode.projectIntelEnabled',
+    jarvisEnabled: 'eucode.jarvisEnabled',
+    jarvisAutoSpeak: 'eucode.jarvisAutoSpeak',
+    jarvisTtsVoice: 'eucode.jarvisTtsVoice',
+    jarvisTtsRate: 'eucode.jarvisTtsRate',
+    voiceServerEnabled: 'eucode.voiceServerEnabled',
+    voiceServerPort: 'eucode.voiceServerPort',
+    voiceServerExposeNetwork: 'eucode.voiceServerExposeNetwork',
+    voicePairingToken: 'eucode.voicePairingToken',
+    whisperEndpoint: 'eucode.whisperEndpoint',
+    whisperModel: 'eucode.whisperModel',
+    whisperLanguage: 'eucode.whisperLanguage',
+    micDeviceIndex: 'eucode.micDeviceIndex',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -89,6 +153,23 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         supportProvider: context.globalState.get<SupportProvider>(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get<string>(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
         supportModel: context.globalState.get<string>(KEYS.supportModel) ?? DEFAULTS.supportModel,
+        inlineCompletionEnabled: context.globalState.get<boolean>(KEYS.inlineCompletionEnabled) ?? DEFAULTS.inlineCompletionEnabled,
+        fixWithEucodeEnabled: context.globalState.get<boolean>(KEYS.fixWithEucodeEnabled) ?? DEFAULTS.fixWithEucodeEnabled,
+        customCommandsScope: context.globalState.get<'workspace' | 'global'>(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
+        hybridIntensity: (context.globalState.get<25 | 50 | 75 | 100>(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
+        projectIntelEnabled: context.globalState.get<boolean>(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
+        jarvisEnabled: context.globalState.get<boolean>(KEYS.jarvisEnabled) ?? DEFAULTS.jarvisEnabled,
+        jarvisAutoSpeak: context.globalState.get<boolean>(KEYS.jarvisAutoSpeak) ?? DEFAULTS.jarvisAutoSpeak,
+        jarvisTtsVoice: context.globalState.get<string>(KEYS.jarvisTtsVoice) ?? DEFAULTS.jarvisTtsVoice,
+        jarvisTtsRate: context.globalState.get<number>(KEYS.jarvisTtsRate) ?? DEFAULTS.jarvisTtsRate,
+        voiceServerEnabled: context.globalState.get<boolean>(KEYS.voiceServerEnabled) ?? DEFAULTS.voiceServerEnabled,
+        voiceServerPort: context.globalState.get<number>(KEYS.voiceServerPort) ?? DEFAULTS.voiceServerPort,
+        voiceServerExposeNetwork: context.globalState.get<boolean>(KEYS.voiceServerExposeNetwork) ?? DEFAULTS.voiceServerExposeNetwork,
+        voicePairingToken: context.globalState.get<string>(KEYS.voicePairingToken) ?? DEFAULTS.voicePairingToken,
+        whisperEndpoint: context.globalState.get<string>(KEYS.whisperEndpoint) ?? DEFAULTS.whisperEndpoint,
+        whisperModel: context.globalState.get<string>(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
+        whisperLanguage: context.globalState.get<string>(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
+        micDeviceIndex: context.globalState.get<string>(KEYS.micDeviceIndex) ?? DEFAULTS.micDeviceIndex,
     };
 }
 
@@ -105,6 +186,23 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);
     await context.globalState.update(KEYS.supportModel, settings.supportModel.trim());
+    await context.globalState.update(KEYS.inlineCompletionEnabled, settings.inlineCompletionEnabled);
+    await context.globalState.update(KEYS.fixWithEucodeEnabled, settings.fixWithEucodeEnabled);
+    await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
+    await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
+    await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
+    await context.globalState.update(KEYS.jarvisEnabled, settings.jarvisEnabled);
+    await context.globalState.update(KEYS.jarvisAutoSpeak, settings.jarvisAutoSpeak);
+    await context.globalState.update(KEYS.jarvisTtsVoice, settings.jarvisTtsVoice);
+    await context.globalState.update(KEYS.jarvisTtsRate, settings.jarvisTtsRate);
+    await context.globalState.update(KEYS.voiceServerEnabled, settings.voiceServerEnabled);
+    await context.globalState.update(KEYS.voiceServerPort, settings.voiceServerPort);
+    await context.globalState.update(KEYS.voiceServerExposeNetwork, settings.voiceServerExposeNetwork);
+    await context.globalState.update(KEYS.voicePairingToken, settings.voicePairingToken);
+    await context.globalState.update(KEYS.whisperEndpoint, settings.whisperEndpoint);
+    await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
+    await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
+    await context.globalState.update(KEYS.micDeviceIndex, settings.micDeviceIndex);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

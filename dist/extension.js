@@ -45,8 +45,16 @@ const context_1 = require("./workspace/context");
 const loop_1 = require("./agent/loop");
 const prompt_1 = require("./agent/prompt");
 const settings_1 = require("./config/settings");
+const inline_completion_provider_1 = require("./providers/inline-completion-provider");
+const fix_code_action_provider_1 = require("./providers/fix-code-action-provider");
+const custom_commands_1 = require("./services/custom-commands");
+const memory_service_1 = require("./services/memory-service");
+const workspace_init_1 = require("./services/workspace-init");
+const voice_server_1 = require("./services/voice-server");
+const audio_capture_1 = require("./services/audio-capture");
 const constants_1 = require("./utils/constants");
 class EucodeViewProvider {
+    getCurrentSettings() { return this._settings; }
     constructor(_context) {
         this._context = _context;
         this._sessionHistory = [];
@@ -55,6 +63,9 @@ class EucodeViewProvider {
         this._abortController = null;
         this._injectMessage = null;
         this._windowFocused = true;
+        this._voiceServer = null;
+        this._injectFromVoice = null;
+        this._audioCapture = null;
         this._historyManager = new HistoryManagerService_1.HistoryManagerService(_context);
         this._sessionHistory = this._historyManager.load();
         this._settings = (0, settings_1.loadSettings)(_context);
@@ -114,9 +125,111 @@ class EucodeViewProvider {
             const ctx = (0, context_1.collectWorkspaceContext)();
             webviewView.webview.postMessage({ command: 'open_files', files: ctx.openFiles });
         };
+        // Loads commands from the configured scope and pushes them to the
+        // webview so the chat input can autocomplete on `/`. Errors come
+        // through as a separate field for non-blocking display.
+        const pushCommandsToWebview = () => {
+            const scope = this._settings.customCommandsScope;
+            const { commands, errors } = (0, custom_commands_1.loadCommands)(scope);
+            webviewView.webview.postMessage({
+                command: 'command_list',
+                commands,
+                errors,
+                scope,
+                filePath: (0, custom_commands_1.getCommandsFilePath)(scope),
+            });
+        };
+        // Hot-reload: rewatch whenever the scope changes
+        let commandsWatcher = (0, custom_commands_1.watchCommandsFile)(this._settings.customCommandsScope, () => pushCommandsToWebview());
+        this._context.subscriptions.push({
+            dispose: () => commandsWatcher.dispose(),
+        });
+        const rewatchCommands = () => {
+            commandsWatcher.dispose();
+            commandsWatcher = (0, custom_commands_1.watchCommandsFile)(this._settings.customCommandsScope, () => pushCommandsToWebview());
+        };
+        // Voice server: ensures a pairing token exists, then (re)starts the
+        // HTTP server when the user enables voice features in settings.
+        const ensurePairingToken = async () => {
+            if (this._settings.voicePairingToken) {
+                return this._settings.voicePairingToken;
+            }
+            const token = (0, voice_server_1.generatePairingToken)();
+            this._settings = { ...this._settings, voicePairingToken: token };
+            await (0, settings_1.saveSettings)(this._context, this._settings);
+            return token;
+        };
+        const dispatchVoiceText = (text, source) => {
+            // Reuse the inject path if the agent is currently running; otherwise
+            // post a synthetic user_input message to the webview so the regular
+            // flow takes over (renders the bubble, hits the LLM, etc).
+            if (this._injectMessage) {
+                this._injectMessage(text);
+            }
+            else {
+                webviewView.webview.postMessage({ command: 'voice_text_received', text, source });
+            }
+        };
+        this._injectFromVoice = dispatchVoiceText;
+        const startOrUpdateVoiceServer = async () => {
+            if (!this._settings.voiceServerEnabled) {
+                if (this._voiceServer?.isRunning()) {
+                    await this._voiceServer.stop();
+                }
+                return;
+            }
+            const token = await ensurePairingToken();
+            const cfg = {
+                port: this._settings.voiceServerPort || 9876,
+                bindAll: this._settings.voiceServerExposeNetwork,
+                token,
+                whisperEndpoint: this._settings.whisperEndpoint,
+                whisperModel: this._settings.whisperModel,
+                onVoiceInput: dispatchVoiceText,
+                onLog: (msg) => console.log(msg),
+            };
+            if (this._voiceServer?.isRunning()) {
+                await this._voiceServer.stop();
+            }
+            this._voiceServer = new voice_server_1.VoiceServer(cfg);
+            try {
+                const info = await this._voiceServer.start();
+                webviewView.webview.postMessage({
+                    command: 'voice_server_status',
+                    running: true,
+                    host: info.host,
+                    port: info.port,
+                });
+            }
+            catch (e) {
+                webviewView.webview.postMessage({
+                    command: 'voice_server_status',
+                    running: false,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        };
+        this._context.subscriptions.push({
+            dispose: () => { this._voiceServer?.stop(); },
+        });
+        startOrUpdateVoiceServer();
         this._context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()), vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles()));
         webviewView.webview.onDidReceiveMessage(async (message) => {
+            if (message?.command === 'jarvis_log') {
+                console.log('[JARVIS]', message.text);
+                return;
+            }
             if (message?.command === 'webview_ready') {
+                // Initialize/migrate the .eucode/ workspace folder. Idempotent —
+                // safe to call on every open. Surfaces a notification if legacy
+                // files were moved into .eucode/ this run.
+                const initResult = (0, workspace_init_1.ensureEucodeWorkspace)();
+                if (initResult.migrated.length > 0) {
+                    const moved = initResult.migrated.join(', ');
+                    vscode.window.showInformationMessage(`Eucode IA: ${moved} foram movidos para .eucode/. Tudo continua funcionando.`, 'Abrir pasta').then(action => { if (action === 'Abrir pasta') {
+                        (0, workspace_init_1.revealEucodeDir)();
+                    } });
+                }
                 webviewView.webview.postMessage({
                     command: 'load_config',
                     provider: this._settings.provider,
@@ -131,12 +244,29 @@ class EucodeViewProvider {
                     supportProvider: this._settings.supportProvider,
                     supportApiKey: this._settings.supportApiKey,
                     supportModel: this._settings.supportModel,
+                    inlineCompletionEnabled: this._settings.inlineCompletionEnabled,
+                    fixWithEucodeEnabled: this._settings.fixWithEucodeEnabled,
+                    customCommandsScope: this._settings.customCommandsScope,
+                    hybridIntensity: this._settings.hybridIntensity,
+                    projectIntelEnabled: this._settings.projectIntelEnabled,
+                    jarvisEnabled: this._settings.jarvisEnabled,
+                    jarvisAutoSpeak: this._settings.jarvisAutoSpeak,
+                    jarvisTtsVoice: this._settings.jarvisTtsVoice,
+                    jarvisTtsRate: this._settings.jarvisTtsRate,
+                    whisperEndpoint: this._settings.whisperEndpoint,
+                    whisperModel: this._settings.whisperModel,
+                    whisperLanguage: this._settings.whisperLanguage,
+                    voiceServerEnabled: this._settings.voiceServerEnabled,
+                    voiceServerPort: this._settings.voiceServerPort,
+                    voiceServerExposeNetwork: this._settings.voiceServerExposeNetwork,
+                    micDeviceIndex: this._settings.micDeviceIndex,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
                 pingAndNotify(this._settings);
                 sendOpenFiles();
+                pushCommandsToWebview();
                 return;
             }
             if (message?.command === 'new_session') {
@@ -152,6 +282,8 @@ class EucodeViewProvider {
                 return;
             }
             if (message?.command === 'delete_session') {
+                // Delete the per-session memory file alongside the session itself
+                (0, memory_service_1.deleteSessionMemory)(message.id);
                 await this._historyManager.deleteSession(message.id);
                 this._sessionHistory = this._historyManager.load();
                 webviewView.webview.postMessage({ command: 'load_sessions', sessions: this._historyManager.loadSessions() });
@@ -161,7 +293,11 @@ class EucodeViewProvider {
                 this._settings = {
                     provider: message.provider ?? this._settings.provider,
                     apiHost: message.apiHost ?? this._settings.apiHost,
-                    apiKey: message.apiKey ?? '',
+                    // Empty string from UI means "don't change" — preserve stored key.
+                    // (UI sends '' when the user doesn't retype the key on save.)
+                    apiKey: (message.apiKey && message.apiKey.length > 0)
+                        ? message.apiKey
+                        : this._settings.apiKey,
                     model: message.model ?? '',
                     enabledTools: message.enabledTools ?? this._settings.enabledTools,
                     ragEnabled: message.ragEnabled ?? this._settings.ragEnabled,
@@ -174,15 +310,257 @@ class EucodeViewProvider {
                         ? message.supportApiKey
                         : this._settings.supportApiKey,
                     supportModel: message.supportModel ?? this._settings.supportModel,
+                    inlineCompletionEnabled: message.inlineCompletionEnabled ?? this._settings.inlineCompletionEnabled,
+                    fixWithEucodeEnabled: message.fixWithEucodeEnabled ?? this._settings.fixWithEucodeEnabled,
+                    customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
+                    hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity),
+                    projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
+                    jarvisEnabled: message.jarvisEnabled ?? this._settings.jarvisEnabled,
+                    jarvisAutoSpeak: message.jarvisAutoSpeak ?? this._settings.jarvisAutoSpeak,
+                    jarvisTtsVoice: message.jarvisTtsVoice ?? this._settings.jarvisTtsVoice,
+                    jarvisTtsRate: message.jarvisTtsRate ?? this._settings.jarvisTtsRate,
+                    voiceServerEnabled: message.voiceServerEnabled ?? this._settings.voiceServerEnabled,
+                    voiceServerPort: message.voiceServerPort ?? this._settings.voiceServerPort,
+                    voiceServerExposeNetwork: message.voiceServerExposeNetwork ?? this._settings.voiceServerExposeNetwork,
+                    voicePairingToken: this._settings.voicePairingToken, // never overridden by UI
+                    whisperEndpoint: message.whisperEndpoint ?? this._settings.whisperEndpoint,
+                    whisperModel: message.whisperModel ?? this._settings.whisperModel,
+                    whisperLanguage: message.whisperLanguage ?? this._settings.whisperLanguage,
+                    micDeviceIndex: message.micDeviceIndex ?? this._settings.micDeviceIndex,
                 };
                 await (0, settings_1.saveSettings)(this._context, this._settings);
+                vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
+                // React to JARVIS / voice server settings changes
+                await startOrUpdateVoiceServer();
                 return;
             }
             if (message?.command === 'set_hybrid') {
                 this._settings = { ...this._settings, hybridEnabled: !!message.enabled };
                 await (0, settings_1.saveSettings)(this._context, this._settings);
+                return;
+            }
+            // Webview captured audio via MediaRecorder, encoded as base64,
+            // wants the extension to transcribe it via the local Whisper
+            // (LM Studio). The webview can't fetch http://localhost from
+            // inside a sandboxed Webview iframe reliably, so we do it here.
+            if (message?.command === 'voice_transcribe') {
+                try {
+                    const base64 = String(message.audioBase64 || '');
+                    if (!base64) {
+                        webviewView.webview.postMessage({ command: 'voice_transcribe_result', requestId: message.requestId, ok: false, error: 'empty audio' });
+                        return;
+                    }
+                    const audioBuf = Buffer.from(base64, 'base64');
+                    const mimeType = String(message.mimeType || 'audio/webm');
+                    const text = await transcribeViaWhisper(this._settings.whisperEndpoint, this._settings.whisperModel, this._settings.whisperLanguage, audioBuf, mimeType);
+                    webviewView.webview.postMessage({ command: 'voice_transcribe_result', requestId: message.requestId, ok: true, text });
+                }
+                catch (e) {
+                    webviewView.webview.postMessage({
+                        command: 'voice_transcribe_result',
+                        requestId: message.requestId,
+                        ok: false,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+                return;
+            }
+            // Lists the OS audio input devices so the JARVIS config can show a
+            // dropdown instead of a hardcoded default.
+            if (message?.command === 'voice_list_devices') {
+                try {
+                    const bin = await audio_capture_1.AudioCapture.checkFfmpeg();
+                    if (!bin) {
+                        webviewView.webview.postMessage({
+                            command: 'voice_devices_result',
+                            ok: false,
+                            error: 'ffmpeg nao encontrado. Instale com: brew install ffmpeg',
+                            devices: [],
+                        });
+                        return;
+                    }
+                    const devices = await audio_capture_1.AudioCapture.listAudioDevices(bin);
+                    webviewView.webview.postMessage({
+                        command: 'voice_devices_result',
+                        ok: true,
+                        devices,
+                        selected: this._settings.micDeviceIndex,
+                    });
+                }
+                catch (e) {
+                    webviewView.webview.postMessage({
+                        command: 'voice_devices_result',
+                        ok: false,
+                        error: e instanceof Error ? e.message : String(e),
+                        devices: [],
+                    });
+                }
+                return;
+            }
+            // ── JARVIS: native mic capture via ffmpeg (outside the webview) ──
+            // The webview cannot use getUserMedia (Electron blocks it). So the
+            // webview asks the host to start/stop a native recording instead.
+            if (message?.command === 'voice_record_start') {
+                const jlog = (m) => {
+                    console.log('[JARVIS]', m);
+                    webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
+                };
+                try {
+                    const bin = await audio_capture_1.AudioCapture.checkFfmpeg();
+                    if (!bin) {
+                        webviewView.webview.postMessage({
+                            command: 'voice_record_error',
+                            error: 'ffmpeg nao encontrado. Instale com: brew install ffmpeg',
+                        });
+                        return;
+                    }
+                    if (!this._audioCapture) {
+                        this._audioCapture = new audio_capture_1.AudioCapture(jlog, bin);
+                    }
+                    if (this._audioCapture.isRecording()) {
+                        jlog('record_start ignorado — ja gravando');
+                        return;
+                    }
+                    this._audioCapture.start(this._settings.micDeviceIndex);
+                    webviewView.webview.postMessage({ command: 'voice_record_started' });
+                }
+                catch (e) {
+                    webviewView.webview.postMessage({
+                        command: 'voice_record_error',
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+                return;
+            }
+            if (message?.command === 'voice_record_stop') {
+                const jlog = (m) => {
+                    console.log('[JARVIS]', m);
+                    webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
+                };
+                try {
+                    if (!this._audioCapture || !this._audioCapture.isRecording()) {
+                        webviewView.webview.postMessage({ command: 'voice_record_error', error: 'nao estava gravando' });
+                        return;
+                    }
+                    const result = await this._audioCapture.stop();
+                    jlog(`transcrevendo ${result.buffer.length} bytes (${result.mimeType})...`);
+                    const text = await transcribeViaWhisper(this._settings.whisperEndpoint, this._settings.whisperModel, this._settings.whisperLanguage, result.buffer, result.mimeType);
+                    jlog(`transcricao: "${text.slice(0, 80)}"`);
+                    webviewView.webview.postMessage({ command: 'voice_record_result', ok: true, text });
+                }
+                catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    jlog(`record_stop erro: ${msg}`);
+                    webviewView.webview.postMessage({ command: 'voice_record_result', ok: false, error: msg });
+                }
+                return;
+            }
+            // UI asks for pairing info (host:port and token) so it can show
+            // a QR code or copy a connection URL for the mobile client.
+            if (message?.command === 'voice_pairing_info') {
+                const token = await ensurePairingToken();
+                const localIps = getLocalIPv4Addresses();
+                webviewView.webview.postMessage({
+                    command: 'voice_pairing_info_result',
+                    token,
+                    port: this._settings.voiceServerPort,
+                    running: !!this._voiceServer?.isRunning(),
+                    bindAll: this._settings.voiceServerExposeNetwork,
+                    localIps,
+                });
+                return;
+            }
+            if (message?.command === 'save_command') {
+                const cmd = {
+                    command: String(message.commandName || '').trim(),
+                    prompt: String(message.prompt || '').trim(),
+                    description: message.description ? String(message.description).trim() : undefined,
+                    autoMode: !!message.autoMode,
+                    hybridMode: !!message.hybridMode,
+                };
+                const scope = (message.scope === 'global' || message.scope === 'workspace')
+                    ? message.scope
+                    : this._settings.customCommandsScope;
+                const result = await (0, custom_commands_1.appendCommand)(scope, cmd);
+                webviewView.webview.postMessage({
+                    command: 'save_command_result',
+                    ok: result.ok,
+                    error: result.error,
+                    filePath: result.filePath,
+                });
+                if (result.ok) {
+                    pushCommandsToWebview();
+                }
+                return;
+            }
+            if (message?.command === 'open_commands_file') {
+                const scope = (message.scope === 'global' || message.scope === 'workspace')
+                    ? message.scope
+                    : this._settings.customCommandsScope;
+                const fp = (0, custom_commands_1.getCommandsFilePath)(scope);
+                if (!fp) {
+                    vscode.window.showWarningMessage('Eucode IA: abra um workspace para usar comandos em escopo workspace.');
+                    return;
+                }
+                try {
+                    require('fs').mkdirSync(require('path').dirname(fp), { recursive: true });
+                    if (!require('fs').existsSync(fp)) {
+                        require('fs').writeFileSync(fp, '[\n]\n', 'utf8');
+                    }
+                    const doc = await vscode.workspace.openTextDocument(fp);
+                    await vscode.window.showTextDocument(doc, { preview: false });
+                }
+                catch (e) {
+                    vscode.window.showErrorMessage(`Eucode IA: nao foi possivel abrir ${fp}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                return;
+            }
+            if (message?.command === 'change_commands_scope') {
+                const next = message.scope === 'global' ? 'global' : 'workspace';
+                this._settings = { ...this._settings, customCommandsScope: next };
+                await (0, settings_1.saveSettings)(this._context, this._settings);
+                rewatchCommands();
+                pushCommandsToWebview();
+                return;
+            }
+            if (message?.command === 'remember_decision') {
+                const activeId = this._historyManager.getActiveId();
+                if (!activeId) {
+                    webviewView.webview.postMessage({ command: 'remember_decision_result', ok: false, error: 'Nenhuma sessao ativa.' });
+                    return;
+                }
+                const result = (0, memory_service_1.rememberDecision)(activeId, String(message.note || ''), 'user');
+                webviewView.webview.postMessage({
+                    command: 'remember_decision_result',
+                    ok: result.ok,
+                    error: result.reason,
+                });
+                return;
+            }
+            if (message?.command === 'open_memory_file') {
+                const activeId = this._historyManager.getActiveId();
+                if (!activeId) {
+                    vscode.window.showWarningMessage('Eucode IA: nenhuma sessao ativa. Inicie um chat antes de abrir a memoria.');
+                    return;
+                }
+                const fp = (0, memory_service_1.getSessionMemoryPath)(activeId);
+                if (!fp) {
+                    vscode.window.showWarningMessage('Eucode IA: abra um workspace para usar memoria de sessao.');
+                    return;
+                }
+                try {
+                    require('fs').mkdirSync(require('path').dirname(fp), { recursive: true });
+                    if (!require('fs').existsSync(fp)) {
+                        require('fs').writeFileSync(fp, JSON.stringify({ sessionId: activeId, createdAt: Date.now(), updatedAt: Date.now(), approvedCommands: [], decisions: [] }, null, 2) + '\n', 'utf8');
+                    }
+                    const doc = await vscode.workspace.openTextDocument(fp);
+                    await vscode.window.showTextDocument(doc, { preview: false });
+                }
+                catch (e) {
+                    vscode.window.showErrorMessage(`Eucode IA: nao foi possivel abrir ${fp}: ${e instanceof Error ? e.message : String(e)}`);
+                }
                 return;
             }
             if (message?.command === 'confirm_write_response') {
@@ -212,7 +590,8 @@ class EucodeViewProvider {
             if (message?.command !== 'user_input' || !message.text) {
                 return;
             }
-            this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image });
+            const userMode = message.chatMode ? 'chat' : 'dev';
+            this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image, mode: userMode });
             const endpoint = (0, settings_1.buildApiEndpoint)(this._settings);
             const authHeaders = (0, settings_1.buildAuthHeader)(this._settings);
             const activeModel = this._settings.model || constants_1.DEFAULT_MODEL;
@@ -222,16 +601,24 @@ class EucodeViewProvider {
                 const historySummary = (0, history_service_1.buildHistorySummary)(this._sessionHistory.slice(0, -1));
                 const systemWithHistory = [prompt_1.SYSTEM_PROMPT, historySummary].filter(Boolean).join('\n\n');
                 response = await (0, api_client_1.callAIWithVision)(endpoint, authHeaders, message.text, message.image.base64, message.image.mimeType, systemWithHistory, activeModel);
-                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now(), hasImage: true, imageSummary: response.slice(0, 300) });
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now(), hasImage: true, imageSummary: response.slice(0, 300), mode: userMode });
             }
             else {
-                notify('Mapeando workspace...');
-                const ctx = (0, context_1.collectWorkspaceContext)();
-                if (ctx.openFiles.length > 0) {
+                // CHAT mode skips workspace mapping entirely — no "Mapeando workspace",
+                // no "Abertos no editor", no diagnostics. The conversation is meant
+                // to be free-form and not tied to the project.
+                const isChat = userMode === 'chat';
+                if (!isChat) {
+                    notify('Mapeando workspace...');
+                }
+                const ctx = isChat
+                    ? { openFiles: [], contextBlock: '', roots: [] }
+                    : (0, context_1.collectWorkspaceContext)();
+                if (!isChat && ctx.openFiles.length > 0) {
                     notify(`Abertos no editor: ${ctx.openFiles.map(f => f.name).join(', ')}`);
                 }
                 // Inclui diagnósticos do editor no bloco de contexto quando houver
-                const diagnosticsBlock = (0, context_1.collectDiagnostics)();
+                const diagnosticsBlock = isChat ? '' : (0, context_1.collectDiagnostics)();
                 const fullContextBlock = [ctx.contextBlock, diagnosticsBlock].filter(Boolean).join('\n\n');
                 const defaultCwd = (0, context_1.getDefaultCwd)(ctx.roots);
                 const notifyCommandStart = (cmd) => webviewView.webview.postMessage({ command: 'command_start', cmd });
@@ -273,7 +660,7 @@ class EucodeViewProvider {
                     }
                     : undefined;
                 const notifyHybridActivity = (evt) => webviewView.webview.postMessage({ command: 'hybrid_activity', ...evt });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity);
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity, this._settings.projectIntelEnabled);
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
@@ -282,9 +669,9 @@ class EucodeViewProvider {
                 }
                 // Truncate long responses before saving to history to avoid inflating future prompts.
                 const historySummary = response.length > 400 ? response.slice(0, 400) + '...' : response;
-                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: historySummary, timestamp: Date.now() });
+                this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: historySummary, timestamp: Date.now(), mode: userMode });
             }
-            webviewView.webview.postMessage({ command: 'agent_response', text: response });
+            webviewView.webview.postMessage({ command: 'agent_response', text: response, mode: userMode });
         }, undefined, this._context.subscriptions);
     }
 }
@@ -301,5 +688,116 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.openChat', () => {
         vscode.commands.executeCommand('eucode-ia.chatView.focus');
     }));
+    // ── Editor features: inline completion + fix with eucode ──
+    const getSettings = () => provider.getCurrentSettings();
+    // Set the initial context key for the menu visibility (Fix with Eucode)
+    vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', getSettings().fixWithEucodeEnabled);
+    // Register inline completion provider for ALL languages — provider itself
+    // checks the setting at runtime and bails when disabled, so registering
+    // once is enough (no need to dispose/reregister on toggle).
+    context.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider({ scheme: 'file' }, new inline_completion_provider_1.EucodeInlineCompletionProvider(getSettings)));
+    // Register code action provider (Quick Fix lightbulb + Refactor).
+    context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, new fix_code_action_provider_1.EucodeFixCodeActionProvider(getSettings), { providedCodeActionKinds: fix_code_action_provider_1.EucodeFixCodeActionProvider.providedCodeActionKinds }));
+    // Register the fixWithEucode command (used by code action AND context menu).
+    context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.fixWithEucode', (uri, range, diags) => (0, fix_code_action_provider_1.executeFixWithEucode)(getSettings, uri, range, diags)));
 }
 function deactivate() { }
+// ── Voice helpers (used by the webview transcribe handler) ─────────────
+const http = __importStar(require("http"));
+const https = __importStar(require("https"));
+const os = __importStar(require("os"));
+const crypto = __importStar(require("crypto"));
+// POSTs an audio buffer to LM Studio's OpenAI-compatible Whisper endpoint
+// and returns the transcribed text. Self-contained — no third-party deps.
+async function transcribeViaWhisper(endpoint, model, language, audio, contentType) {
+    if (!endpoint) {
+        throw new Error('Whisper endpoint nao configurado.');
+    }
+    // Tenta os 2 paths em sequencia:
+    //   /v1/audio/transcriptions  → LM Studio, faster-whisper-server, OpenAI
+    //   /inference                → whisper.cpp standalone (whisper-server)
+    const base = endpoint.replace(/\/+$/, '');
+    const paths = ['/v1/audio/transcriptions', '/inference'];
+    let lastError = null;
+    for (const p of paths) {
+        try {
+            return await postWhisperRequest(base + p, model, language, audio, contentType);
+        }
+        catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            lastError = err;
+            // 404 → tenta o proximo path. Outros erros (timeout, 500) param o loop.
+            if (!/^Whisper 404/.test(err.message)) {
+                break;
+            }
+        }
+    }
+    throw lastError || new Error('Whisper: nenhum path conhecido respondeu.');
+}
+function postWhisperRequest(url, model, language, audio, contentType) {
+    const boundary = '----eucode' + crypto.randomBytes(16).toString('hex');
+    const parts = [];
+    const push = (s) => parts.push(Buffer.from(s, 'utf8'));
+    push(`--${boundary}\r\n`);
+    push(`Content-Disposition: form-data; name="model"\r\n\r\n${model || 'whisper-1'}\r\n`);
+    if (language) {
+        push(`--${boundary}\r\n`);
+        push(`Content-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`);
+    }
+    const ext = contentType.includes('mp4') ? 'm4a' : contentType.includes('mpeg') ? 'mp3' : 'webm';
+    push(`--${boundary}\r\n`);
+    push(`Content-Disposition: form-data; name="file"; filename="audio.${ext}"\r\n`);
+    push(`Content-Type: ${contentType}\r\n\r\n`);
+    parts.push(audio);
+    push(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat(parts);
+    const parsedUrl = new URL(url);
+    const transport = parsedUrl.protocol === 'https:' ? https : http;
+    return new Promise((resolve, reject) => {
+        const req = transport.request({
+            method: 'POST',
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+            path: parsedUrl.pathname + parsedUrl.search,
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': body.length,
+            },
+            timeout: 60000,
+        }, res => {
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => {
+                const raw = Buffer.concat(chunks).toString('utf8');
+                if (res.statusCode && res.statusCode >= 400) {
+                    return reject(new Error(`Whisper ${res.statusCode}: ${raw.slice(0, 200)}`));
+                }
+                try {
+                    const json = JSON.parse(raw);
+                    resolve(String(json.text || '').trim());
+                }
+                catch {
+                    reject(new Error('Whisper response was not JSON'));
+                }
+            });
+        });
+        req.on('timeout', () => { req.destroy(); reject(new Error('Whisper request timeout (60s)')); });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+// Lists non-internal IPv4 addresses so the UI can show "192.168.x.x" for
+// pairing with mobile clients on the same LAN.
+function getLocalIPv4Addresses() {
+    const out = [];
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+        for (const info of ifaces[name] || []) {
+            if (info.family === 'IPv4' && !info.internal) {
+                out.push(info.address);
+            }
+        }
+    }
+    return out;
+}

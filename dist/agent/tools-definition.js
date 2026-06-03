@@ -229,5 +229,25 @@ exports.TOOLS = [
             required: ['query'],
         },
     },
+    {
+        name: 'memory_remember',
+        description: 'Persists a short decision, preference, or architectural note in the session memory file (.eucode/memory/session_<id>.json). Use this when the user makes a non-obvious choice you should respect for the rest of this session (e.g. "use Zustand instead of Redux", "components are in /src/components in PascalCase", "tests run via vitest, not jest"). Keep notes under 500 chars. Do NOT use for trivia or transient state — only durable preferences.',
+        parameters: {
+            type: 'object',
+            properties: {
+                note: { type: 'string', description: 'Short decision or preference to remember (max 500 chars).' },
+            },
+            required: ['note'],
+        },
+    },
+    {
+        name: 'memory_read',
+        description: 'Returns the full session memory JSON (stack, approved commands, decisions). Use when you need full details beyond the summary already in your system prompt — for example, to confirm a previously-stated user preference before making an architectural decision.',
+        parameters: {
+            type: 'object',
+            properties: {},
+            required: [],
+        },
+    },
 ];
 exports.TOOL_NAMES = new Set(exports.TOOLS.map(t => t.name));

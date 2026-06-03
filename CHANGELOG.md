@@ -1,5 +1,288 @@
 # Changelog
 
+## 0.11.1
+
+- **TTS fala apenas a resposta final do LLM** — a narracao passo-a-passo da timeline (Analisando, Lendo arquivo, etc.) foi removida. Agora o JARVIS le em voz alta somente o texto que o modelo retorna (blocos de codigo continuam omitidos pelo `cleanForSpeech`)
+
+## 0.11.0
+
+JARVIS funcional de ponta a ponta + correcao critica de API key.
+
+- **Captura de microfone via ffmpeg (fora do webview)** — o webview do VSCode bloqueia `getUserMedia` (Electron nega midia ao iframe: `NotAllowedError` sem prompt do macOS, mesmo apos reset do TCC). A gravacao agora roda no processo da extensao via `ffmpeg -f avfoundation` (novo `src/services/audio-capture.ts`), grava wav 16kHz mono e encaminha ao Whisper. Requer `brew install ffmpeg`
+- **Selecao de microfone na config do JARVIS** — dropdown com os dispositivos de audio do sistema (via `ffmpeg -list_devices`), com botao de atualizar. Nao usa mais device fixo no codigo
+- **Auto-envio por voz** — ao parar a gravacao, o texto transcrito e enviado direto ao agente, sem passar pelo campo de input
+- **Narracao da timeline (TTS)** — cada passo (Analisando, Lendo arquivo, etc.) e falado em voz alta, com fila e texto humanizado em PT-BR
+- **Voz configuravel e mais masculina/moderna** — dropdown de voz na config com botao de teste; por padrao escolhe uma voz masculina do idioma (prioriza "Felipe" em PT-BR) com tom levemente mais grave. TTS agora tambem fala respostas de provedores com streaming (usava `msg.text` que vinha vazio nesses casos)
+- **Correcao critica: API key principal era apagada ao salvar** — `save_config` usava `apiKey: message.apiKey ?? ''`; como o webview envia o campo vazio quando o usuario nao redigita, a chave salva era apagada a cada save. Agora campo vazio significa "manter a chave salva" (mesma protecao que o Hybrid ja tinha)
+- **Pontinhos persistentes nos campos de chave** — API Key e chave do Hybrid mostram `••••••` quando ha chave salva, confirmando visualmente que continua guardada (o value segue vazio por seguranca)
+- **Fix: `load_config` nao enviava `jarvisEnabled`** ao webview — o botao de microfone so aparecia depois de reabrir e salvar as configuracoes
+
+## 0.10.2
+
+- **JARVIS marcado como BETA** explicitamente — selo no painel de configuracoes (`🎙 JARVIS — Modo de voz BETA`), tooltip do botao de microfone e secao do README com aviso. Feature funciona mas integracoes ainda em estabilizacao
+- **README com guia completo do whisper-server standalone para Apple Silicon** — alternativa recomendada enquanto o LM Studio 0.4.x tem bug no carregamento de modelos ASR. Setup em 4 comandos via `brew install whisper-cpp`, lista de modelos disponiveis (tiny/base/small/medium/large-v3) com tamanho e qualidade, configuracao do plugin (`http://localhost:1235`), e exemplo de LaunchAgent para auto-iniciar no boot do Mac
+
+## 0.10.1
+
+Compatibilidade com servidores Whisper alternativos.
+
+- `transcribeViaWhisper` no extension.ts e o handler `/transcribe` do voice-server agora tentam **2 paths em sequencia**:
+  1. `/v1/audio/transcriptions` — LM Studio, faster-whisper-server, OpenAI API
+  2. `/inference` — whisper.cpp standalone (`whisper-server` do brew)
+- Se o primeiro retorna 404, tenta o segundo automaticamente. Outros erros (timeout, 500) param o loop
+- Permite usar `brew install whisper-cpp` + `whisper-server --port 1235` como alternativa quando o LM Studio nao consegue carregar modelos ASR (bug recorrente em 0.4.x)
+- Sem mudancas necessarias na config do usuario alem de trocar o `whisperEndpoint` para a porta correta
+
+## 0.10.0
+
+NOVA FEATURE — Modo JARVIS (push-to-talk + TTS + servidor de voz):
+
+**Push-to-talk no chat:**
+- Novo botao de microfone no input area do chat (aparece quando JARVIS ativo)
+- Captura audio via MediaRecorder do webview (formato webm/opus, mp4 ou ogg)
+- Envia audio em base64 pro extension via postMessage
+- Extension faz POST multipart/form-data para `/v1/audio/transcriptions` do LM Studio (OpenAI-compativel)
+- Texto transcrito volta pro input — usuario edita ou da Enter
+- Estados visuais: gravando (vermelho pulsante), transcrevendo (cyan), inativo
+
+**TTS automatico:**
+- Quando `jarvisAutoSpeak` ligado, respostas do agente sao lidas em voz alta via `speechSynthesis` nativo do navegador
+- Limpeza inteligente: remove blocos de codigo (```...```), inline code, markdown
+- Cap de 1500 chars (TTS lento em respostas muito longas)
+- Cancela fala anterior antes de iniciar nova
+
+**Servidor de voz local (pronto para app mobile):**
+- `src/services/voice-server.ts` — HTTP server com 3 endpoints
+- `GET /health` — health check (sem auth)
+- `POST /voice-input` — recebe texto JSON, dispara agente no VS Code
+- `POST /transcribe` — recebe audio binario, encaminha pro Whisper, retorna texto
+- Bind seletivo: `127.0.0.1` (default, so loopback) ou `0.0.0.0` (rede local pro mobile)
+- Token de pareamento UUID gerado ao primeiro start, persistido em settings
+- Header `Authorization: Bearer <token>` obrigatorio em todos endpoints (excepto health)
+- CORS configuravel, OPTIONS preflight tratado
+- Comparacao de token em tempo constante (timingSafeEqual) contra timing attacks
+
+**Novas configuracoes:**
+- `jarvisEnabled` (default false) — master switch
+- `jarvisAutoSpeak` (default true) — TTS automatico
+- `whisperEndpoint` (default `http://localhost:1234`) — LM Studio
+- `whisperModel` (default `whisper-1`) — id do modelo
+- `whisperLanguage` (default `pt`) — ISO code, vazio = auto
+- `voiceServerEnabled` (default false) — sobe o servidor HTTP
+- `voiceServerPort` (default 9876)
+- `voiceServerExposeNetwork` (default false) — bind 0.0.0.0 vs 127.0.0.1
+- `voicePairingToken` — gerado e persistido automaticamente
+
+**UI no painel de configuracoes:**
+- Nova secao destacada "🎙 JARVIS" (borda vermelha) com subsecoes:
+  - Toggle principal
+  - Toggle "Falar respostas em voz alta"
+  - Inputs Whisper endpoint/model/language
+  - Sub-toggle "Servidor de voz" com port + expose network + botao "Mostrar dados de pareamento"
+- Modal de pareamento mostra URL + token + IPs locais detectados
+
+**README:**
+- Secao 🎙 JARVIS em destaque
+- Passo a passo completo de como configurar Whisper no LM Studio (download, carregamento, identificar id do modelo, testar)
+- Documentacao do servidor de voz e endpoints para o futuro app mobile
+
+## 0.9.4
+
+ENCONTRADA A CAUSA RAIZ DEFINITIVA do "Unexpected non-whitespace character after JSON at position N".
+
+0.9.2 e 0.9.3 cobriram o parser SSE, mas o erro persistia. O culpado real era OUTRO `JSON.parse`: o que reconstroi os **argumentos da tool call** apos o streaming terminar.
+
+CENARIO:
+- Modelo (Anthropic ou local) recebe `tools: [...]` + `tool_choice: 'auto'`
+- Modelo decide chamar uma tool e streama o nome + argumentos em pedacos via `tool_calls` delta / `input_json_delta`
+- Os pedacos sao acumulados em `toolArgsRaw`
+- No fim do stream, `JSON.parse(toolArgsRaw)` era chamado dentro do try externo
+- Se o modelo gerou JSON levemente malformado (acontece quando o stream e cortado, ou quando ha multiplas tool calls colidindo), o `JSON.parse` jogava excecao
+- A excecao caia no catch que retornava `__INFRA_ERROR__`, descartando TODO o texto que o modelo ja tinha gerado em paralelo
+
+FIX:
+- 3 ocorrencias de `JSON.parse(toolArgsRaw)` / `JSON.parse(raw.function.arguments)` substituidas por `tryParseJsonChunk()` que retorna `null` em vez de jogar
+- Se a parse falhar, em vez de matar a chamada, faz fallback gracioso para "resposta de texto" — devolve o texto acumulado e ignora a tool call malformada
+- `console.warn` loga os primeiros 200 chars do raw para debug futuro
+
+POR QUE ISSO ACONTECE:
+Modelos LLM (especialmente em planejamento HYBRID onde recebem instrucao "gere o plano em texto") as vezes geram texto + tentativa parcial de tool call. O Anthropic envia os 2 streams em paralelo. Quando o stream termina antes da tool call completar, `toolArgsRaw` fica com JSON parcial.
+
+## 0.9.3
+
+Continuacao do fix do parser SSE: 0.9.2 cobria o caso `}data: ` mas
+o usuario relatou que `position 77` ainda quebrava — havia outras
+variantes de eventos colados.
+
+- **Parser SSE generico**: em vez de procurar padrao especifico
+  `}data: `, agora detecta TODAS as posicoes onde um novo prefixo SSE
+  comeca no meio de uma linha (`data:`, `event:`, `id:`, `retry:`) e
+  separa em fragmentos individuais. Cobre formato Anthropic que mistura
+  `event: foo` antes de `data: {...}`
+- **`tryParseJsonChunk()` defensivo**: nova funcao exportada que tenta
+  o fast path `JSON.parse` primeiro, e se falhar faz scan
+  caractere-a-caractere tracking de bracket depth + string boundaries
+  para extrair o primeiro objeto JSON balanceado. Lixo apos o objeto
+  e ignorado em vez de quebrar a parse
+- Aplicado nos 2 handlers SSE (callAI e callAnthropicAI). Se um chunk
+  for completamente lixo, o evento e silenciosamente skipado em vez
+  de derrubar todo o stream
+
+## 0.9.2
+
+Fix urgente para o erro "Unexpected non-whitespace character after JSON at position N" que aparecia logo apos os primeiros tokens de resposta.
+
+- **Parser SSE tolerante a eventos colados**: quando o servidor (especialmente o Anthropic em respostas rapidas) envia dois eventos SSE no mesmo TCP packet sem `\n` entre eles, o split por linha resultava em strings como `data: {a:1}data: {b:2}` que quebravam o `JSON.parse`. Agora o parser detecta o padrao `}data: ` no meio e separa os eventos antes de tentar parsear
+- Aplica em `requestStream` — afeta tanto `callAI` (LM Studio/Ollama) quanto `callAnthropicAI`
+
+## 0.9.1
+
+Foco: corrigir cenarios onde o streaming caia silenciosamente e a UI mostrava apenas "Erro de conexao com o modelo" generico, descartando texto que ja havia sido gerado.
+
+- **Preservacao de texto parcial**: quando o stream cai depois de ja ter gerado tokens (ex: rede instavel, timeout, rate limit no meio da resposta), o texto acumulado e devolvido ao usuario com aviso de interrupcao em vez de descartado. Aplica em `callAI` e `callAnthropicAI`
+- **Diagnostico de erro estruturado**: nova funcao `classifyApiError` mapeia a mensagem bruta do HTTP em causa raiz (rate_limit / context_too_large / auth / timeout / connection / server_error / unknown) e gera mensagem especifica para o usuario
+- **6 mensagens de erro especificas** no lugar da generica "Erro de conexao":
+  - `429 / rate limit` → "Limite de chamadas atingido. Aguarde alguns segundos..."
+  - `context too large` → "A conversa excedeu o limite de tokens. Inicie uma nova sessao..."
+  - `401 / 403 / unauthorized` → "API key invalida ou sem permissao..."
+  - `timeout` → "O modelo demorou demais. Em modelos locais, verifique a memoria..."
+  - `connection / ECONNREFUSED` → "Nao foi possivel conectar. Verifique se o LM Studio esta rodando..."
+  - `5xx server errors` → "Erro no servidor do provedor. Tente novamente..."
+- `console.error` agora loga objeto estruturado `{ reason, rawMessage, partialLen }` para debug
+- **ProjectIntel reduzido e configuravel**: cap de 40 → 20 arquivos, max chars/linha de 140 → 120. Libera ~700-1000 tokens em todo prompt
+- **Novo toggle "ProjectIntel" nas configuracoes** dentro de nova secao "Otimizacao de contexto". Default: ligado. Desligar e recomendado em modelos < 4B ou monorepos grandes
+- `runAgentLoop` aceita `projectIntelEnabled?: boolean` (default true)
+- `EucodeSettings.projectIntelEnabled` persistido em globalState
+
+## 0.9.0
+
+Minor bump por mudancas arquiteturais grandes focadas em garantir o desenvolvimento continuo com modelos locais <= 10B params:
+
+**3 novos servicos especializados (foundation para Fase 1):**
+
+- `ProjectIntelService` ([src/services/project-intel.ts](src/services/project-intel.ts)): indice leve de simbolos exportados por arquivo do workspace, com cache por mtime. Resumo compacto (40 arquivos, 140 chars/linha) injetado no system prompt em cada rodada — o modelo encontra arquivos por nome de funcao/classe sem precisar ler todos. Suporta TS/JS/Python/Go/Rust nativamente, hooks para outras linguagens. Cap de 400 arquivos e 200KB/arquivo para nao explodir em monorepos
+- `ExecutionGuardService` ([src/services/execution-guard.ts](src/services/execution-guard.ts)): centraliza 6 guards de invariante que antes estavam espalhados pelo loop.ts (dumped code in chat, wrong file edit, build pending no command, command failed, build not passed, model planning). Cada guard e uma funcao pura testavel. Inclui detector de loop (mesma tool + mesmos args 3+ vezes seguidas)
+- `TaskDecomposerService` ([src/services/task-decomposer.ts](src/services/task-decomposer.ts)): detecta macro-tarefas via heuristica local + LLM pago. Quebra em 2-8 sub-tarefas auto-contidas (cada uma cabe em uma rodada do modelo local). Inclui `validateStep()` que pede ao pago para validar resultado de cada sub-tarefa antes de avancar (step validation com aprovacao/rejeicao + correctionPrompt opcional)
+
+**Slider de Intensidade HYBRID (25/50/75/100%):**
+
+- Novo controle nas configuracoes: 4 niveis de uso do LLM pago. Permite o usuario calibrar custo vs robustez
+- `25%` — Minimo: apenas recovery critico quando o modelo trava de vez
+- `50%` (default) — Equilibrado: recovery + planejamento de tarefas grandes
+- `75%` — Agressivo: adiciona validacao entre sub-tarefas (step validation)
+- `100%` — Maximo: todos os gatilhos (planejamento, verificacao de escrita, verificacao de build, recovery, validacao)
+- Cada `HybridReason` tem um threshold minimo de intensidade. `askSupport()` faz gating automatico via `hybridAllowsTrigger()`
+- Slider segmentado de 4 botoes no painel de config, hint dinamico explica o que cada nivel faz
+
+**AUTO mode mais resiliente:**
+
+- Cap de tentativas aumentado de 5 para **15**
+- Recovery via HYBRID acontece em cada multiplo de 4 (tentativas 4, 8, 12) em vez de apenas no penultimo strike
+- Mensagem de recovery inclui contador `Tentativa N/15` para o pago entender a urgencia
+
+**ProjectIntel injetado no system prompt:**
+
+- Antes do contextBlock e ragContext, o modelo recebe lista compacta de simbolos do projeto
+- Cabecalho `# PROJECT INDEX (N files indexed)` seguido de `path — symA, symB, symC` por arquivo
+- Skip em CHAT mode (irrelevante para conversa livre)
+
+## 0.8.11
+
+Foco: melhorar comportamento do AUTO+HYBRID em tarefas de build/package onde o modelo local (14B, 2048 ctx) parava apos editar arquivos sem rodar o comando de build.
+
+- **System prompt AUTO reforcado** com regras CRITICAS para tarefas de build/package/compile/deploy/vsix/release: sequencia obrigatoria de read → edit → run_command → verify; proibido editar duas vezes consecutivas sem rodar build no meio; proibido declarar pronto sem verificar artefato no disco
+- **Plano HYBRID mais conciso**: novo system prompt instrui o pago a gerar 3-7 steps em paths RELATIVOS, sob 200 palavras (antes podia gerar 1000+ tokens com paths absolutos repetidos). Cap de output reduzido de 600 para 350 tokens — sobra ~700 tokens a mais no contexto do local
+- **Plano HYBRID exige step de build + verificacao** quando a tarefa pede build/compile/package: instrucao explicita pro pago incluir `run_command` + `list_directory` no plano
+- **Novo detector `buildPendingNoCommand`** como safety net: se o prompt do usuario mentions build/package/compile/deploy/vsix/release/marketplace E o modelo editou arquivos sem rodar nenhum comando de build, o nudge agora e especifico: "Voce editou arquivos mas NAO rodou o comando de build. Execute run_command agora com o comando apropriado. Depois use list_directory para verificar o artefato"
+- Novo helper `lastBuildAttempted(messages)`: varre as tool_calls da rodada procurando `run_command` com termos de build (build, compile, package, tsc, vsce, webpack, rollup, esbuild, jest, vitest, pytest, cargo build, go build, mvn, gradle)
+
+## 0.8.6
+
+- **NOVO: Modo CHAT** — segmented control DEV/CHAT no dropdown de Modos. Em CHAT o agente conversa livremente sem tools de codigo, sem RAG, sem memoria de sessao. Util para perguntas gerais, analise de sites (com web_search se habilitado), brainstorming
+- Em CHAT, AUTO e HYBRID sao automaticamente desabilitados (visualmente e funcionalmente)
+- System prompt dedicado em CHAT_SYSTEM_PROMPT — conversacional, sem ceremonia de coding agent
+- effectiveAutoMode / effectiveHybridConfig: CHAT forca ambos para off no runAgentLoop sem afetar a preferencia do usuario (volta ao estado anterior ao retornar para DEV)
+- Tools filtradas em CHAT: so web_search disponivel (se habilitado pelo usuario), tools de leitura/escrita/execucao escondidas
+- Reorganizacao do header: novo dropdown "Modos" agrupa DEV/CHAT + Auto + Hybrid em um unico botao limpo. Antes eram 2 botoes separados (Hybrid e Auto BETA) no header
+- BETA removido do botao Auto
+- Resumo compacto no botao Modos mostra o estado ativo (ex: "Modos · AUTO · HYBRID" ou "Modos · CHAT")
+- Badge "CHAT" + borda lateral azul-violeta nas mensagens enviadas em modo CHAT, para diferenciar visualmente no historico
+- HistoryEntry estendido com campo opcional `mode` ('dev' | 'chat') — persistido entre sessoes
+- agent_response inclui mode na mensagem para o webview pintar a bubble do agente
+
+## 0.8.5
+
+- Republicacao de 0.8.4 com bump de versao (sem mudancas funcionais)
+
+## 0.8.4
+
+- **NOVO: Memoria persistente por sessao** em `.eucode/memory/session_<id>.json` com 3 secoes: `stack` (detectado automaticamente), `approvedCommands` (persistidos), `decisions` (notas)
+- src/services/memory-service.ts: loadSessionMemory, rememberApprovedCommand, rememberDecision, detectAndRememberStack, buildMemorySummary, dumpMemoryAsJson, deleteSessionMemory
+- Detector de stack na primeira rodada: le package.json (Node + frameworks como nextjs/react/vue/svelte/express/nestjs/jest/vitest), requirements.txt/pyproject.toml/Pipfile (Python + django/flask/fastapi), Cargo.toml (Rust), go.mod (Go), pom.xml/build.gradle (Java/Kotlin), pubspec.yaml (Dart/Flutter)
+- Resumo de memoria injetado no system prompt em toda rodada (cap de 6 decisoes + 8 comandos recentes)
+- 2 novas tools para o agente: `memory_remember` (salvar nota, max 500 chars, dedup) e `memory_read` (ler memoria completa)
+- Comando `/lembrar <texto>` no chat para o usuario gravar manualmente — interceptado antes de chamar o agente
+- Comandos "Permitir na sessao" agora persistem em disco: nao precisa reaprovar apos reload
+- **Reorganizacao de arquivos do plugin para `.eucode/`**: novo src/services/workspace-init.ts cria a pasta com layout padronizado na primeira abertura do chat
+- Layout: `.eucode/.gitignore` (ignora memory/), `.eucode/eucodeIgnore`, `.eucode/eucode.json`, `.eucode/memory/session_*.json`
+- Migracao automatica e silenciosa: `.eucodeIgnore` e `eucode.json` da raiz sao movidos para `.eucode/` (fs.rename com fallback para fs.copyFile)
+- Notificacao info com botao "Abrir pasta" lista os arquivos migrados na primeira execucao apos o update
+- utils/ignore.ts: prefere `.eucode/eucodeIgnore` mas mantem retrocompat com `.eucodeIgnore` na raiz
+- custom-commands.ts: prefere `.eucode/eucode.json` (workspace) ou `~/.eucode/eucode.json` (global)
+- Deletar sessao via painel remove o session_<id>.json correspondente (sem garbage collection)
+- Botao "Abrir memoria da sessao atual" + nova secao colapsavel "Memoria da sessao" nas configs
+- Handlers no extension: `remember_decision`, `remember_decision_result`, `open_memory_file`
+- Atualizado scope label de "eucode.json na raiz" para ".eucode/eucode.json"
+- README com nova secao "Memoria persistente por sessao" + secao ".eucode/ — pasta de configuracao"
+
+## 0.8.3
+
+- Botao HYBRID do header agora respeita o master switch das configuracoes: se HYBRID nao estiver ativado em Configuracoes → HYBRID, o botao fica desabilitado (opacidade reduzida, cursor not-allowed)
+- Click no botao desabilitado mostra alerta orientando o usuario a ativar nas configuracoes primeiro
+- Desativar HYBRID nas configuracoes forca o botao do header para off automaticamente
+- Ativar HYBRID nas configuracoes nao liga o botao automaticamente — usuario clica para usar (separa intencao "permitido" de intencao "usar agora")
+
+## 0.8.2
+
+- **NOVO: Comandos personalizaveis em eucode.json** — defina atalhos `/comando` que expandem em prompts completos. Cada comando pode opcionalmente forcar AUTO e/ou HYBRID ao rodar
+- Estrutura do arquivo: array de objetos `{ command, prompt, description?, autoMode?, hybridMode? }`. Validacao com mensagens de erro nao-bloqueantes (comandos invalidos sao ignorados e logados)
+- Escopo configuravel (toggle nas configs): **workspace** (`eucode.json` na raiz do projeto, committable) ou **global** (`~/.eucode/eucode.json`, pessoal). So um ativo por vez
+- Autocomplete inline quando o usuario digita `/` no chat: dropdown mostra comandos disponiveis com icone categorizado (bolt = AUTO, diamond = HYBRID, auto_awesome = ambos, terminal = nenhum)
+- Navegacao por teclado: setas ↑/↓ para selecionar, Tab para aceitar, Esc para fechar
+- Hot reload automatico via `vscode.workspace.createFileSystemWatcher` (workspace) ou `fs.watch` (global, debounced 200ms) quando o arquivo e editado
+- Banner amarelo "Salvar como comando" aparece automaticamente quando o usuario envia prompt com 30+ palavras — clique abre dialog pre-preenchido
+- Dialog dedicado para criar comando: campos nome, descricao, prompt, toggles AUTO e HYBRID, radio de escopo. Validacao client-side + erro do backend (ex: duplicata)
+- Nova secao colapsavel "Comandos personalizaveis" no painel de config com radio de escopo e botao "Abrir eucode.json"
+- Botao "Abrir eucode.json" cria o arquivo vazio (`[\n]`) se nao existir e abre no editor para edicao
+- src/services/custom-commands.ts: loadCommands, appendCommand, parseSlashInput, watchCommandsFile
+- 3 novos handlers no extension: `save_command`, `open_commands_file`, `change_commands_scope`
+- README com secao dedicada a comandos personalizaveis (estrutura, escopo, hot reload, banner, como usar)
+
+## 0.8.1
+
+- **NOVO: Autocomplete inline** — sugestoes de codigo enquanto voce digita (texto fantasma cinza, aceita com Tab). Debounce de 500ms, cancela requests obsoletos quando o cursor move, contexto de 30 linhas antes + 5 depois. Skip automatico em plaintext/markdown/log/git-commit
+- **NOVO: Fix with Eucode** — lampada de Quick Fix em erros do editor + item de menu de contexto para refatorar selecao. Confirmacao com 3 botoes (Aplicar / Visualizar / Cancelar), Visualizar abre diff lateral antes de aplicar
+- Ambos os recursos seguem a logica HYBRID: local primeiro, suporte (Claude/GPT/Gemini) como fallback quando o local retorna vazio ou fraco
+- Confirmacao do Fix informa se a sugestao veio do local ou do suporte HYBRID
+- Camada unificada completion-service.ts: getCompletion(settings, req) chama o modelo local em modo non-streaming e ja faz o fallback transparente
+- Defaults: ambas as features sao opt-in (desligadas por padrao) — usuario habilita nas configuracoes
+- Novo painel colapsavel "Recursos do Editor" com toggles individuais para autocomplete e Fix
+- "Ferramentas disponiveis" tambem agora e um painel colapsavel — reduz o tamanho visual do painel de configuracoes
+- Comando `eucode-ia.fixWithEucode` exposto no command palette + menu de contexto (gated por context key)
+
+## 0.8.0
+
+- **NOVO: Modo HYBRID** — IA local + IA paga (Anthropic / OpenAI / Gemini) como suporte estrategico. Opcao A (consultor textual silencioso): o pago nao chama tools, apenas injeta orientacao no contexto do local
+- 5 gatilhos para a IA paga: planejamento inicial, verificacao apos escrita (V1 deterministica + V2 semantica), recuperacao de erro de comando, recuperacao de erro de sintaxe persistente, recuperacao quando o local trava
+- Cliente hybrid-client.ts com adaptadores para Anthropic (messages API), OpenAI (chat/completions) e Gemini (generateContent). Timeout 30s, modo degradado em erro
+- Botao HYBRID no header (cyan #00d4ff quando ativo) ao lado do AUTO
+- Painel de configuracoes ganha secao destacada HYBRID: dropdown provedor, API key, modelo (default por provedor)
+- Defaults: claude-sonnet-4-6 / gpt-4o / gemini-2.0-flash-exp
+- Timeline com items de suporte alinhados a direita, cyan azul-neon, badge "via Claude/GPT/Gemini" + motivo + detalhe + meta (tokens/tempo)
+- Telemetria comparativa: chip "Divisao Local x Suporte" no final da rodada em 3 dimensoes (chamadas / tokens / tempo, formato % / %)
+- API keys armazenadas localmente em globalState, nunca enviadas para servidores alem do proprio provedor
+- README com secao HYBRID em destaque imediatamente apos a apresentacao do plugin
+
 ## 0.7.4
 
 - Parser de stack trace na saida de comandos: extrai caminhos file.ext:line:col e popula counters.lastErrorFiles

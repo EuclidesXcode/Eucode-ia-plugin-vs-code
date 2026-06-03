@@ -1,0 +1,8 @@
+# Padroes que o agente Eucode IA deve ignorar (sintaxe gitignore-style)
+# Linhas comecando com # sao comentarios — descomente as que quiser ativar.
+#
+# .env
+# .env.local
+# *.lock
+# coverage/
+# .DS_Store

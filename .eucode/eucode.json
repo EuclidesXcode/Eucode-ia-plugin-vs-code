@@ -1,0 +1,9 @@
+[
+  {
+    "command": "/build",
+    "prompt": "Quero que voce COMPILE uma nova versão do Plugin para que eu possa fazer upload dela no MarketPlace da Microsoft, já que se trata de um Plugin para o vscode, existem arquivos na raiz do projeto já, siga o mesmo padrão de nomes, depois que voce achar que criou, quero que faça uma busca na raiz com o nome do arquivo que criou para garantir que o arquivo foi gerado, sempre lembrando de atualizar a versão do arquivo. Só pare quando garantir que o arquivo foi gerado, nome vai conter [nome-do-plugin-versao].vsix",
+    "description": "roda o build do Eucode IA",
+    "autoMode": true,
+    "hybridMode": false
+  }
+]
