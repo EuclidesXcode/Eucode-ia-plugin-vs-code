@@ -103,24 +103,32 @@ class EucodeViewProvider {
             if (!this._wakeWord?.isRunning()) {
                 return;
             }
-            webviewView.webview.postMessage({ command: 'voice_approval_listening', id: pendingId });
-            this._wakeWord.captureYesNo().then(verdict => {
-                if (!stillPending()) {
+            // Espera a pergunta falada ("Posso editar X? Diga sim ou não")
+            // terminar antes de abrir o microfone, senao captura a propria voz.
+            const APPROVAL_SPEAK_DELAY_MS = 2800;
+            setTimeout(() => {
+                if (!stillPending() || !this._wakeWord?.isRunning()) {
                     return;
-                } // usuario ja decidiu no clique
-                if (verdict === 'yes') {
-                    webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'yes' });
-                    onYes();
                 }
-                else if (verdict === 'no') {
-                    webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'no' });
-                    onNo();
-                }
-                else {
-                    // 'unclear' apos as tentativas — deixa o card para clique manual.
-                    webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'unclear' });
-                }
-            }).catch(() => { });
+                webviewView.webview.postMessage({ command: 'voice_approval_listening', id: pendingId });
+                this._wakeWord.captureYesNo().then(verdict => {
+                    if (!stillPending()) {
+                        return;
+                    } // usuario ja decidiu no clique
+                    if (verdict === 'yes') {
+                        webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'yes' });
+                        onYes();
+                    }
+                    else if (verdict === 'no') {
+                        webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'no' });
+                        onNo();
+                    }
+                    else {
+                        // 'unclear' apos as tentativas — deixa o card para clique manual.
+                        webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'unclear' });
+                    }
+                }).catch(() => { });
+            }, APPROVAL_SPEAK_DELAY_MS);
         };
         const makeConfirmWrite = () => (req) => new Promise((resolve) => {
             const id = `confirm_${Date.now()}`;

@@ -682,6 +682,26 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
+
+    // Quando o agente atinge um limite (passos ou respostas vazias) sem concluir,
+    // salva um resumo do progresso na memoria da sessao. Assim, ao continuar, o
+    // proximo turno recebe esse contexto (via buildMemorySummary) e retoma de
+    // onde parou em vez de zerar. Retorna a frase de status para o usuario.
+    const persistProgressCheckpoint = (reason: string): void => {
+        if (!sessionId) { return; }
+        const readList = Array.from(filesReadThisRound)
+            .map(p => path.basename(p)).slice(0, 12);
+        const parts: string[] = [];
+        parts.push(`[CHECKPOINT passo ${step}/${maxSteps}] Tarefa em andamento, nao concluida (${reason}).`);
+        parts.push(`Pedido original: ${userPrompt.slice(0, 200)}`);
+        if (readList.length) { parts.push(`Arquivos ja analisados: ${readList.join(', ')}.`); }
+        if (counters.filesWritten > 0) { parts.push(`Arquivos escritos/editados: ${counters.filesWritten}${counters.lastEditedFile ? ' (ultimo: ' + path.basename(counters.lastEditedFile) + ')' : ''}.`); }
+        if (counters.lastCommandFailed && counters.lastErrorSummary) { parts.push(`Ultimo erro: ${counters.lastErrorSummary.slice(0, 150)}.`); }
+        parts.push('Ao continuar, retome deste ponto sem refazer o que ja foi feito.');
+        const note = parts.join(' ').slice(0, 480);
+        try { rememberDecision(sessionId, note, 'agent'); } catch { /* noop */ }
+        onStatus('Progresso salvo na memoria — posso continuar de onde parei.');
+    };
     // Tracks repeated identical tool calls (tool name + args). If the model
     // keeps calling the same thing, we nudge it to do something else.
     const toolCallSignatures = new Map<string, number>();
@@ -1006,8 +1026,12 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 emptyResponseStreak++;
                 onStatus(`Modelo retornou vazio — recarregando contexto (tentativa ${emptyResponseStreak}/3)`);
                 if (emptyResponseStreak >= 3) {
+                    // Em vez de desistir e perder o progresso: salva um checkpoint
+                    // na memoria e oferece continuar (retoma de onde parou).
+                    persistProgressCheckpoint('o modelo ficou sem contexto');
                     emitTelemetry();
-                    return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
+                    return 'A tarefa e longa e o contexto do modelo encheu. Salvei o progresso ate aqui na memoria. '
+                        + 'Clique para continuar de onde parei.\n\n[CONTINUE_BUTTON]';
                 }
                 // Progressive pruning: each retry removes more pairs
                 const keepPairs = Math.max(1, 3 - emptyResponseStreak);
@@ -1165,6 +1189,10 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
         }
     }
 
+    // Atingiu o limite de passos sem concluir: salva checkpoint e oferece
+    // continuar, em vez de pedir para o usuario refazer do zero.
+    persistProgressCheckpoint('limite de passos atingido');
     emitTelemetry();
-    return 'Limite de passos atingido. A tarefa pode estar muito grande — tente dividir em pedidos menores.';
+    return 'Cheguei ao limite de passos desta rodada, mas salvei o progresso na memoria. '
+        + 'Clique para continuar a tarefa de onde parei.\n\n[CONTINUE_BUTTON]';
 }

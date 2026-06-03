@@ -2186,6 +2186,33 @@
             _lastWakeState = state;
         }
 
+        // Acende/apaga a borda enquanto o JARVIS FALA (pulso suave, sem ser o
+        // estado "recording" que e mais vivo). Coexiste com applyListenGlow:
+        // a borda fica visivel se estiver falando OU ouvindo.
+        let _speakGlowOn = false;
+        function setSpeakGlow(on) {
+            _speakGlowOn = !!on;
+            const glow = document.getElementById('listen-glow');
+            if (!glow) { return; }
+            // So apaga se nao houver tambem escuta ativa.
+            const listening = (_lastWakeState === 'acknowledging' || _lastWakeState === 'recording' || _lastWakeState === 'transcribing');
+            glow.classList.toggle('active', _speakGlowOn || listening);
+        }
+
+        // Fala a pergunta de aprovacao em voz alta (so com JARVIS+autospeak).
+        // Ex.: "Posso editar o arquivo X? Diga sim ou não."
+        function speakApprovalPrompt(kind, detail) {
+            if (!savedSettings || !savedSettings.jarvisEnabled || !savedSettings.jarvisAutoSpeak) { return; }
+            let phrase;
+            if (kind === 'write') {
+                const name = (detail || '').split('/').pop() || 'o arquivo';
+                phrase = 'Posso editar ' + name + '? Diga sim ou não.';
+            } else {
+                phrase = 'Posso executar este comando? Diga sim ou não.';
+            }
+            speakFixed(phrase);
+        }
+
         // Fala uma frase curta e fixa (feedback do JARVIS), independente do
         // auto-speak de respostas. Usa a voz/idioma configurados.
         function speakFixed(phrase) {
@@ -2223,6 +2250,13 @@
             const el = document.getElementById('voice-approval-banner');
             if (el) { el.style.display = 'none'; }
             if (_voiceApprovalBannerTimer) { clearTimeout(_voiceApprovalBannerTimer); _voiceApprovalBannerTimer = null; }
+        }
+        // Remove o card de confirmacao correspondente quando a aprovacao foi
+        // resolvida por voz (o host ja respondeu o agente; falta limpar a UI).
+        function removeConfirmCardById(id) {
+            if (!id) { return; }
+            const row = chatContainer.querySelector('.message-row[data-confirm-id="' + id + '"]');
+            if (row) { row.remove(); }
         }
 
         // ── Captura nativa via host (ffmpeg) ───────────────────────────────
@@ -2364,9 +2398,48 @@
             // Aportuguesa termos tecnicos em ingles para a voz PT-BR pronunciar
             // melhor. So aplica quando a voz/idioma e portugues.
             if (isPtSpeech()) { out = applyPtPronunciation(out); }
-            // Cap defensivo — TTS lento em respostas muito longas
-            if (out.length > 1500) { out = out.slice(0, 1500) + '...'; }
+            // Remove tabelas markdown e linhas decorativas (---, ===) que soam mal.
+            out = out.replace(/^\s*[|>].*$/gm, ' ');
+            out = out.replace(/[-=]{3,}/g, ' ');
+            out = out.replace(/\s+/g, ' ').trim();
+            // Sem truncamento: respostas longas sao quebradas em pedacos na fala.
             return out;
+        }
+
+        // Quebra um texto longo em pedacos falaveis (~frases), respeitando um
+        // tamanho maximo por pedaco para o speechSynthesis nao travar.
+        function splitForSpeech(text, maxLen) {
+            const limit = maxLen || 240;
+            const chunks = [];
+            // Quebra primeiro por sentenca (. ! ? ; quebra de linha logica).
+            const sentences = text.split(/(?<=[.!?;])\s+|\n+/);
+            let buf = '';
+            for (let s of sentences) {
+                s = s.trim();
+                if (!s) { continue; }
+                // Sentenca isolada maior que o limite — fatia por virgula/espaco.
+                if (s.length > limit) {
+                    if (buf) { chunks.push(buf); buf = ''; }
+                    let rest = s;
+                    while (rest.length > limit) {
+                        let cut = rest.lastIndexOf(',', limit);
+                        if (cut < limit * 0.5) { cut = rest.lastIndexOf(' ', limit); }
+                        if (cut <= 0) { cut = limit; }
+                        chunks.push(rest.slice(0, cut + 1).trim());
+                        rest = rest.slice(cut + 1);
+                    }
+                    if (rest.trim()) { buf = rest.trim(); }
+                    continue;
+                }
+                if ((buf + ' ' + s).trim().length > limit) {
+                    if (buf) { chunks.push(buf); }
+                    buf = s;
+                } else {
+                    buf = buf ? (buf + ' ' + s) : s;
+                }
+            }
+            if (buf) { chunks.push(buf); }
+            return chunks.filter(c => c && c.trim());
         }
 
         // Decide se a fala atual sera em portugues (para aplicar o dicionario
@@ -2448,6 +2521,59 @@
             utter.volume = 1.0;
         }
 
+        // Fila de fala (pedaco a pedaco). Mantem a borda verde acesa enquanto
+        // o JARVIS fala e a apaga ao terminar a fila.
+        let _ttsChunks = [];
+        let _ttsSpeaking = false;
+
+        function _ttsDrain() {
+            if (_ttsSpeaking) { return; }
+            const next = _ttsChunks.shift();
+            if (!next) {
+                // Fila acabou — apaga a borda de fala.
+                setSpeakGlow(false);
+                return;
+            }
+            _ttsSpeaking = true;
+            try {
+                const utter = new SpeechSynthesisUtterance(next);
+                applyVoiceParams(utter);
+                utter.onend = () => { _ttsSpeaking = false; _ttsDrain(); };
+                utter.onerror = () => { _ttsSpeaking = false; _ttsDrain(); };
+                speechSynthesis.speak(utter);
+            } catch (e) {
+                _ttsSpeaking = false;
+                _ttsDrain();
+            }
+        }
+
+        function stopSpeaking() {
+            _ttsChunks = [];
+            _ttsSpeaking = false;
+            if (typeof speechSynthesis !== 'undefined') { speechSynthesis.cancel(); }
+            setSpeakGlow(false);
+        }
+
+        // Fala um preambulo (texto que o modelo escreve antes de chamar uma
+        // ferramenta). Enfileira sem cancelar a fala em curso, e evita repetir
+        // o mesmo texto. Frases muito curtas/vazias sao ignoradas.
+        let _lastPreamble = '';
+        function speakPreamble(text) {
+            const on = !!(savedSettings && savedSettings.jarvisEnabled && savedSettings.jarvisAutoSpeak);
+            if (!on) { return; }
+            if (typeof speechSynthesis === 'undefined') { return; }
+            const clean = cleanForSpeech(text || '');
+            if (!clean || clean.length < 15) { return; }
+            if (clean === _lastPreamble) { return; }
+            _lastPreamble = clean;
+            jlog('TTS preambulo: "' + clean.slice(0, 60) + '"');
+            // Enfileira (nao cancela a fala atual) e acende a borda de fala.
+            const chunks = splitForSpeech(clean);
+            _ttsChunks = _ttsChunks.concat(chunks);
+            setSpeakGlow(true);
+            _ttsDrain();
+        }
+
         function speakIfJarvisAutoSpeak(text) {
             const on = !!(savedSettings && savedSettings.jarvisEnabled && savedSettings.jarvisAutoSpeak);
             jlog('speakIfJarvisAutoSpeak | autoSpeak=' + on + ' | textLen=' + (text ? text.length : 0) + ' | voicesReady=' + _ttsVoicesReady);
@@ -2455,16 +2581,13 @@
             if (typeof speechSynthesis === 'undefined') { jlog('TTS: speechSynthesis indisponivel'); return; }
             const clean = cleanForSpeech(text);
             if (!clean) { jlog('TTS: texto vazio apos limpeza — nao fala'); return; }
-            try {
-                // Fala apenas a resposta final do LLM. Cancela qualquer fala
-                // anterior antes de iniciar a nova.
-                speechSynthesis.cancel();
-                const utter = new SpeechSynthesisUtterance(clean);
-                applyVoiceParams(utter);
-                speechSynthesis.speak(utter);
-            } catch (e) {
-                console.warn('TTS falhou:', e);
-            }
+            // Cancela fala anterior e enfileira os pedacos da nova resposta.
+            stopSpeaking();
+            const chunks = splitForSpeech(clean);
+            jlog('TTS: falando em ' + chunks.length + ' pedaco(s)');
+            _ttsChunks = chunks;
+            setSpeakGlow(true);
+            _ttsDrain();
         }
 
         function updateContextBar(files) {
@@ -3369,6 +3492,7 @@
         function appendConfirmCommandCard(id, command, cwd) {
             const row = document.createElement('div');
             row.className = 'message-row agent';
+            row.dataset.confirmId = id;
 
             const meta = document.createElement('div');
             meta.className = 'message-meta';
@@ -3457,6 +3581,7 @@
 
             const row = document.createElement('div');
             row.className = 'message-row agent';
+            row.dataset.confirmId = id;
 
             const meta = document.createElement('div');
             meta.className = 'message-meta';
@@ -3622,17 +3747,25 @@
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
+                speakApprovalPrompt('write', msg.filePath);
             } else if (msg.command === 'todo_update') {
                 renderTodoList(msg.todos);
             } else if (msg.command === 'confirm_command') {
                 clearStatus();
                 appendConfirmCommandCard(msg.id, msg.cmd, msg.cwd);
+                speakApprovalPrompt('command', msg.cmd);
             } else if (msg.command === 'voice_approval_listening') {
                 showVoiceApprovalBanner('🎙 Diga "sim" ou "não" para responder…');
             } else if (msg.command === 'voice_approval_result') {
-                if (msg.verdict === 'yes') { showVoiceApprovalBanner('✓ Você disse "sim" — aprovando', 1500); }
-                else if (msg.verdict === 'no') { showVoiceApprovalBanner('✕ Você disse "não" — recusando', 1500); }
-                else { showVoiceApprovalBanner('Não entendi — decida pelo botão', 2000); }
+                if (msg.verdict === 'yes') {
+                    showVoiceApprovalBanner('✓ Você disse "sim" — aprovando', 1500);
+                    removeConfirmCardById(msg.id);
+                } else if (msg.verdict === 'no') {
+                    showVoiceApprovalBanner('✕ Você disse "não" — recusando', 1500);
+                    removeConfirmCardById(msg.id);
+                } else {
+                    showVoiceApprovalBanner('Não entendi — decida pelo botão', 2000);
+                }
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
             } else if (msg.command === 'live_telemetry') {
@@ -3667,6 +3800,10 @@
                 }
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
+                if (msg.running) {
+                    // Nova execucao: permite falar um preambulo igual ao anterior.
+                    _lastPreamble = '';
+                }
                 if (!msg.running) {
                     currentTodoCard = null;
                     // Failsafe: ao parar a execucao (stop pelo usuario ou fim
@@ -3700,6 +3837,10 @@
                             responseItem.classList.add('done');
                         }
                     }
+                    // Fala o preambulo (ex.: "Vou analisar a estrutura...") que o
+                    // modelo escreveu antes de chamar uma ferramenta. Esse texto
+                    // nao passa por agent_response, entao falamos aqui.
+                    speakPreamble(streamText);
                     streamBubble = null;
                     streamText = '';
                     streamRafPending = false;

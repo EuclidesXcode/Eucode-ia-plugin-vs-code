@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.14.3
+
+- **Tarefas longas: checkpoint na memoria em vez de zerar** — quando o agente atinge o limite de passos ou o contexto do modelo enche (respostas vazias), em vez de desistir com "nao foi possivel concluir", ele salva um resumo do progresso na memoria da sessao (passo atingido, arquivos analisados/editados, ultimo erro, pedido original) e oferece um botao para continuar. Ao continuar, esse checkpoint e injetado no contexto (via memoria da sessao), retomando de onde parou sem refazer o que ja foi feito
+
+## 0.14.2
+
+- **Fix: aprovacao por voz nao fechava o card** — ao responder "sim"/"nao" por voz, o agente recebia a decisao mas o card de confirmacao continuava na tela (so o clique manual o removia). Agora o card e fechado quando a voz decide (casado pelo id)
+- **Fix: cards de aprovacao concorrentes** — duas aprovacoes seguidas faziam dois ffmpeg competirem pelo microfone. Agora a captura de sim/nao e serializada: responde um card de cada vez, reabrindo o "ouvindo" para o proximo
+
+## 0.14.1
+
+- **TTS fala tambem os preambulos** — frases que o modelo escreve antes de chamar uma ferramenta (ex.: "Vou analisar a estrutura do projeto e gerar um resumo conciso.") aparecem na timeline mas nao passavam pelo agent_response, entao nao eram faladas. Agora sao faladas no momento em que o texto e congelado (antes da tool call), enfileiradas sem cortar a fala em curso e sem repetir o mesmo preambulo
+
+## 0.14.0
+
+- **TTS de respostas longas: fala em pedacos** — respostas grandes (comuns no modo AUTO) eram truncadas em 1500 caracteres e o speechSynthesis travava com texto gigante, fazendo o JARVIS nao falar. Agora a resposta e quebrada em pedacos por frase (~240 chars) e falada audio por audio, sequencialmente, sem truncar. Tabelas markdown e linhas decorativas sao filtradas da fala
+- **Borda verde tambem durante a fala** — o painel pulsa em verde enquanto o JARVIS le a resposta, nao so quando ouve
+- **Perguntas de aprovacao faladas + escuta automatica** — quando o agente pede aprovacao (editar arquivo / rodar comando) e a wake word esta ativa, o JARVIS fala a pergunta ("Posso editar X? Diga sim ou não.") e abre o microfone para sua resposta apos a pergunta terminar (evitando captar a propria voz)
+
 ## 0.13.3
 
 - **Wake word: mais variacoes de pronuncia aceitas** — "eu cold", "eu coge", "eu coach", "eu coja", "eu coque" (alem das anteriores). A terminacao do regex foi ampliada (g/ge/j/ja/je/jo/ch/che/sh/que/k). Continua rejeitando falsos positivos como "eu quero", "o coach foi fã" e "eu cuido da casa"

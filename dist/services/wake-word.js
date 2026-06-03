@@ -43,6 +43,7 @@ class WakeWordListener {
     constructor(cfg) {
         this.running = false;
         this.paused = false;
+        this.yesNoBusy = false;
         this.proc = null;
         this.cfg = cfg;
     }
@@ -220,6 +221,15 @@ class WakeWordListener {
         if (!this.running) {
             return 'unclear';
         }
+        // Serializa: se ja ha uma captura de sim/nao rodando, espera ela
+        // terminar antes de iniciar a proxima (evita 2 ffmpeg competindo pelo mic).
+        while (this.yesNoBusy) {
+            await delay(150);
+            if (!this.running) {
+                return 'unclear';
+            }
+        }
+        this.yesNoBusy = true;
         this.paused = true;
         // Espera o probe em andamento liberar o mic.
         await delay(250);
@@ -253,6 +263,7 @@ class WakeWordListener {
         }
         finally {
             this.paused = false;
+            this.yesNoBusy = false;
             this.setState('listening');
         }
     }

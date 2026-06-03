@@ -39,6 +39,7 @@ export class WakeWordListener {
     private cfg: WakeWordConfig;
     private running = false;
     private paused = false;
+    private yesNoBusy = false;
     private proc: ChildProcessWithoutNullStreams | null = null;
 
     constructor(cfg: WakeWordConfig) {
@@ -196,6 +197,10 @@ export class WakeWordListener {
     // Resolves 'yes' | 'no' | 'unclear'. The caller maps it to approve/reject.
     async captureYesNo(attempts = 3): Promise<'yes' | 'no' | 'unclear'> {
         if (!this.running) { return 'unclear'; }
+        // Serializa: se ja ha uma captura de sim/nao rodando, espera ela
+        // terminar antes de iniciar a proxima (evita 2 ffmpeg competindo pelo mic).
+        while (this.yesNoBusy) { await delay(150); if (!this.running) { return 'unclear'; } }
+        this.yesNoBusy = true;
         this.paused = true;
         // Espera o probe em andamento liberar o mic.
         await delay(250);
@@ -224,6 +229,7 @@ export class WakeWordListener {
             return 'unclear';
         } finally {
             this.paused = false;
+            this.yesNoBusy = false;
             this.setState('listening');
         }
     }

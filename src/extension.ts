@@ -86,8 +86,13 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             onNo: () => void,
         ) => {
             if (!this._wakeWord?.isRunning()) { return; }
-            webviewView.webview.postMessage({ command: 'voice_approval_listening', id: pendingId });
-            this._wakeWord.captureYesNo().then(verdict => {
+            // Espera a pergunta falada ("Posso editar X? Diga sim ou não")
+            // terminar antes de abrir o microfone, senao captura a propria voz.
+            const APPROVAL_SPEAK_DELAY_MS = 2800;
+            setTimeout(() => {
+                if (!stillPending() || !this._wakeWord?.isRunning()) { return; }
+                webviewView.webview.postMessage({ command: 'voice_approval_listening', id: pendingId });
+                this._wakeWord.captureYesNo().then(verdict => {
                 if (!stillPending()) { return; } // usuario ja decidiu no clique
                 if (verdict === 'yes') {
                     webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'yes' });
@@ -99,7 +104,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     // 'unclear' apos as tentativas — deixa o card para clique manual.
                     webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'unclear' });
                 }
-            }).catch(() => { /* falha de captura — card permanece para clique */ });
+                }).catch(() => { /* falha de captura — card permanece para clique */ });
+            }, APPROVAL_SPEAK_DELAY_MS);
         };
 
         const makeConfirmWrite = (): (req: ConfirmWriteRequest) => Promise<boolean> =>
