@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.13.3
+
+- **Wake word: mais variacoes de pronuncia aceitas** — "eu cold", "eu coge", "eu coach", "eu coja", "eu coque" (alem das anteriores). A terminacao do regex foi ampliada (g/ge/j/ja/je/jo/ch/che/sh/que/k). Continua rejeitando falsos positivos como "eu quero", "o coach foi fã" e "eu cuido da casa"
+
+## 0.13.2
+
+- **Borda de escuta estilo Apple Intelligence** — quando o Eucode reconhece a wake word e vai gravar seu comando (ou ouve sua resposta de aprovacao), uma borda verde pulsa suavemente em volta de todo o painel. Apaga ao voltar para a escuta passiva
+- **Confirmacao falada "Estou ouvindo"** — ao detectar "Eucode", o JARVIS responde em voz alta "Estou ouvindo" antes de gravar. O host aguarda ~1.7s (a fala terminar) antes de iniciar a captura, evitando que o microfone grave a propria voz
+
+## 0.13.1
+
+- **Deteccao da wake word ainda mais tolerante** — inclui variacoes com "u" que o Whisper produz ("eu cuide", "eu cuíde", "eu cude"). Continua rejeitando falsos positivos como "eu quero" e "eu cuido da casa" (so dispara quando a 2a parte termina em d/t, como em "cuide")
+
+## 0.13.0
+
+- **Aprovacao por voz** — quando o modo de escuta ("Eucode") esta ativo e o agente pede aprovacao (editar arquivo ou rodar comando), o JARVIS grava a sua resposta e identifica "sim"/"nao" (PT-BR + EN), aprovando ou recusando sem clique. Se a resposta for ambigua, re-escuta ate 3 vezes; se continuar incerta, o card fica para decisao manual. Resposta afirmativa em comando aprova so aquela vez ('once'). Banner visual indica "Diga sim ou nao". Clique manual no card sempre tem prioridade
+
+## 0.12.1
+
+- **Deteccao da wake word "Eucode" mais tolerante** — o Whisper transcreve a palavra de varias formas ("eu coude", "eu code", "eu, colde", "you code"…). A deteccao agora usa um regex que aceita "eu/you/é/ei/hey" + algo parecido com "code", tolerando pontuacao, e rejeita falsos positivos como "eu quero". O mesmo se aplica a remocao da wake word do inicio do comando
+
+## 0.12.0
+
+- **Modo de escuta por palavra de ativacao ("Eucode")** — opcional, ligado por switch na config do JARVIS. O host ouve o microfone continuamente em janelas curtas (~3s), transcreve via Whisper e procura a palavra de ativacao. Ao detectar, grava o comando e **para automaticamente apos ~5s de pausa** (via `silencedetect` do ffmpeg, sem lib nova), transcreve e envia direto ao agente. Indicador de estado na config (ouvindo / gravando / transcrevendo). Palavra configuravel. Consome CPU/bateria enquanto ativo
+
 ## 0.11.2
 
 - **Pronuncia de termos tecnicos em ingles na fala (TTS)** — a voz PT-BR lia palavras como "deploy", "commit", "build", "file" com pronuncia portuguesa errada. Agora um dicionario aportuguesa a grafia so na fala (deploy→déploi, commit→câmit, build→bíld, file→fáiou, release→rilíss, etc.). Aplicado apenas quando a voz e PT-BR; o texto exibido no chat nao muda

@@ -67,6 +67,8 @@ export interface EucodeSettings {
     whisperModel: string;            // e.g. "whisper-1" or your local model id
     whisperLanguage: string;         // ISO code like "pt", "en"; empty = auto-detect
     micDeviceIndex: string;          // avfoundation audio device index for capture; '' = default (:0)
+    wakeWordEnabled: boolean;        // continuous listen for the wake word
+    wakeWord: string;                // the wake word to trigger recording (default "eucode")
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -99,6 +101,8 @@ const DEFAULTS: EucodeSettings = {
     whisperModel: 'whisper-1',
     whisperLanguage: 'pt',
     micDeviceIndex: '',
+    wakeWordEnabled: false,
+    wakeWord: 'eucode',
 };
 
 const KEYS = {
@@ -131,6 +135,8 @@ const KEYS = {
     whisperModel: 'eucode.whisperModel',
     whisperLanguage: 'eucode.whisperLanguage',
     micDeviceIndex: 'eucode.micDeviceIndex',
+    wakeWordEnabled: 'eucode.wakeWordEnabled',
+    wakeWord: 'eucode.wakeWord',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -170,6 +176,8 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         whisperModel: context.globalState.get<string>(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
         whisperLanguage: context.globalState.get<string>(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
         micDeviceIndex: context.globalState.get<string>(KEYS.micDeviceIndex) ?? DEFAULTS.micDeviceIndex,
+        wakeWordEnabled: context.globalState.get<boolean>(KEYS.wakeWordEnabled) ?? DEFAULTS.wakeWordEnabled,
+        wakeWord: context.globalState.get<string>(KEYS.wakeWord) ?? DEFAULTS.wakeWord,
     };
 }
 
@@ -203,6 +211,8 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
     await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
     await context.globalState.update(KEYS.micDeviceIndex, settings.micDeviceIndex);
+    await context.globalState.update(KEYS.wakeWordEnabled, settings.wakeWordEnabled);
+    await context.globalState.update(KEYS.wakeWord, settings.wakeWord);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

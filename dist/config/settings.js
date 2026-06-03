@@ -54,6 +54,8 @@ const DEFAULTS = {
     whisperModel: 'whisper-1',
     whisperLanguage: 'pt',
     micDeviceIndex: '',
+    wakeWordEnabled: false,
+    wakeWord: 'eucode',
 };
 const KEYS = {
     provider: 'eucode.provider',
@@ -85,6 +87,8 @@ const KEYS = {
     whisperModel: 'eucode.whisperModel',
     whisperLanguage: 'eucode.whisperLanguage',
     micDeviceIndex: 'eucode.micDeviceIndex',
+    wakeWordEnabled: 'eucode.wakeWordEnabled',
+    wakeWord: 'eucode.wakeWord',
 };
 exports.DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 function loadSettings(context) {
@@ -122,6 +126,8 @@ function loadSettings(context) {
         whisperModel: context.globalState.get(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
         whisperLanguage: context.globalState.get(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
         micDeviceIndex: context.globalState.get(KEYS.micDeviceIndex) ?? DEFAULTS.micDeviceIndex,
+        wakeWordEnabled: context.globalState.get(KEYS.wakeWordEnabled) ?? DEFAULTS.wakeWordEnabled,
+        wakeWord: context.globalState.get(KEYS.wakeWord) ?? DEFAULTS.wakeWord,
     };
 }
 async function saveSettings(context, settings) {
@@ -154,6 +160,8 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
     await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
     await context.globalState.update(KEYS.micDeviceIndex, settings.micDeviceIndex);
+    await context.globalState.update(KEYS.wakeWordEnabled, settings.wakeWordEnabled);
+    await context.globalState.update(KEYS.wakeWord, settings.wakeWord);
 }
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts
 function buildApiEndpoint(settings) {

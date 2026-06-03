@@ -537,6 +537,46 @@
             scrollbar-width: thin;
             scrollbar-color: #1a1a2e transparent;
         }
+
+        /* ── Borda de escuta do JARVIS (estilo Apple Intelligence) ──
+           Overlay fixo por cima de todo o painel; pulsa suavemente em verde
+           quando o Eucode esta ouvindo/gravando. Nao intercepta cliques. */
+        #listen-glow {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 99998;
+            border-radius: 10px;
+            opacity: 0;
+            transition: opacity .45s ease;
+            /* dupla sombra interna = borda luminosa suave */
+            box-shadow:
+                inset 0 0 0 2px rgba(34, 197, 94, .55),
+                inset 0 0 22px 4px rgba(34, 197, 94, .35),
+                inset 0 0 60px 10px rgba(34, 197, 94, .12);
+        }
+        #listen-glow.active {
+            opacity: 1;
+            animation: listenPulse 2.6s ease-in-out infinite;
+        }
+        /* Estado "gravando o comando": pulso um pouco mais vivo/rapido. */
+        #listen-glow.recording {
+            animation-duration: 1.5s;
+        }
+        @keyframes listenPulse {
+            0%, 100% {
+                box-shadow:
+                    inset 0 0 0 2px rgba(34, 197, 94, .35),
+                    inset 0 0 18px 3px rgba(34, 197, 94, .22),
+                    inset 0 0 48px 8px rgba(34, 197, 94, .08);
+            }
+            50% {
+                box-shadow:
+                    inset 0 0 0 3px rgba(34, 197, 94, .85),
+                    inset 0 0 30px 6px rgba(34, 197, 94, .5),
+                    inset 0 0 80px 16px rgba(34, 197, 94, .2);
+            }
+        }
         #chat-container::-webkit-scrollbar { width: 4px; }
         #chat-container::-webkit-scrollbar-thumb { background: #1a1a2e; border-radius: 2px; }
 
@@ -1626,6 +1666,8 @@
 </head>
 <body>
 
+    <div id="listen-glow"></div>
+
     <div id="header">
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
@@ -1830,6 +1872,21 @@
                         <button id="config-tts-test" class="icon-btn" title="Testar voz" type="button" style="flex:0 0 auto;"><span class="mi">volume_up</span></button>
                     </div>
                     <span class="editor-feature-desc" style="font-size:9px;">Para voz masculina em PT-BR, baixe "Felipe" em Ajustes do Sistema → Acessibilidade → Conteúdo Falado → Vozes do sistema.</span>
+                </div>
+                <div class="editor-feature-row" style="border-color:#3a2030;">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Escutar palavra de ativação <span id="wake-word-status" style="font-size:9px;color:#888;"></span></span>
+                        <span class="editor-feature-desc">Ouve o microfone continuamente; ao dizer a palavra, grava seu comando e envia após ~5s de pausa. Consome CPU/bateria.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-wake-word-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="config-wake-word-rows" style="display:none;">
+                    <label class="config-label" style="font-size:10px;">Palavra de ativação</label>
+                    <input id="config-wake-word" class="config-input mono" type="text" placeholder="eucode" spellcheck="false" value="eucode">
+                    <span class="editor-feature-desc" style="font-size:9px;">Dita antes do comando. Use uma palavra que o Whisper reconheça bem.</span>
                 </div>
                 <div class="editor-feature-row" style="border-color:#3a2030;">
                     <div class="editor-feature-info">
@@ -2107,6 +2164,65 @@
         function updateMicButtonVisibility() {
             const on = !!(savedSettings && savedSettings.jarvisEnabled);
             micBtn.style.display = on ? '' : 'none';
+        }
+
+        // ── Borda pulsante de escuta (estilo Apple Intelligence) ───────────
+        // A borda acende quando o Eucode comeca a gravar o comando ('recording')
+        // e segue ate transcrever; apaga em 'listening' (escuta passiva) e 'idle'.
+        let _lastWakeState = 'idle';
+        function applyListenGlow(state) {
+            const glow = document.getElementById('listen-glow');
+            if (!glow) { return; }
+            const lit = (state === 'acknowledging' || state === 'recording' || state === 'transcribing');
+            glow.classList.toggle('active', lit);
+            glow.classList.toggle('recording', state === 'recording');
+
+            // Fala fixa "Estou ouvindo" assim que a wake word e reconhecida.
+            // O host espera ~1.7s antes de gravar, dando tempo da fala terminar
+            // sem que o microfone capture a propria voz.
+            if (state === 'acknowledging' && _lastWakeState !== 'acknowledging') {
+                speakFixed('Estou ouvindo');
+            }
+            _lastWakeState = state;
+        }
+
+        // Fala uma frase curta e fixa (feedback do JARVIS), independente do
+        // auto-speak de respostas. Usa a voz/idioma configurados.
+        function speakFixed(phrase) {
+            if (typeof speechSynthesis === 'undefined') { return; }
+            try {
+                speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(phrase);
+                if (typeof applyVoiceParams === 'function') { applyVoiceParams(u); }
+                else { u.lang = 'pt-BR'; }
+                speechSynthesis.speak(u);
+            } catch (e) { /* noop */ }
+        }
+
+        // Banner flutuante que indica a escuta da resposta de aprovacao por voz.
+        let _voiceApprovalBannerTimer = null;
+        function showVoiceApprovalBanner(text, autoHideMs) {
+            let el = document.getElementById('voice-approval-banner');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'voice-approval-banner';
+                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:70px;'
+                    + 'background:#1a2a3a;color:#dbeafe;border:1px solid #2d4a6a;padding:8px 14px;'
+                    + 'border-radius:8px;font-size:12px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4);'
+                    + 'white-space:nowrap;';
+                document.body.appendChild(el);
+            }
+            el.textContent = text;
+            el.style.display = 'block';
+            if (_voiceApprovalBannerTimer) { clearTimeout(_voiceApprovalBannerTimer); _voiceApprovalBannerTimer = null; }
+            if (autoHideMs) {
+                _voiceApprovalBannerTimer = setTimeout(() => { el.style.display = 'none'; }, autoHideMs);
+            }
+        }
+        function hideVoiceApprovalBanner() {
+            const el = document.getElementById('voice-approval-banner');
+            if (el) { el.style.display = 'none'; }
+            if (_voiceApprovalBannerTimer) { clearTimeout(_voiceApprovalBannerTimer); _voiceApprovalBannerTimer = null; }
         }
 
         // ── Captura nativa via host (ffmpeg) ───────────────────────────────
@@ -2602,6 +2718,10 @@
         const configMicRefresh = document.getElementById('config-mic-refresh');
         const configTtsVoice = document.getElementById('config-tts-voice');
         const configTtsTest = document.getElementById('config-tts-test');
+        const configWakeWordEnabled = document.getElementById('config-wake-word-enabled');
+        const configWakeWordRows = document.getElementById('config-wake-word-rows');
+        const configWakeWord = document.getElementById('config-wake-word');
+        const wakeWordStatus = document.getElementById('wake-word-status');
         const configVoiceServerEnabled = document.getElementById('config-voice-server-enabled');
         const configVoiceServerRows = document.getElementById('config-voice-server-rows');
         const configVoiceServerPort = document.getElementById('config-voice-server-port');
@@ -2665,6 +2785,10 @@
                 renderTtsVoices();
             };
         }
+
+        configWakeWordEnabled.addEventListener('change', () => {
+            configWakeWordRows.style.display = configWakeWordEnabled.checked ? 'block' : 'none';
+        });
 
         configTtsTest.addEventListener('click', () => {
             if (typeof speechSynthesis === 'undefined') { return; }
@@ -2822,6 +2946,9 @@
                 renderMicDevices([], savedSettings.micDeviceIndex || '');
                 if (savedSettings.jarvisEnabled) { requestMicDevices(); }
                 renderTtsVoices();
+                configWakeWordEnabled.checked = !!savedSettings.wakeWordEnabled;
+                configWakeWord.value = savedSettings.wakeWord || 'eucode';
+                configWakeWordRows.style.display = configWakeWordEnabled.checked ? 'block' : 'none';
                 configVoiceServerEnabled.checked = !!savedSettings.voiceServerEnabled;
                 configVoiceServerPort.value = savedSettings.voiceServerPort || 9876;
                 configVoiceServerExpose.checked = !!savedSettings.voiceServerExposeNetwork;
@@ -2870,6 +2997,8 @@
                 whisperModel: configWhisperModel.value.trim() || 'whisper-1',
                 whisperLanguage: configWhisperLanguage.value.trim(),
                 micDeviceIndex: configMicDevice.value || '',
+                wakeWordEnabled: configWakeWordEnabled.checked,
+                wakeWord: (configWakeWord.value.trim() || 'eucode').toLowerCase(),
                 voiceServerEnabled: configVoiceServerEnabled.checked,
                 voiceServerPort: parseInt(configVoiceServerPort.value, 10) || 9876,
                 voiceServerExposeNetwork: configVoiceServerExpose.checked,
@@ -3301,6 +3430,7 @@
             function decide(decision) {
                 vscode.postMessage({ command: 'confirm_command_response', id, decision });
                 row.remove();
+                hideVoiceApprovalBanner();
             }
 
             blockBtn.addEventListener('click', () => decide('block'));
@@ -3387,6 +3517,7 @@
             function decide(approved) {
                 vscode.postMessage({ command: 'confirm_write_response', id, approved });
                 row.remove();
+                hideVoiceApprovalBanner();
             }
 
             acceptBtn.addEventListener('click', () => decide(true));
@@ -3409,7 +3540,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '', wakeWordEnabled: !!msg.wakeWordEnabled, wakeWord: msg.wakeWord || 'eucode' };
                 customCommandsScope = savedSettings.customCommandsScope;
                 jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
                     '| whisperEndpoint =', savedSettings.whisperEndpoint);
@@ -3460,6 +3591,8 @@
                 savedSettings.whisperModel = configWhisperModel.value.trim() || 'whisper-1';
                 savedSettings.whisperLanguage = configWhisperLanguage.value.trim();
                 savedSettings.micDeviceIndex = configMicDevice.value || '';
+                savedSettings.wakeWordEnabled = configWakeWordEnabled.checked;
+                savedSettings.wakeWord = (configWakeWord.value.trim() || 'eucode').toLowerCase();
                 savedSettings.voiceServerEnabled = configVoiceServerEnabled.checked;
                 savedSettings.voiceServerPort = parseInt(configVoiceServerPort.value, 10) || 9876;
                 savedSettings.voiceServerExposeNetwork = configVoiceServerExpose.checked;
@@ -3494,6 +3627,12 @@
             } else if (msg.command === 'confirm_command') {
                 clearStatus();
                 appendConfirmCommandCard(msg.id, msg.cmd, msg.cwd);
+            } else if (msg.command === 'voice_approval_listening') {
+                showVoiceApprovalBanner('🎙 Diga "sim" ou "não" para responder…');
+            } else if (msg.command === 'voice_approval_result') {
+                if (msg.verdict === 'yes') { showVoiceApprovalBanner('✓ Você disse "sim" — aprovando', 1500); }
+                else if (msg.verdict === 'no') { showVoiceApprovalBanner('✕ Você disse "não" — recusando', 1500); }
+                else { showVoiceApprovalBanner('Não entendi — decida pelo botão', 2000); }
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
             } else if (msg.command === 'live_telemetry') {
@@ -3622,6 +3761,16 @@
                     jlog('voice_devices_result erro: ' + (msg.error || ''));
                     renderMicDevices([], savedSettings.micDeviceIndex || '');
                 }
+                return;
+            } else if (msg.command === 'wake_word_state') {
+                if (wakeWordStatus) {
+                    const labels = { listening: '● ouvindo…', recording: '● gravando…', transcribing: '● transcrevendo…', idle: '' };
+                    const colors = { listening: '#22c55e', recording: '#ff4757', transcribing: '#f59e0b', idle: '#888' };
+                    wakeWordStatus.textContent = labels[msg.state] || '';
+                    wakeWordStatus.style.color = colors[msg.state] || '#888';
+                }
+                applyListenGlow(msg.state);
+                if (msg.error) { jlog('wake_word erro: ' + msg.error); }
                 return;
             } else if (msg.command === 'voice_record_started') {
                 jlog('host confirmou: gravando');
