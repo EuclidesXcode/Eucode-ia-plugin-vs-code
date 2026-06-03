@@ -1149,6 +1149,21 @@
             transition: border-color 0.15s, color 0.15s, background 0.15s;
         }
         .icon-btn:hover { border-color: #3a7bd5; color: #3a7bd5; background: #0d1a2e; }
+        .icon-btn.mic-recording {
+            border-color: #ff4757;
+            color: #ff4757;
+            background: #1a0a0d;
+            animation: mic-pulse 1s ease-in-out infinite;
+        }
+        .icon-btn.mic-transcribing {
+            border-color: #00d4ff;
+            color: #00d4ff;
+            background: #001a26;
+        }
+        @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(255, 71, 87, 0); }
+        }
 
         #user-input {
             flex: 1;
@@ -1762,6 +1777,72 @@
                 </button>
             </div>
         </details>
+        <div style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#ff4757;">
+                🎙 JARVIS — Modo de voz
+                <label class="switch" style="margin-left:auto">
+                    <input type="checkbox" id="config-jarvis-enabled">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="config-hint" style="margin-top:6px;margin-bottom:8px;color:#aa7080;">
+                Pressione o microfone no chat e fale — o audio e transcrito localmente via Whisper no LM Studio. O agente pode responder em voz alta.
+            </div>
+            <div id="config-jarvis-rows" style="display:none;gap:8px;flex-direction:column;">
+                <div class="editor-feature-row" style="border-color:#3a2030;">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Falar respostas em voz alta (TTS)</span>
+                        <span class="editor-feature-desc">Le respostas do agente usando voz do sistema. So texto puro, ignora blocos de codigo.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-jarvis-autospeak">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Endpoint do Whisper (LM Studio)</label>
+                    <input id="config-whisper-endpoint" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Modelo Whisper (id carregado no LM Studio)</label>
+                    <input id="config-whisper-model" class="config-input mono" type="text" placeholder="whisper-1" spellcheck="false">
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Idioma esperado (ISO: pt, en, es… vazio = auto)</label>
+                    <input id="config-whisper-language" class="config-input mono" type="text" placeholder="pt" spellcheck="false">
+                </div>
+                <div class="editor-feature-row" style="border-color:#3a2030;">
+                    <div class="editor-feature-info">
+                        <span class="editor-feature-name">Servidor de voz (para app mobile)</span>
+                        <span class="editor-feature-desc">Sobe um servidor HTTP local que aceita comandos do app mobile.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-voice-server-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="config-voice-server-rows" style="display:none;gap:6px;flex-direction:column;">
+                    <div>
+                        <label class="config-label" style="font-size:10px;">Porta</label>
+                        <input id="config-voice-server-port" class="config-input mono" type="number" min="1024" max="65535" value="9876">
+                    </div>
+                    <div class="editor-feature-row" style="border-color:#3a2030;">
+                        <div class="editor-feature-info">
+                            <span class="editor-feature-name">Expor na rede local</span>
+                            <span class="editor-feature-desc">Ative para o app mobile na mesma WiFi conectar. Sem isso, so localhost.</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="config-voice-server-expose">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <button type="button" id="config-show-pairing" class="cmd-open-file-btn">Mostrar dados de pareamento</button>
+                    <div id="config-pairing-info" style="display:none;background:#0a0a15;border:1px solid #1a1a2e;border-radius:4px;padding:8px 10px;font-size:11px;color:#7090b0;">
+                        <div id="config-pairing-content" style="font-family:monospace;line-height:1.6;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div>
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;">
                 RAG (Contexto Vetorial)
@@ -1845,6 +1926,7 @@
     <div id="input-area">
         <button id="config-btn" class="icon-btn" title="Configuracoes"><span class="mi">settings</span></button>
         <button id="image-btn" class="icon-btn" title="Anexar imagem"><span class="mi">add_photo_alternate</span></button>
+        <button id="mic-btn" class="icon-btn" title="Modo JARVIS (push-to-talk)" style="display:none"><span class="mi">mic</span></button>
         <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa... ( / para comandos)"></textarea>
         <button id="stop-btn"><span class="mi" style="font-size:16px">stop_circle</span>Stop</button>
         <button id="send-btn"><span class="mi" style="font-size:16px">send</span>Enviar</button>
@@ -1981,6 +2063,134 @@
         stopBtn.addEventListener('click', () => {
             vscode.postMessage({ command: 'stop' });
         });
+
+        // ── JARVIS: push-to-talk (record → transcribe → fill input) ────
+        const micBtn = document.getElementById('mic-btn');
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let pendingTranscribeId = null;
+
+        function updateMicButtonVisibility() {
+            if (savedSettings && savedSettings.jarvisEnabled) {
+                micBtn.style.display = '';
+            } else {
+                micBtn.style.display = 'none';
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioChunks = [];
+                // Prefer audio/webm;codecs=opus (best Whisper compatibility) when available
+                const mimeOptions = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+                let chosenMime = '';
+                for (const m of mimeOptions) {
+                    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
+                        chosenMime = m;
+                        break;
+                    }
+                }
+                mediaRecorder = chosenMime ? new MediaRecorder(stream, { mimeType: chosenMime }) : new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) { audioChunks.push(e.data); }
+                };
+                mediaRecorder.onstop = async () => {
+                    stream.getTracks().forEach(t => t.stop());
+                    if (audioChunks.length === 0) {
+                        micBtn.classList.remove('mic-recording', 'mic-transcribing');
+                        return;
+                    }
+                    micBtn.classList.remove('mic-recording');
+                    micBtn.classList.add('mic-transcribing');
+                    const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    const base64 = await blobToBase64(blob);
+                    pendingTranscribeId = 'tx_' + Date.now();
+                    vscode.postMessage({
+                        command: 'voice_transcribe',
+                        requestId: pendingTranscribeId,
+                        audioBase64: base64,
+                        mimeType: blob.type,
+                    });
+                };
+                mediaRecorder.start();
+                isRecording = true;
+                micBtn.classList.add('mic-recording');
+                micBtn.title = 'Gravando... clique para parar e transcrever';
+            } catch (e) {
+                console.error('mic error', e);
+                alert('Nao foi possivel acessar o microfone: ' + (e && e.message ? e.message : e));
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                isRecording = false;
+                mediaRecorder.stop();
+                mediaRecorder = null;
+                micBtn.title = 'Transcrevendo audio...';
+            }
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const dataUrl = reader.result;
+                    const comma = dataUrl.indexOf(',');
+                    resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        micBtn.addEventListener('click', () => {
+            if (isRecording) { stopRecording(); }
+            else { startRecording(); }
+        });
+
+        // ── TTS: fala respostas do agente quando jarvisAutoSpeak ativo ──
+        // Estrategia: pega o texto recebido em agent_response, remove blocos
+        // de codigo (``` ... ```), inline code e markdown pesado, e fala o
+        // restante com speechSynthesis nativo do navegador.
+        function cleanForSpeech(text) {
+            if (!text) { return ''; }
+            let out = text;
+            // Remove blocos de codigo
+            out = out.replace(/```[\s\S]*?```/g, ' [bloco de codigo omitido] ');
+            // Remove inline code
+            out = out.replace(/`[^`]+`/g, '');
+            // Remove markdown headers/bullets
+            out = out.replace(/^#{1,6}\s+/gm, '');
+            out = out.replace(/^[\*\-]\s+/gm, '');
+            // Remove links markdown, deixa so o texto
+            out = out.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+            // Colapsa whitespace
+            out = out.replace(/\n{2,}/g, '. ').replace(/\s+/g, ' ').trim();
+            // Cap defensivo — TTS lento em respostas muito longas
+            if (out.length > 1500) { out = out.slice(0, 1500) + '...'; }
+            return out;
+        }
+
+        function speakIfJarvisAutoSpeak(text) {
+            if (!savedSettings || !savedSettings.jarvisEnabled || !savedSettings.jarvisAutoSpeak) { return; }
+            if (typeof speechSynthesis === 'undefined') { return; }
+            const clean = cleanForSpeech(text);
+            if (!clean) { return; }
+            try {
+                // Cancel qualquer fala anterior antes de iniciar a nova
+                speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(clean);
+                const lang = savedSettings.whisperLanguage === 'en' ? 'en-US' : 'pt-BR';
+                utter.lang = lang;
+                utter.rate = 1.0;
+                speechSynthesis.speak(utter);
+            } catch (e) {
+                console.warn('TTS falhou:', e);
+            }
+        }
 
         function updateContextBar(files) {
             contextBar.innerHTML = '';
@@ -2222,6 +2432,31 @@
             vscode.postMessage({ command: 'open_memory_file' });
         });
 
+        // ── JARVIS config elements ─────────────────────────────────────
+        const configJarvisEnabled = document.getElementById('config-jarvis-enabled');
+        const configJarvisRows = document.getElementById('config-jarvis-rows');
+        const configJarvisAutoSpeak = document.getElementById('config-jarvis-autospeak');
+        const configWhisperEndpoint = document.getElementById('config-whisper-endpoint');
+        const configWhisperModel = document.getElementById('config-whisper-model');
+        const configWhisperLanguage = document.getElementById('config-whisper-language');
+        const configVoiceServerEnabled = document.getElementById('config-voice-server-enabled');
+        const configVoiceServerRows = document.getElementById('config-voice-server-rows');
+        const configVoiceServerPort = document.getElementById('config-voice-server-port');
+        const configVoiceServerExpose = document.getElementById('config-voice-server-expose');
+        const configShowPairing = document.getElementById('config-show-pairing');
+        const configPairingInfo = document.getElementById('config-pairing-info');
+        const configPairingContent = document.getElementById('config-pairing-content');
+
+        configJarvisEnabled.addEventListener('change', () => {
+            configJarvisRows.style.display = configJarvisEnabled.checked ? 'flex' : 'none';
+        });
+        configVoiceServerEnabled.addEventListener('change', () => {
+            configVoiceServerRows.style.display = configVoiceServerEnabled.checked ? 'flex' : 'none';
+        });
+        configShowPairing.addEventListener('click', () => {
+            vscode.postMessage({ command: 'voice_pairing_info' });
+        });
+
         // Wire up scope radios + open file button. Scope changes apply immediately
         // (separate command from the main Save) so the hot-reload kicks in.
         document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
@@ -2319,6 +2554,18 @@
                 configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
                 configProjectIntel.checked = savedSettings.projectIntelEnabled !== false;
 
+                configJarvisEnabled.checked = !!savedSettings.jarvisEnabled;
+                configJarvisAutoSpeak.checked = savedSettings.jarvisAutoSpeak !== false;
+                configWhisperEndpoint.value = savedSettings.whisperEndpoint || 'http://localhost:1234';
+                configWhisperModel.value = savedSettings.whisperModel || 'whisper-1';
+                configWhisperLanguage.value = savedSettings.whisperLanguage || 'pt';
+                configVoiceServerEnabled.checked = !!savedSettings.voiceServerEnabled;
+                configVoiceServerPort.value = savedSettings.voiceServerPort || 9876;
+                configVoiceServerExpose.checked = !!savedSettings.voiceServerExposeNetwork;
+                configJarvisRows.style.display = configJarvisEnabled.checked ? 'flex' : 'none';
+                configVoiceServerRows.style.display = configVoiceServerEnabled.checked ? 'flex' : 'none';
+                configPairingInfo.style.display = 'none';
+
                 const currentScope = savedSettings.customCommandsScope || 'workspace';
                 document.querySelectorAll('input[name="config-cmd-scope"]').forEach(r => {
                     r.checked = r.value === currentScope;
@@ -2353,6 +2600,14 @@
                 inlineCompletionEnabled: configInlineCompletion.checked,
                 fixWithEucodeEnabled: configFixWithEucode.checked,
                 projectIntelEnabled: configProjectIntel.checked,
+                jarvisEnabled: configJarvisEnabled.checked,
+                jarvisAutoSpeak: configJarvisAutoSpeak.checked,
+                whisperEndpoint: configWhisperEndpoint.value.trim() || 'http://localhost:1234',
+                whisperModel: configWhisperModel.value.trim() || 'whisper-1',
+                whisperLanguage: configWhisperLanguage.value.trim(),
+                voiceServerEnabled: configVoiceServerEnabled.checked,
+                voiceServerPort: parseInt(configVoiceServerPort.value, 10) || 9876,
+                voiceServerExposeNetwork: configVoiceServerExpose.checked,
             });
         });
 
@@ -2889,9 +3144,10 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork };
                 customCommandsScope = savedSettings.customCommandsScope;
                 syncHybridModeWithSettings();
+                updateMicButtonVisibility();
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -2926,10 +3182,19 @@
                 savedSettings.projectIntelEnabled = configProjectIntel.checked;
                 savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
+                savedSettings.jarvisEnabled = configJarvisEnabled.checked;
+                savedSettings.jarvisAutoSpeak = configJarvisAutoSpeak.checked;
+                savedSettings.whisperEndpoint = configWhisperEndpoint.value.trim() || 'http://localhost:1234';
+                savedSettings.whisperModel = configWhisperModel.value.trim() || 'whisper-1';
+                savedSettings.whisperLanguage = configWhisperLanguage.value.trim();
+                savedSettings.voiceServerEnabled = configVoiceServerEnabled.checked;
+                savedSettings.voiceServerPort = parseInt(configVoiceServerPort.value, 10) || 9876;
+                savedSettings.voiceServerExposeNetwork = configVoiceServerExpose.checked;
                 // Se o usuario desativou Hybrid nas configs, o botao do header
                 // tambem cai para off. Se ativou, mantemos o botao no estado
                 // anterior (usuario precisa clicar no botao do header para usar).
                 syncHybridModeWithSettings();
+                updateMicButtonVisibility();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -3072,10 +3337,49 @@
                         chatContainer.scrollTop = chatContainer.scrollHeight;
                     });
                 }
+            } else if (msg.command === 'voice_transcribe_result') {
+                micBtn.classList.remove('mic-transcribing', 'mic-recording');
+                micBtn.title = 'Modo JARVIS (push-to-talk)';
+                if (msg.ok && msg.text) {
+                    const current = input.value.trim();
+                    input.value = current ? (current + ' ' + msg.text) : msg.text;
+                    input.style.height = 'auto';
+                    input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+                    input.focus();
+                } else if (!msg.ok) {
+                    alert('Falha ao transcrever: ' + (msg.error || 'erro desconhecido'));
+                }
+                return;
+            } else if (msg.command === 'voice_text_received') {
+                // Texto veio do mobile app via voice-server — coloca no input
+                // e auto-envia se nao houver agente rodando.
+                input.value = msg.text || '';
+                if (!agentRunning) { sendMessage(); }
+                return;
+            } else if (msg.command === 'voice_pairing_info_result') {
+                const ips = (msg.localIps || []).join(', ') || 'nenhum encontrado';
+                const recommendedHost = msg.bindAll && msg.localIps && msg.localIps[0] ? msg.localIps[0] : '127.0.0.1';
+                const url = 'http://' + recommendedHost + ':' + msg.port;
+                configPairingInfo.style.display = 'block';
+                configPairingContent.innerHTML =
+                    '<div><b>Status:</b> ' + (msg.running ? '<span style="color:#22c55e">rodando</span>' : '<span style="color:#ff4757">parado</span>') + '</div>' +
+                    '<div><b>URL:</b> ' + url + '</div>' +
+                    '<div><b>Token:</b> <span style="word-break:break-all">' + msg.token + '</span></div>' +
+                    '<div><b>IPs locais:</b> ' + ips + '</div>' +
+                    '<div style="margin-top:6px;color:#888;font-size:10px;">Use estes dados no app mobile. Authorization: Bearer &lt;token&gt;.</div>';
+                return;
+            } else if (msg.command === 'voice_server_status') {
+                if (!msg.running && msg.error) {
+                    console.warn('[voice-server] falhou:', msg.error);
+                }
+                return;
             } else if (msg.command === 'agent_response') {
                 finalizeTerminal();
                 setAgentRunning(false);
                 sendBtn.disabled = false;
+
+                // Fala a resposta em voz alta quando JARVIS + autospeak ativos
+                speakIfJarvisAutoSpeak(msg.text);
 
                 const tl = getTimeline();
                 // Pode ser o item ativo de resposta (se ainda nao foi congelado pelo CLEAR)

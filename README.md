@@ -73,6 +73,84 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 
 ---
 
+## 🎙 Modo JARVIS — voz local (Whisper) + leitura em voz alta
+
+Pressione o botao de microfone no chat e fale com o Eucode IA. O audio e transcrito **localmente** via Whisper rodando no LM Studio (zero custo, sem enviar audio pra cloud). O agente pode responder em voz alta usando o TTS nativo do sistema.
+
+### Como ativar
+
+1. Abra as configuracoes (engrenagem)
+2. Role ate a secao **🎙 JARVIS** e ative o toggle principal
+3. Configure:
+   - **Endpoint do Whisper** — geralmente `http://localhost:1234` (mesmo do LM Studio)
+   - **Modelo Whisper** — `whisper-1` ou o id do modelo carregado no LM Studio
+   - **Idioma** — `pt`, `en`, ou vazio para auto-detectar
+4. Salve. O botao de microfone aparece no chat
+5. Pressione o botao, fale, pressione de novo pra encerrar. O texto transcrito vai pro input — voce edita ou da Enter pra enviar
+
+### Como configurar o Whisper no LM Studio (passo a passo)
+
+O LM Studio expoe um endpoint compativel com a API da OpenAI em `/v1/audio/transcriptions`. Voce so precisa baixar um modelo Whisper.
+
+**1. Baixar o modelo no LM Studio:**
+
+- Abra o LM Studio
+- Va em **Discover** (lupa na barra lateral)
+- Pesquise por `ggerganov/whisper` ou `whisper`
+- **Modelos recomendados:**
+  - `ggerganov/whisper.cpp` — variantes `tiny`, `base`, `small`, `medium`, `large-v3`
+  - Para **portugues + velocidade**: `whisper-small` (~500MB) — qualidade ok, rapido
+  - Para **portugues + qualidade**: `whisper-medium` (~1.5GB) — equilibrio ideal
+  - Para **maxima qualidade**: `whisper-large-v3` (~3GB) — mais lento mas excelente
+- Clique em Download
+
+**2. Carregar o modelo:**
+
+- Va na aba **Local Server** (icone de servidor)
+- No topo, selecione o modelo Whisper baixado no dropdown ao lado do modelo de chat (LM Studio suporta carregar varios modelos simultaneamente)
+- Clique em **Start Server**
+- Anote o endpoint mostrado (geralmente `http://localhost:1234`)
+
+**3. Identificar o ID do modelo:**
+
+- No LM Studio Local Server, expanda os detalhes do modelo carregado
+- O `id` aparece em formato `ggerganov/whisper.cpp/ggml-model-Q4_K_M.bin` ou similar
+- Copie esse id para o campo **Modelo Whisper** nas configuracoes do plugin
+- Se nao funcionar, tente apenas `whisper-1` (alias OpenAI-compativel)
+
+**4. Testar:**
+
+- Abra o chat do Eucode IA
+- Ative o microfone
+- Fale "ola Eucode" e pressione pra parar
+- O texto deve aparecer no input em 1-3 segundos
+
+### Servidor de voz (para app mobile)
+
+Dentro da secao JARVIS, ha um sub-toggle **"Servidor de voz (para app mobile)"**. Quando ativado, o plugin sobe um servidor HTTP local na porta `9876` (configuravel) que aceita:
+
+- `POST /voice-input` — envia texto pra ser processado pelo agente
+- `POST /transcribe` — envia audio pra ser transcrito pelo Whisper
+
+Toggle **"Expor na rede local"** controla onde o servidor escuta:
+- **OFF (padrao):** `127.0.0.1` — so apps na mesma maquina
+- **ON:** `0.0.0.0` — apps mobile na mesma WiFi conseguem conectar
+
+Clique em **"Mostrar dados de pareamento"** para ver:
+- **URL** completa (ex: `http://192.168.0.10:9876`)
+- **Token** de autenticacao (todo request precisa de header `Authorization: Bearer <token>`)
+- **IPs locais** detectados na sua maquina
+
+O app mobile (a desenvolver) consome esses dois endpoints. Mais detalhes do protocolo no codigo: [src/services/voice-server.ts](src/services/voice-server.ts).
+
+### Privacidade
+
+- **Audio nao sai da sua maquina** quando o Whisper esta no LM Studio local
+- TTS usa o motor de voz nativo do VS Code/sistema (offline)
+- O token de pareamento e armazenado apenas no `globalState` do VS Code
+
+---
+
 ## Modo CHAT (conversa livre, sem tools de codigo)
 
 No header tem um botao **Modos** que abre um dropdown com um segmented control **DEV | CHAT** + toggles de Auto e Hybrid. Em CHAT, o agente vira um assistente conversacional puro — sem acessar arquivos do projeto, sem executar comandos, sem RAG nem memoria de sessao.
@@ -564,6 +642,12 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.10.0
+- **NOVO: Modo JARVIS** — botao de microfone no chat (push-to-talk), STT 100% local via Whisper no LM Studio, TTS automatico do agente via `speechSynthesis`
+- **Servidor de voz local** com endpoints `/voice-input` e `/transcribe`, protegidos por token bearer e bind seletivo (loopback ou rede)
+- Preparado pra app mobile na mesma WiFi: token de pareamento UUID, header `Authorization`, IPs locais detectados automaticamente
+- README com passo a passo completo de configuracao do Whisper no LM Studio (download, carregamento, id do modelo, teste)
 
 ### 0.9.1
 - Texto parcial do streaming preservado quando o stream cai no meio (antes era descartado, mostrando so "Erro de conexao")

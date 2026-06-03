@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.10.0
+
+NOVA FEATURE — Modo JARVIS (push-to-talk + TTS + servidor de voz):
+
+**Push-to-talk no chat:**
+- Novo botao de microfone no input area do chat (aparece quando JARVIS ativo)
+- Captura audio via MediaRecorder do webview (formato webm/opus, mp4 ou ogg)
+- Envia audio em base64 pro extension via postMessage
+- Extension faz POST multipart/form-data para `/v1/audio/transcriptions` do LM Studio (OpenAI-compativel)
+- Texto transcrito volta pro input — usuario edita ou da Enter
+- Estados visuais: gravando (vermelho pulsante), transcrevendo (cyan), inativo
+
+**TTS automatico:**
+- Quando `jarvisAutoSpeak` ligado, respostas do agente sao lidas em voz alta via `speechSynthesis` nativo do navegador
+- Limpeza inteligente: remove blocos de codigo (```...```), inline code, markdown
+- Cap de 1500 chars (TTS lento em respostas muito longas)
+- Cancela fala anterior antes de iniciar nova
+
+**Servidor de voz local (pronto para app mobile):**
+- `src/services/voice-server.ts` — HTTP server com 3 endpoints
+- `GET /health` — health check (sem auth)
+- `POST /voice-input` — recebe texto JSON, dispara agente no VS Code
+- `POST /transcribe` — recebe audio binario, encaminha pro Whisper, retorna texto
+- Bind seletivo: `127.0.0.1` (default, so loopback) ou `0.0.0.0` (rede local pro mobile)
+- Token de pareamento UUID gerado ao primeiro start, persistido em settings
+- Header `Authorization: Bearer <token>` obrigatorio em todos endpoints (excepto health)
+- CORS configuravel, OPTIONS preflight tratado
+- Comparacao de token em tempo constante (timingSafeEqual) contra timing attacks
+
+**Novas configuracoes:**
+- `jarvisEnabled` (default false) — master switch
+- `jarvisAutoSpeak` (default true) — TTS automatico
+- `whisperEndpoint` (default `http://localhost:1234`) — LM Studio
+- `whisperModel` (default `whisper-1`) — id do modelo
+- `whisperLanguage` (default `pt`) — ISO code, vazio = auto
+- `voiceServerEnabled` (default false) — sobe o servidor HTTP
+- `voiceServerPort` (default 9876)
+- `voiceServerExposeNetwork` (default false) — bind 0.0.0.0 vs 127.0.0.1
+- `voicePairingToken` — gerado e persistido automaticamente
+
+**UI no painel de configuracoes:**
+- Nova secao destacada "🎙 JARVIS" (borda vermelha) com subsecoes:
+  - Toggle principal
+  - Toggle "Falar respostas em voz alta"
+  - Inputs Whisper endpoint/model/language
+  - Sub-toggle "Servidor de voz" com port + expose network + botao "Mostrar dados de pareamento"
+- Modal de pareamento mostra URL + token + IPs locais detectados
+
+**README:**
+- Secao 🎙 JARVIS em destaque
+- Passo a passo completo de como configurar Whisper no LM Studio (download, carregamento, identificar id do modelo, testar)
+- Documentacao do servidor de voz e endpoints para o futuro app mobile
+
 ## 0.9.4
 
 ENCONTRADA A CAUSA RAIZ DEFINITIVA do "Unexpected non-whitespace character after JSON at position N".

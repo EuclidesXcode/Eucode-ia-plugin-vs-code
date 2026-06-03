@@ -42,6 +42,17 @@ const DEFAULTS = {
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
     projectIntelEnabled: true,
+    jarvisEnabled: false,
+    jarvisAutoSpeak: true,
+    jarvisTtsVoice: '',
+    jarvisTtsRate: 1.0,
+    voiceServerEnabled: false,
+    voiceServerPort: 9876,
+    voiceServerExposeNetwork: false,
+    voicePairingToken: '',
+    whisperEndpoint: 'http://localhost:1234',
+    whisperModel: 'whisper-1',
+    whisperLanguage: 'pt',
 };
 const KEYS = {
     provider: 'eucode.provider',
@@ -61,6 +72,17 @@ const KEYS = {
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
     projectIntelEnabled: 'eucode.projectIntelEnabled',
+    jarvisEnabled: 'eucode.jarvisEnabled',
+    jarvisAutoSpeak: 'eucode.jarvisAutoSpeak',
+    jarvisTtsVoice: 'eucode.jarvisTtsVoice',
+    jarvisTtsRate: 'eucode.jarvisTtsRate',
+    voiceServerEnabled: 'eucode.voiceServerEnabled',
+    voiceServerPort: 'eucode.voiceServerPort',
+    voiceServerExposeNetwork: 'eucode.voiceServerExposeNetwork',
+    voicePairingToken: 'eucode.voicePairingToken',
+    whisperEndpoint: 'eucode.whisperEndpoint',
+    whisperModel: 'eucode.whisperModel',
+    whisperLanguage: 'eucode.whisperLanguage',
 };
 exports.DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 function loadSettings(context) {
@@ -86,6 +108,17 @@ function loadSettings(context) {
         customCommandsScope: context.globalState.get(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
         projectIntelEnabled: context.globalState.get(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
+        jarvisEnabled: context.globalState.get(KEYS.jarvisEnabled) ?? DEFAULTS.jarvisEnabled,
+        jarvisAutoSpeak: context.globalState.get(KEYS.jarvisAutoSpeak) ?? DEFAULTS.jarvisAutoSpeak,
+        jarvisTtsVoice: context.globalState.get(KEYS.jarvisTtsVoice) ?? DEFAULTS.jarvisTtsVoice,
+        jarvisTtsRate: context.globalState.get(KEYS.jarvisTtsRate) ?? DEFAULTS.jarvisTtsRate,
+        voiceServerEnabled: context.globalState.get(KEYS.voiceServerEnabled) ?? DEFAULTS.voiceServerEnabled,
+        voiceServerPort: context.globalState.get(KEYS.voiceServerPort) ?? DEFAULTS.voiceServerPort,
+        voiceServerExposeNetwork: context.globalState.get(KEYS.voiceServerExposeNetwork) ?? DEFAULTS.voiceServerExposeNetwork,
+        voicePairingToken: context.globalState.get(KEYS.voicePairingToken) ?? DEFAULTS.voicePairingToken,
+        whisperEndpoint: context.globalState.get(KEYS.whisperEndpoint) ?? DEFAULTS.whisperEndpoint,
+        whisperModel: context.globalState.get(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
+        whisperLanguage: context.globalState.get(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
     };
 }
 async function saveSettings(context, settings) {
@@ -106,6 +139,17 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
     await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
+    await context.globalState.update(KEYS.jarvisEnabled, settings.jarvisEnabled);
+    await context.globalState.update(KEYS.jarvisAutoSpeak, settings.jarvisAutoSpeak);
+    await context.globalState.update(KEYS.jarvisTtsVoice, settings.jarvisTtsVoice);
+    await context.globalState.update(KEYS.jarvisTtsRate, settings.jarvisTtsRate);
+    await context.globalState.update(KEYS.voiceServerEnabled, settings.voiceServerEnabled);
+    await context.globalState.update(KEYS.voiceServerPort, settings.voiceServerPort);
+    await context.globalState.update(KEYS.voiceServerExposeNetwork, settings.voiceServerExposeNetwork);
+    await context.globalState.update(KEYS.voicePairingToken, settings.voicePairingToken);
+    await context.globalState.update(KEYS.whisperEndpoint, settings.whisperEndpoint);
+    await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
+    await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
 }
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts
 function buildApiEndpoint(settings) {

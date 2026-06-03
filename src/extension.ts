@@ -13,6 +13,7 @@ import { EucodeFixCodeActionProvider, executeFixWithEucode } from './providers/f
 import { loadCommands, appendCommand, getCommandsFilePath, watchCommandsFile, CustomCommand, CommandsScope } from './services/custom-commands';
 import { deleteSessionMemory, getSessionMemoryPath, rememberDecision } from './services/memory-service';
 import { ensureEucodeWorkspace, revealEucodeDir } from './services/workspace-init';
+import { VoiceServer, generatePairingToken } from './services/voice-server';
 import { DEFAULT_MODEL } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
@@ -27,6 +28,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
     private _abortController: AbortController | null = null;
     private _injectMessage: ((msg: string) => void) | null = null;
     private _windowFocused: boolean = true;
+    private _voiceServer: VoiceServer | null = null;
+    private _injectFromVoice: ((text: string, source: 'mobile' | 'webview') => void) | null = null;
 
     constructor(private readonly _context: vscode.ExtensionContext) {
         this._historyManager = new HistoryManagerService(_context);
@@ -143,6 +146,68 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             );
         };
 
+        // Voice server: ensures a pairing token exists, then (re)starts the
+        // HTTP server when the user enables voice features in settings.
+        const ensurePairingToken = async (): Promise<string> => {
+            if (this._settings.voicePairingToken) { return this._settings.voicePairingToken; }
+            const token = generatePairingToken();
+            this._settings = { ...this._settings, voicePairingToken: token };
+            await saveSettings(this._context, this._settings);
+            return token;
+        };
+
+        const dispatchVoiceText = (text: string, source: 'mobile' | 'webview') => {
+            // Reuse the inject path if the agent is currently running; otherwise
+            // post a synthetic user_input message to the webview so the regular
+            // flow takes over (renders the bubble, hits the LLM, etc).
+            if (this._injectMessage) {
+                this._injectMessage(text);
+            } else {
+                webviewView.webview.postMessage({ command: 'voice_text_received', text, source });
+            }
+        };
+        this._injectFromVoice = dispatchVoiceText;
+
+        const startOrUpdateVoiceServer = async () => {
+            if (!this._settings.voiceServerEnabled) {
+                if (this._voiceServer?.isRunning()) { await this._voiceServer.stop(); }
+                return;
+            }
+            const token = await ensurePairingToken();
+            const cfg = {
+                port: this._settings.voiceServerPort || 9876,
+                bindAll: this._settings.voiceServerExposeNetwork,
+                token,
+                whisperEndpoint: this._settings.whisperEndpoint,
+                whisperModel: this._settings.whisperModel,
+                onVoiceInput: dispatchVoiceText,
+                onLog: (msg: string) => console.log(msg),
+            };
+            if (this._voiceServer?.isRunning()) {
+                await this._voiceServer.stop();
+            }
+            this._voiceServer = new VoiceServer(cfg);
+            try {
+                const info = await this._voiceServer.start();
+                webviewView.webview.postMessage({
+                    command: 'voice_server_status',
+                    running: true,
+                    host: info.host,
+                    port: info.port,
+                });
+            } catch (e) {
+                webviewView.webview.postMessage({
+                    command: 'voice_server_status',
+                    running: false,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        };
+        this._context.subscriptions.push({
+            dispose: () => { this._voiceServer?.stop(); },
+        });
+        startOrUpdateVoiceServer();
+
         this._context.subscriptions.push(
             vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()),
             vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles())
@@ -236,17 +301,78 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                     hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity) as 25 | 50 | 75 | 100,
                     projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
+                    jarvisEnabled: message.jarvisEnabled ?? this._settings.jarvisEnabled,
+                    jarvisAutoSpeak: message.jarvisAutoSpeak ?? this._settings.jarvisAutoSpeak,
+                    jarvisTtsVoice: message.jarvisTtsVoice ?? this._settings.jarvisTtsVoice,
+                    jarvisTtsRate: message.jarvisTtsRate ?? this._settings.jarvisTtsRate,
+                    voiceServerEnabled: message.voiceServerEnabled ?? this._settings.voiceServerEnabled,
+                    voiceServerPort: message.voiceServerPort ?? this._settings.voiceServerPort,
+                    voiceServerExposeNetwork: message.voiceServerExposeNetwork ?? this._settings.voiceServerExposeNetwork,
+                    voicePairingToken: this._settings.voicePairingToken,  // never overridden by UI
+                    whisperEndpoint: message.whisperEndpoint ?? this._settings.whisperEndpoint,
+                    whisperModel: message.whisperModel ?? this._settings.whisperModel,
+                    whisperLanguage: message.whisperLanguage ?? this._settings.whisperLanguage,
                 };
                 await saveSettings(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
                 webviewView.webview.postMessage({ command: 'config_saved' });
                 pingAndNotify(this._settings);
+                // React to JARVIS / voice server settings changes
+                await startOrUpdateVoiceServer();
                 return;
             }
 
             if (message?.command === 'set_hybrid') {
                 this._settings = { ...this._settings, hybridEnabled: !!message.enabled };
                 await saveSettings(this._context, this._settings);
+                return;
+            }
+
+            // Webview captured audio via MediaRecorder, encoded as base64,
+            // wants the extension to transcribe it via the local Whisper
+            // (LM Studio). The webview can't fetch http://localhost from
+            // inside a sandboxed Webview iframe reliably, so we do it here.
+            if (message?.command === 'voice_transcribe') {
+                try {
+                    const base64 = String(message.audioBase64 || '');
+                    if (!base64) {
+                        webviewView.webview.postMessage({ command: 'voice_transcribe_result', requestId: message.requestId, ok: false, error: 'empty audio' });
+                        return;
+                    }
+                    const audioBuf = Buffer.from(base64, 'base64');
+                    const mimeType = String(message.mimeType || 'audio/webm');
+                    const text = await transcribeViaWhisper(
+                        this._settings.whisperEndpoint,
+                        this._settings.whisperModel,
+                        this._settings.whisperLanguage,
+                        audioBuf,
+                        mimeType
+                    );
+                    webviewView.webview.postMessage({ command: 'voice_transcribe_result', requestId: message.requestId, ok: true, text });
+                } catch (e) {
+                    webviewView.webview.postMessage({
+                        command: 'voice_transcribe_result',
+                        requestId: message.requestId,
+                        ok: false,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+                return;
+            }
+
+            // UI asks for pairing info (host:port and token) so it can show
+            // a QR code or copy a connection URL for the mobile client.
+            if (message?.command === 'voice_pairing_info') {
+                const token = await ensurePairingToken();
+                const localIps = getLocalIPv4Addresses();
+                webviewView.webview.postMessage({
+                    command: 'voice_pairing_info_result',
+                    token,
+                    port: this._settings.voiceServerPort,
+                    running: !!this._voiceServer?.isRunning(),
+                    bindAll: this._settings.voiceServerExposeNetwork,
+                    localIps,
+                });
                 return;
             }
 
@@ -551,3 +677,88 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+// ── Voice helpers (used by the webview transcribe handler) ─────────────
+
+import * as http from 'http';
+import * as https from 'https';
+import * as os from 'os';
+import * as crypto from 'crypto';
+
+// POSTs an audio buffer to LM Studio's OpenAI-compatible Whisper endpoint
+// and returns the transcribed text. Self-contained — no third-party deps.
+async function transcribeViaWhisper(
+    endpoint: string,
+    model: string,
+    language: string,
+    audio: Buffer,
+    contentType: string
+): Promise<string> {
+    if (!endpoint) { throw new Error('LM Studio endpoint not configured for Whisper.'); }
+    const boundary = '----eucode' + crypto.randomBytes(16).toString('hex');
+    const parts: Buffer[] = [];
+    const push = (s: string) => parts.push(Buffer.from(s, 'utf8'));
+
+    push(`--${boundary}\r\n`);
+    push(`Content-Disposition: form-data; name="model"\r\n\r\n${model || 'whisper-1'}\r\n`);
+    if (language) {
+        push(`--${boundary}\r\n`);
+        push(`Content-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`);
+    }
+    const ext = contentType.includes('mp4') ? 'm4a' : contentType.includes('mpeg') ? 'mp3' : 'webm';
+    push(`--${boundary}\r\n`);
+    push(`Content-Disposition: form-data; name="file"; filename="audio.${ext}"\r\n`);
+    push(`Content-Type: ${contentType}\r\n\r\n`);
+    parts.push(audio);
+    push(`\r\n--${boundary}--\r\n`);
+
+    const body = Buffer.concat(parts);
+    const url = new URL(endpoint.replace(/\/+$/, '') + '/v1/audio/transcriptions');
+    const transport = url.protocol === 'https:' ? https : http;
+
+    return new Promise((resolve, reject) => {
+        const req = transport.request({
+            method: 'POST',
+            hostname: url.hostname,
+            port: url.port || (url.protocol === 'https:' ? 443 : 80),
+            path: url.pathname + url.search,
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': body.length,
+            },
+            timeout: 60000,
+        }, res => {
+            const chunks: Buffer[] = [];
+            res.on('data', c => chunks.push(c as Buffer));
+            res.on('end', () => {
+                const raw = Buffer.concat(chunks).toString('utf8');
+                if (res.statusCode && res.statusCode >= 400) {
+                    return reject(new Error(`Whisper ${res.statusCode}: ${raw.slice(0, 200)}`));
+                }
+                try {
+                    const json = JSON.parse(raw);
+                    resolve(String(json.text || '').trim());
+                } catch {
+                    reject(new Error('Whisper response was not JSON'));
+                }
+            });
+        });
+        req.on('timeout', () => { req.destroy(); reject(new Error('Whisper request timeout (60s)')); });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+
+// Lists non-internal IPv4 addresses so the UI can show "192.168.x.x" for
+// pairing with mobile clients on the same LAN.
+function getLocalIPv4Addresses(): string[] {
+    const out: string[] = [];
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+        for (const info of ifaces[name] || []) {
+            if (info.family === 'IPv4' && !info.internal) { out.push(info.address); }
+        }
+    }
+    return out;
+}
