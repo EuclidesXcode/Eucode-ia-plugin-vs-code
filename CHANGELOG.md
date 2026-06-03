@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0
+
+JARVIS funcional de ponta a ponta + correcao critica de API key.
+
+- **Captura de microfone via ffmpeg (fora do webview)** — o webview do VSCode bloqueia `getUserMedia` (Electron nega midia ao iframe: `NotAllowedError` sem prompt do macOS, mesmo apos reset do TCC). A gravacao agora roda no processo da extensao via `ffmpeg -f avfoundation` (novo `src/services/audio-capture.ts`), grava wav 16kHz mono e encaminha ao Whisper. Requer `brew install ffmpeg`
+- **Selecao de microfone na config do JARVIS** — dropdown com os dispositivos de audio do sistema (via `ffmpeg -list_devices`), com botao de atualizar. Nao usa mais device fixo no codigo
+- **Auto-envio por voz** — ao parar a gravacao, o texto transcrito e enviado direto ao agente, sem passar pelo campo de input
+- **Narracao da timeline (TTS)** — cada passo (Analisando, Lendo arquivo, etc.) e falado em voz alta, com fila e texto humanizado em PT-BR
+- **Voz configuravel e mais masculina/moderna** — dropdown de voz na config com botao de teste; por padrao escolhe uma voz masculina do idioma (prioriza "Felipe" em PT-BR) com tom levemente mais grave. TTS agora tambem fala respostas de provedores com streaming (usava `msg.text` que vinha vazio nesses casos)
+- **Correcao critica: API key principal era apagada ao salvar** — `save_config` usava `apiKey: message.apiKey ?? ''`; como o webview envia o campo vazio quando o usuario nao redigita, a chave salva era apagada a cada save. Agora campo vazio significa "manter a chave salva" (mesma protecao que o Hybrid ja tinha)
+- **Pontinhos persistentes nos campos de chave** — API Key e chave do Hybrid mostram `••••••` quando ha chave salva, confirmando visualmente que continua guardada (o value segue vazio por seguranca)
+- **Fix: `load_config` nao enviava `jarvisEnabled`** ao webview — o botao de microfone so aparecia depois de reabrir e salvar as configuracoes
+
 ## 0.10.2
 
 - **JARVIS marcado como BETA** explicitamente — selo no painel de configuracoes (`🎙 JARVIS — Modo de voz BETA`), tooltip do botao de microfone e secao do README com aviso. Feature funciona mas integracoes ainda em estabilizacao

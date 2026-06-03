@@ -66,6 +66,7 @@ export interface EucodeSettings {
     whisperEndpoint: string;         // LM Studio base URL for /v1/audio/transcriptions
     whisperModel: string;            // e.g. "whisper-1" or your local model id
     whisperLanguage: string;         // ISO code like "pt", "en"; empty = auto-detect
+    micDeviceIndex: string;          // avfoundation audio device index for capture; '' = default (:0)
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -97,6 +98,7 @@ const DEFAULTS: EucodeSettings = {
     whisperEndpoint: 'http://localhost:1234',
     whisperModel: 'whisper-1',
     whisperLanguage: 'pt',
+    micDeviceIndex: '',
 };
 
 const KEYS = {
@@ -128,6 +130,7 @@ const KEYS = {
     whisperEndpoint: 'eucode.whisperEndpoint',
     whisperModel: 'eucode.whisperModel',
     whisperLanguage: 'eucode.whisperLanguage',
+    micDeviceIndex: 'eucode.micDeviceIndex',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -166,6 +169,7 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         whisperEndpoint: context.globalState.get<string>(KEYS.whisperEndpoint) ?? DEFAULTS.whisperEndpoint,
         whisperModel: context.globalState.get<string>(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
         whisperLanguage: context.globalState.get<string>(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
+        micDeviceIndex: context.globalState.get<string>(KEYS.micDeviceIndex) ?? DEFAULTS.micDeviceIndex,
     };
 }
 
@@ -198,6 +202,7 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.whisperEndpoint, settings.whisperEndpoint);
     await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
     await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
+    await context.globalState.update(KEYS.micDeviceIndex, settings.micDeviceIndex);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

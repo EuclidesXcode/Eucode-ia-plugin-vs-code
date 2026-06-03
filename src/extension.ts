@@ -14,6 +14,7 @@ import { loadCommands, appendCommand, getCommandsFilePath, watchCommandsFile, Cu
 import { deleteSessionMemory, getSessionMemoryPath, rememberDecision } from './services/memory-service';
 import { ensureEucodeWorkspace, revealEucodeDir } from './services/workspace-init';
 import { VoiceServer, generatePairingToken } from './services/voice-server';
+import { AudioCapture } from './services/audio-capture';
 import { DEFAULT_MODEL } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
@@ -30,6 +31,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
     private _windowFocused: boolean = true;
     private _voiceServer: VoiceServer | null = null;
     private _injectFromVoice: ((text: string, source: 'mobile' | 'webview') => void) | null = null;
+    private _audioCapture: AudioCapture | null = null;
 
     constructor(private readonly _context: vscode.ExtensionContext) {
         this._historyManager = new HistoryManagerService(_context);
@@ -214,6 +216,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
         );
 
         webviewView.webview.onDidReceiveMessage(async (message: any) => {
+            if (message?.command === 'jarvis_log') {
+                console.log('[JARVIS]', message.text);
+                return;
+            }
+
             if (message?.command === 'webview_ready') {
                 // Initialize/migrate the .eucode/ workspace folder. Idempotent —
                 // safe to call on every open. Surfaces a notification if legacy
@@ -246,6 +253,17 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     customCommandsScope: this._settings.customCommandsScope,
                     hybridIntensity: this._settings.hybridIntensity,
                     projectIntelEnabled: this._settings.projectIntelEnabled,
+                    jarvisEnabled: this._settings.jarvisEnabled,
+                    jarvisAutoSpeak: this._settings.jarvisAutoSpeak,
+                    jarvisTtsVoice: this._settings.jarvisTtsVoice,
+                    jarvisTtsRate: this._settings.jarvisTtsRate,
+                    whisperEndpoint: this._settings.whisperEndpoint,
+                    whisperModel: this._settings.whisperModel,
+                    whisperLanguage: this._settings.whisperLanguage,
+                    voiceServerEnabled: this._settings.voiceServerEnabled,
+                    voiceServerPort: this._settings.voiceServerPort,
+                    voiceServerExposeNetwork: this._settings.voiceServerExposeNetwork,
+                    micDeviceIndex: this._settings.micDeviceIndex,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -283,7 +301,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 this._settings = {
                     provider: message.provider ?? this._settings.provider,
                     apiHost: message.apiHost ?? this._settings.apiHost,
-                    apiKey: message.apiKey ?? '',
+                    // Empty string from UI means "don't change" — preserve stored key.
+                    // (UI sends '' when the user doesn't retype the key on save.)
+                    apiKey: (message.apiKey && message.apiKey.length > 0)
+                        ? message.apiKey
+                        : this._settings.apiKey,
                     model: message.model ?? '',
                     enabledTools: message.enabledTools ?? this._settings.enabledTools,
                     ragEnabled: message.ragEnabled ?? this._settings.ragEnabled,
@@ -312,6 +334,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     whisperEndpoint: message.whisperEndpoint ?? this._settings.whisperEndpoint,
                     whisperModel: message.whisperModel ?? this._settings.whisperModel,
                     whisperLanguage: message.whisperLanguage ?? this._settings.whisperLanguage,
+                    micDeviceIndex: message.micDeviceIndex ?? this._settings.micDeviceIndex,
                 };
                 await saveSettings(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
@@ -356,6 +379,102 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                         ok: false,
                         error: e instanceof Error ? e.message : String(e),
                     });
+                }
+                return;
+            }
+
+            // Lists the OS audio input devices so the JARVIS config can show a
+            // dropdown instead of a hardcoded default.
+            if (message?.command === 'voice_list_devices') {
+                try {
+                    const bin = await AudioCapture.checkFfmpeg();
+                    if (!bin) {
+                        webviewView.webview.postMessage({
+                            command: 'voice_devices_result',
+                            ok: false,
+                            error: 'ffmpeg nao encontrado. Instale com: brew install ffmpeg',
+                            devices: [],
+                        });
+                        return;
+                    }
+                    const devices = await AudioCapture.listAudioDevices(bin);
+                    webviewView.webview.postMessage({
+                        command: 'voice_devices_result',
+                        ok: true,
+                        devices,
+                        selected: this._settings.micDeviceIndex,
+                    });
+                } catch (e) {
+                    webviewView.webview.postMessage({
+                        command: 'voice_devices_result',
+                        ok: false,
+                        error: e instanceof Error ? e.message : String(e),
+                        devices: [],
+                    });
+                }
+                return;
+            }
+
+            // ── JARVIS: native mic capture via ffmpeg (outside the webview) ──
+            // The webview cannot use getUserMedia (Electron blocks it). So the
+            // webview asks the host to start/stop a native recording instead.
+            if (message?.command === 'voice_record_start') {
+                const jlog = (m: string) => {
+                    console.log('[JARVIS]', m);
+                    webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
+                };
+                try {
+                    const bin = await AudioCapture.checkFfmpeg();
+                    if (!bin) {
+                        webviewView.webview.postMessage({
+                            command: 'voice_record_error',
+                            error: 'ffmpeg nao encontrado. Instale com: brew install ffmpeg',
+                        });
+                        return;
+                    }
+                    if (!this._audioCapture) {
+                        this._audioCapture = new AudioCapture(jlog, bin);
+                    }
+                    if (this._audioCapture.isRecording()) {
+                        jlog('record_start ignorado — ja gravando');
+                        return;
+                    }
+                    this._audioCapture.start(this._settings.micDeviceIndex);
+                    webviewView.webview.postMessage({ command: 'voice_record_started' });
+                } catch (e) {
+                    webviewView.webview.postMessage({
+                        command: 'voice_record_error',
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+                return;
+            }
+
+            if (message?.command === 'voice_record_stop') {
+                const jlog = (m: string) => {
+                    console.log('[JARVIS]', m);
+                    webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
+                };
+                try {
+                    if (!this._audioCapture || !this._audioCapture.isRecording()) {
+                        webviewView.webview.postMessage({ command: 'voice_record_error', error: 'nao estava gravando' });
+                        return;
+                    }
+                    const result = await this._audioCapture.stop();
+                    jlog(`transcrevendo ${result.buffer.length} bytes (${result.mimeType})...`);
+                    const text = await transcribeViaWhisper(
+                        this._settings.whisperEndpoint,
+                        this._settings.whisperModel,
+                        this._settings.whisperLanguage,
+                        result.buffer,
+                        result.mimeType
+                    );
+                    jlog(`transcricao: "${text.slice(0, 80)}"`);
+                    webviewView.webview.postMessage({ command: 'voice_record_result', ok: true, text });
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    jlog(`record_stop erro: ${msg}`);
+                    webviewView.webview.postMessage({ command: 'voice_record_result', ok: false, error: msg });
                 }
                 return;
             }

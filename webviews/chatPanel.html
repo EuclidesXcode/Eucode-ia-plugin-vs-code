@@ -1811,6 +1811,26 @@
                     <label class="config-label" style="font-size:10px;">Idioma esperado (ISO: pt, en, es… vazio = auto)</label>
                     <input id="config-whisper-language" class="config-input mono" type="text" placeholder="pt" spellcheck="false">
                 </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Microfone (captura via ffmpeg)</label>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <select id="config-mic-device" class="config-input mono" style="flex:1;">
+                            <option value="">Padrão do sistema</option>
+                        </select>
+                        <button id="config-mic-refresh" class="icon-btn" title="Atualizar lista de microfones" type="button" style="flex:0 0 auto;"><span class="mi">refresh</span></button>
+                    </div>
+                    <span class="editor-feature-desc" style="font-size:9px;">Requer ffmpeg (brew install ffmpeg). A captura roda fora do webview.</span>
+                </div>
+                <div>
+                    <label class="config-label" style="font-size:10px;">Voz do JARVIS (fala da timeline e respostas)</label>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <select id="config-tts-voice" class="config-input mono" style="flex:1;">
+                            <option value="">Automática (masculina, se houver)</option>
+                        </select>
+                        <button id="config-tts-test" class="icon-btn" title="Testar voz" type="button" style="flex:0 0 auto;"><span class="mi">volume_up</span></button>
+                    </div>
+                    <span class="editor-feature-desc" style="font-size:9px;">Para voz masculina em PT-BR, baixe "Felipe" em Ajustes do Sistema → Acessibilidade → Conteúdo Falado → Vozes do sistema.</span>
+                </div>
                 <div class="editor-feature-row" style="border-color:#3a2030;">
                     <div class="editor-feature-info">
                         <span class="editor-feature-name">Servidor de voz (para app mobile)</span>
@@ -2066,90 +2086,95 @@
 
         // ── JARVIS: push-to-talk (record → transcribe → fill input) ────
         const micBtn = document.getElementById('mic-btn');
-        let mediaRecorder = null;
-        let audioChunks = [];
         let isRecording = false;
-        let pendingTranscribeId = null;
 
-        function updateMicButtonVisibility() {
-            if (savedSettings && savedSettings.jarvisEnabled) {
-                micBtn.style.display = '';
-            } else {
-                micBtn.style.display = 'none';
-            }
+        // Logs de diagnostico do JARVIS. Desligados em release; ative
+        // JARVIS_DEBUG=true para investigar microfone/voz no Debug Console.
+        const JARVIS_DEBUG = false;
+        function jlog(...args) {
+            if (!JARVIS_DEBUG) { return; }
+            console.log('[JARVIS]', ...args);
+            // Espelha no host (Debug Console) pois o console do webview e separado
+            try {
+                const text = args.map(a => {
+                    try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+                    catch (_) { return String(a); }
+                }).join(' ');
+                vscode.postMessage({ command: 'jarvis_log', text });
+            } catch (_) { /* noop */ }
         }
 
-        async function startRecording() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioChunks = [];
-                // Prefer audio/webm;codecs=opus (best Whisper compatibility) when available
-                const mimeOptions = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
-                let chosenMime = '';
-                for (const m of mimeOptions) {
-                    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
-                        chosenMime = m;
-                        break;
-                    }
-                }
-                mediaRecorder = chosenMime ? new MediaRecorder(stream, { mimeType: chosenMime }) : new MediaRecorder(stream);
-                mediaRecorder.ondataavailable = (e) => {
-                    if (e.data && e.data.size > 0) { audioChunks.push(e.data); }
-                };
-                mediaRecorder.onstop = async () => {
-                    stream.getTracks().forEach(t => t.stop());
-                    if (audioChunks.length === 0) {
-                        micBtn.classList.remove('mic-recording', 'mic-transcribing');
-                        return;
-                    }
-                    micBtn.classList.remove('mic-recording');
-                    micBtn.classList.add('mic-transcribing');
-                    const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-                    const base64 = await blobToBase64(blob);
-                    pendingTranscribeId = 'tx_' + Date.now();
-                    vscode.postMessage({
-                        command: 'voice_transcribe',
-                        requestId: pendingTranscribeId,
-                        audioBase64: base64,
-                        mimeType: blob.type,
-                    });
-                };
-                mediaRecorder.start();
-                isRecording = true;
-                micBtn.classList.add('mic-recording');
-                micBtn.title = 'Gravando... clique para parar e transcrever';
-            } catch (e) {
-                console.error('mic error', e);
-                alert('Nao foi possivel acessar o microfone: ' + (e && e.message ? e.message : e));
-            }
+        function updateMicButtonVisibility() {
+            const on = !!(savedSettings && savedSettings.jarvisEnabled);
+            micBtn.style.display = on ? '' : 'none';
+        }
+
+        // ── Captura nativa via host (ffmpeg) ───────────────────────────────
+        // O webview do VSCode bloqueia getUserMedia (Electron nega midia ao
+        // iframe — confirmado: NotAllowedError sem prompt do macOS). Entao a
+        // gravacao acontece no processo da extensao via ffmpeg, e o webview
+        // so coordena via postMessage.
+        function startRecording() {
+            jlog('startRecording() -> pedindo gravacao nativa ao host (ffmpeg)');
+            isRecording = true;
+            micBtn.classList.remove('mic-transcribing');
+            micBtn.classList.add('mic-recording');
+            micBtn.title = 'Gravando... clique para parar e transcrever';
+            vscode.postMessage({ command: 'voice_record_start' });
         }
 
         function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                isRecording = false;
-                mediaRecorder.stop();
-                mediaRecorder = null;
-                micBtn.title = 'Transcrevendo audio...';
-            }
+            if (!isRecording) { return; }
+            jlog('stopRecording() -> parando gravacao nativa');
+            isRecording = false;
+            micBtn.classList.remove('mic-recording');
+            micBtn.classList.add('mic-transcribing');
+            micBtn.title = 'Transcrevendo audio...';
+            vscode.postMessage({ command: 'voice_record_stop' });
         }
 
-        function blobToBase64(blob) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const dataUrl = reader.result;
-                    const comma = dataUrl.indexOf(',');
-                    resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-            });
+        function resetMicButton() {
+            isRecording = false;
+            micBtn.classList.remove('mic-recording', 'mic-transcribing');
+            micBtn.title = 'Modo JARVIS — BETA (push-to-talk)';
+        }
+
+        // JARVIS: envia a fala transcrita imediatamente, sem deixar o texto no
+        // campo de input. Se o usuario ja tinha digitado algo, antepoe ao texto.
+        function sendTranscriptDirectly(text) {
+            const t = (text || '').trim();
+            if (!t) { return; }
+            const input = document.getElementById('user-input');
+            if (!input) { return; }
+            const typed = input.value.trim();
+            input.value = typed ? (typed + ' ' + t) : t;
+            sendMessage();
+            // Garante input limpo caso sendMessage tenha apenas injetado.
+            input.value = '';
+            input.style.height = 'auto';
+        }
+
+        // Insere o texto transcrito no input e foca, pronto para enviar.
+        function fillInputWithTranscript(text) {
+            const t = (text || '').trim();
+            if (!t) { return; }
+            const input = document.getElementById('user-input');
+            if (!input) { return; }
+            input.value = input.value ? (input.value.trimEnd() + ' ' + t) : t;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
         }
 
         micBtn.addEventListener('click', () => {
+            jlog('mic-btn clicado | isRecording =', isRecording);
             if (isRecording) { stopRecording(); }
             else { startRecording(); }
         });
+
+        // Confirma que o listener foi registrado e mostra o botao de imediato
+        // (independente do load_config) para diagnostico.
+        jlog('mic-btn listener registrado | micBtn encontrado =', !!micBtn);
+        updateMicButtonVisibility();
 
         // ── TTS: fala respostas do agente quando jarvisAutoSpeak ativo ──
         // Estrategia: pega o texto recebido em agent_response, remove blocos
@@ -2174,22 +2199,149 @@
             return out;
         }
 
+        // ── Seleção de voz (preferencia: masculina e moderna) ─────────────
+        // speechSynthesis.getVoices() pode vir vazio no primeiro acesso; o
+        // evento onvoiceschanged preenche depois. Guardamos a voz escolhida.
+        let _ttsVoice = null;
+        let _ttsVoicesReady = false;
+
+        // Vozes masculinas/modernas conhecidas por plataforma (pt-BR e en).
+        // No macOS, "Luciana" e "Felipe" sao PT-BR; "Daniel"/"Alex"/"Aaron"
+        // sao masculinas modernas. Priorizamos masculinas.
+        const PREFERRED_VOICES_PT = ['Felipe', 'Luciana']; // Felipe = masculino PT-BR
+        const PREFERRED_VOICES_EN = ['Aaron', 'Alex', 'Daniel', 'Google US English'];
+        const MALE_HINTS = ['felipe', 'daniel', 'alex', 'aaron', 'fred', 'male', 'homem', 'masculino', 'thomas', 'jorge', 'diego'];
+
+        function pickVoice() {
+            if (typeof speechSynthesis === 'undefined') { return null; }
+            const voices = speechSynthesis.getVoices() || [];
+            if (!voices.length) { return null; }
+            _ttsVoicesReady = true;
+
+            // 1) Voz escolhida explicitamente nas configs (por nome)
+            const chosenName = savedSettings && savedSettings.jarvisTtsVoice;
+            if (chosenName) {
+                const exact = voices.find(v => v.name === chosenName);
+                if (exact) { return exact; }
+            }
+
+            const wantPt = !(savedSettings && savedSettings.whisperLanguage === 'en');
+            const langPrefix = wantPt ? 'pt' : 'en';
+            const preferred = wantPt ? PREFERRED_VOICES_PT : PREFERRED_VOICES_EN;
+
+            // 2) Lista de preferidas por nome, no idioma certo
+            for (const name of preferred) {
+                const v = voices.find(v => v.name === name && v.lang.toLowerCase().startsWith(langPrefix));
+                if (v) { return v; }
+            }
+            // 3) Qualquer voz do idioma que pareca masculina pelo nome
+            const sameLang = voices.filter(v => v.lang.toLowerCase().startsWith(langPrefix));
+            const male = sameLang.find(v => MALE_HINTS.some(h => v.name.toLowerCase().includes(h)));
+            if (male) { return male; }
+            // 4) Primeira voz do idioma
+            if (sameLang[0]) { return sameLang[0]; }
+            // 5) Qualquer voz
+            return voices[0];
+        }
+
+        function ensureVoice() {
+            if (_ttsVoice) { return _ttsVoice; }
+            _ttsVoice = pickVoice();
+            return _ttsVoice;
+        }
+
+        if (typeof speechSynthesis !== 'undefined') {
+            speechSynthesis.onvoiceschanged = () => {
+                _ttsVoice = pickVoice();
+                if (_ttsVoice) { jlog('TTS voz selecionada: ' + _ttsVoice.name + ' (' + _ttsVoice.lang + ')'); }
+            };
+            // dispara o carregamento
+            try { speechSynthesis.getVoices(); } catch (_) { /* noop */ }
+        }
+
+        // Aplica voz + parametros "modernos" (pitch levemente grave, rate natural).
+        function applyVoiceParams(utter) {
+            const v = ensureVoice();
+            if (v) { utter.voice = v; utter.lang = v.lang; }
+            else { utter.lang = (savedSettings && savedSettings.whisperLanguage === 'en') ? 'en-US' : 'pt-BR'; }
+            utter.rate = (savedSettings && savedSettings.jarvisTtsRate) ? savedSettings.jarvisTtsRate : 1.03;
+            utter.pitch = 0.9; // levemente mais grave = mais masculino/moderno
+            utter.volume = 1.0;
+        }
+
         function speakIfJarvisAutoSpeak(text) {
-            if (!savedSettings || !savedSettings.jarvisEnabled || !savedSettings.jarvisAutoSpeak) { return; }
-            if (typeof speechSynthesis === 'undefined') { return; }
+            const on = !!(savedSettings && savedSettings.jarvisEnabled && savedSettings.jarvisAutoSpeak);
+            jlog('speakIfJarvisAutoSpeak | autoSpeak=' + on + ' | textLen=' + (text ? text.length : 0) + ' | voicesReady=' + _ttsVoicesReady);
+            if (!on) { return; }
+            if (typeof speechSynthesis === 'undefined') { jlog('TTS: speechSynthesis indisponivel'); return; }
             const clean = cleanForSpeech(text);
-            if (!clean) { return; }
+            if (!clean) { jlog('TTS: texto vazio apos limpeza — nao fala'); return; }
             try {
-                // Cancel qualquer fala anterior antes de iniciar a nova
+                // A resposta final tem prioridade: limpa a fila da timeline.
                 speechSynthesis.cancel();
+                _speakQueue.length = 0;
+                _speaking = false;
                 const utter = new SpeechSynthesisUtterance(clean);
-                const lang = savedSettings.whisperLanguage === 'en' ? 'en-US' : 'pt-BR';
-                utter.lang = lang;
-                utter.rate = 1.0;
+                applyVoiceParams(utter);
                 speechSynthesis.speak(utter);
             } catch (e) {
                 console.warn('TTS falhou:', e);
             }
+        }
+
+        // ── Narração da timeline (fila, não cancela passos anteriores) ─────
+        const _speakQueue = [];
+        let _speaking = false;
+
+        function _drainSpeakQueue() {
+            if (_speaking) { return; }
+            const next = _speakQueue.shift();
+            if (!next) { return; }
+            _speaking = true;
+            try {
+                const utter = new SpeechSynthesisUtterance(next);
+                applyVoiceParams(utter);
+                utter.onend = () => { _speaking = false; _drainSpeakQueue(); };
+                utter.onerror = () => { _speaking = false; _drainSpeakQueue(); };
+                speechSynthesis.speak(utter);
+            } catch (e) {
+                _speaking = false;
+            }
+        }
+
+        // Humaniza o rótulo da timeline para algo natural de ouvir.
+        function timelineToSpeech(text) {
+            if (!text) { return ''; }
+            let t = String(text).trim();
+            // Remove reticencias e ruido visual
+            t = t.replace(/\.\.\.$/, '').trim();
+            const map = [
+                [/^Analisando sua solicitacao$/i, 'Analisando sua solicitação'],
+                [/^Mapeando workspace$/i, 'Mapeando o workspace'],
+                [/^Processing project context$/i, 'Processando o contexto do projeto'],
+                [/^Processing file contents$/i, 'Processando o conteúdo do arquivo'],
+                [/^Abertos no editor:\s*(.+)$/i, 'Arquivos abertos: $1'],
+                [/^Reading file:\s*(.+)$/i, 'Lendo $1'],
+                [/^Editing file:\s*(.+)$/i, 'Editando $1'],
+                [/^Writing file:\s*(.+)$/i, 'Escrevendo $1'],
+                [/^Running command:\s*(.+)$/i, 'Executando comando'],
+                [/^Searching:\s*(.+)$/i, 'Buscando $1'],
+            ];
+            for (const [re, rep] of map) {
+                if (re.test(t)) { return t.replace(re, rep); }
+            }
+            return t;
+        }
+
+        function speakTimelineStep(text) {
+            if (!savedSettings || !savedSettings.jarvisEnabled || !savedSettings.jarvisAutoSpeak) { return; }
+            if (typeof speechSynthesis === 'undefined') { return; }
+            const phrase = timelineToSpeech(text);
+            if (!phrase) { return; }
+            // Evita repetir a mesma frase em sequencia (passos duplicados).
+            if (_speakQueue[_speakQueue.length - 1] === phrase) { return; }
+            _speakQueue.push(phrase);
+            _drainSpeakQueue();
         }
 
         function updateContextBar(files) {
@@ -2439,6 +2591,10 @@
         const configWhisperEndpoint = document.getElementById('config-whisper-endpoint');
         const configWhisperModel = document.getElementById('config-whisper-model');
         const configWhisperLanguage = document.getElementById('config-whisper-language');
+        const configMicDevice = document.getElementById('config-mic-device');
+        const configMicRefresh = document.getElementById('config-mic-refresh');
+        const configTtsVoice = document.getElementById('config-tts-voice');
+        const configTtsTest = document.getElementById('config-tts-test');
         const configVoiceServerEnabled = document.getElementById('config-voice-server-enabled');
         const configVoiceServerRows = document.getElementById('config-voice-server-rows');
         const configVoiceServerPort = document.getElementById('config-voice-server-port');
@@ -2447,8 +2603,78 @@
         const configPairingInfo = document.getElementById('config-pairing-info');
         const configPairingContent = document.getElementById('config-pairing-content');
 
+        // Popula o dropdown de microfones com a lista vinda do host (ffmpeg).
+        // Preserva a selecao salva (savedSettings.micDeviceIndex).
+        function renderMicDevices(devices, selected) {
+            const sel = selected != null ? String(selected) : (savedSettings.micDeviceIndex || '');
+            configMicDevice.innerHTML = '';
+            const def = document.createElement('option');
+            def.value = '';
+            def.textContent = 'Padrão do sistema';
+            configMicDevice.appendChild(def);
+            (devices || []).forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = String(d.index);
+                opt.textContent = '[' + d.index + '] ' + d.label;
+                configMicDevice.appendChild(opt);
+            });
+            configMicDevice.value = sel;
+            // Se a selecao salva nao existe mais na lista, volta para o padrao.
+            if (configMicDevice.value !== sel) { configMicDevice.value = ''; }
+        }
+
+        function requestMicDevices() {
+            vscode.postMessage({ command: 'voice_list_devices' });
+        }
+
+        configMicRefresh.addEventListener('click', requestMicDevices);
+
+        // Popula o dropdown de vozes do TTS com as vozes do sistema.
+        function renderTtsVoices() {
+            if (typeof speechSynthesis === 'undefined') { return; }
+            const voices = speechSynthesis.getVoices() || [];
+            const selected = (savedSettings && savedSettings.jarvisTtsVoice) || '';
+            configTtsVoice.innerHTML = '';
+            const auto = document.createElement('option');
+            auto.value = '';
+            auto.textContent = 'Automática (masculina, se houver)';
+            configTtsVoice.appendChild(auto);
+            // Ordena: PT-BR primeiro, depois EN, depois o resto.
+            const rank = (v) => v.lang.toLowerCase().startsWith('pt') ? 0 : (v.lang.toLowerCase().startsWith('en') ? 1 : 2);
+            voices.slice().sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)).forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.name;
+                opt.textContent = v.name + ' (' + v.lang + ')';
+                configTtsVoice.appendChild(opt);
+            });
+            configTtsVoice.value = selected;
+            if (configTtsVoice.value !== selected) { configTtsVoice.value = ''; }
+        }
+
+        if (typeof speechSynthesis !== 'undefined') {
+            const prev = speechSynthesis.onvoiceschanged;
+            speechSynthesis.onvoiceschanged = function() {
+                if (typeof prev === 'function') { try { prev(); } catch (_) {} }
+                renderTtsVoices();
+            };
+        }
+
+        configTtsTest.addEventListener('click', () => {
+            if (typeof speechSynthesis === 'undefined') { return; }
+            speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance('Olá, eu sou o JARVIS. Vou narrar suas tarefas.');
+            const name = configTtsVoice.value;
+            const voices = speechSynthesis.getVoices() || [];
+            const v = name ? voices.find(x => x.name === name) : null;
+            if (v) { u.voice = v; u.lang = v.lang; }
+            else { u.lang = 'pt-BR'; }
+            u.pitch = 0.9; u.rate = 1.03;
+            speechSynthesis.speak(u);
+        });
+
         configJarvisEnabled.addEventListener('change', () => {
             configJarvisRows.style.display = configJarvisEnabled.checked ? 'flex' : 'none';
+            if (configJarvisEnabled.checked) { requestMicDevices(); }
         });
         configVoiceServerEnabled.addEventListener('change', () => {
             configVoiceServerRows.style.display = configVoiceServerEnabled.checked ? 'flex' : 'none';
@@ -2484,7 +2710,10 @@
         function updateHybridHint() {
             const p = configHybridProvider.value;
             configHybridHint.textContent = `Padrao: ${HYBRID_DEFAULT_MODELS[p]}`;
-            configHybridKey.placeholder = HYBRID_PLACEHOLDERS[p];
+            // Preserva os pontinhos se ja ha chave de suporte salva.
+            configHybridKey.placeholder = savedSettings.supportApiKey
+                ? '•'.repeat(28)
+                : HYBRID_PLACEHOLDERS[p];
             configHybridModel.placeholder = `Modelo (vazio = ${HYBRID_DEFAULT_MODELS[p]})`;
         }
 
@@ -2496,13 +2725,31 @@
         });
         configHybridProvider.addEventListener('change', updateHybridHint);
 
+        // Placeholder mascarado quando ha chave salva; senao o hint normal.
+        // Mantem o value vazio (a chave nunca volta ao webview/input).
+        const MASKED_KEY = '•'.repeat(28);
+        function emptyKeyHint(provider) {
+            return provider === 'anthropic' ? 'sk-ant-...' : 'sk-...';
+        }
+        function applyKeyPlaceholders() {
+            // Provedor principal
+            configKeyInput.placeholder = savedSettings.apiKey
+                ? MASKED_KEY
+                : emptyKeyHint(configProvider.value);
+            // Hybrid / provedor de suporte
+            configHybridKey.placeholder = savedSettings.supportApiKey
+                ? MASKED_KEY
+                : (HYBRID_PLACEHOLDERS[configHybridProvider.value] || 'API key do provedor de suporte');
+        }
+
         function updateConfigUI(provider) {
             const isAnthropic = provider === 'anthropic';
             configHostRow.style.display = isAnthropic ? 'none' : '';
             configKeyLabel.innerHTML = isAnthropic
                 ? 'API Key'
                 : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
-            configKeyInput.placeholder = isAnthropic ? 'sk-ant-...' : 'sk-...';
+            // Se ja ha chave salva, preserva os pontinhos; senao mostra o hint.
+            configKeyInput.placeholder = savedSettings.apiKey ? MASKED_KEY : (isAnthropic ? 'sk-ant-...' : 'sk-...');
             configModelHint.textContent = isAnthropic
                 ? 'Modelo Claude a usar. Clique num atalho abaixo ou digite o ID.'
                 : 'Nome exato do modelo carregado. Vazio usa o padrao do servidor.';
@@ -2534,6 +2781,10 @@
                 configKeyInput.value = '';
                 configFeedback.textContent = '';
                 updateConfigUI(savedSettings.provider);
+                // Mostra pontinhos no placeholder quando ja existe chave salva,
+                // para o usuario saber que ela continua guardada (o value fica
+                // vazio de proposito — a chave nunca volta ao input por seguranca).
+                applyKeyPlaceholders();
                 renderToolsGrid(savedSettings.enabledTools || ALL_TOOLS.map(t => t.name));
                 configRagEnabled.checked = !!savedSettings.ragEnabled;
                 configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
@@ -2543,6 +2794,7 @@
                 configHybridEnabled.checked = !!savedSettings.hybridEnabled;
                 configHybridProvider.value = savedSettings.supportProvider || 'anthropic';
                 configHybridKey.value = '';
+                // (pontinhos do hybrid sao aplicados em applyKeyPlaceholders)
                 configHybridModel.value = savedSettings.supportModel || '';
                 configHybridRows.style.display = configHybridEnabled.checked ? 'flex' : 'none';
                 updateHybridHint();
@@ -2559,6 +2811,10 @@
                 configWhisperEndpoint.value = savedSettings.whisperEndpoint || 'http://localhost:1234';
                 configWhisperModel.value = savedSettings.whisperModel || 'whisper-1';
                 configWhisperLanguage.value = savedSettings.whisperLanguage || 'pt';
+                // Mostra ao menos a selecao salva; pede a lista real ao host se JARVIS ativo.
+                renderMicDevices([], savedSettings.micDeviceIndex || '');
+                if (savedSettings.jarvisEnabled) { requestMicDevices(); }
+                renderTtsVoices();
                 configVoiceServerEnabled.checked = !!savedSettings.voiceServerEnabled;
                 configVoiceServerPort.value = savedSettings.voiceServerPort || 9876;
                 configVoiceServerExpose.checked = !!savedSettings.voiceServerExposeNetwork;
@@ -2602,9 +2858,11 @@
                 projectIntelEnabled: configProjectIntel.checked,
                 jarvisEnabled: configJarvisEnabled.checked,
                 jarvisAutoSpeak: configJarvisAutoSpeak.checked,
+                jarvisTtsVoice: configTtsVoice.value || '',
                 whisperEndpoint: configWhisperEndpoint.value.trim() || 'http://localhost:1234',
                 whisperModel: configWhisperModel.value.trim() || 'whisper-1',
                 whisperLanguage: configWhisperLanguage.value.trim(),
+                micDeviceIndex: configMicDevice.value || '',
                 voiceServerEnabled: configVoiceServerEnabled.checked,
                 voiceServerPort: parseInt(configVoiceServerPort.value, 10) || 9876,
                 voiceServerExposeNetwork: configVoiceServerExpose.checked,
@@ -3144,8 +3402,10 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '' };
                 customCommandsScope = savedSettings.customCommandsScope;
+                jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
+                    '| whisperEndpoint =', savedSettings.whisperEndpoint);
                 syncHybridModeWithSettings();
                 updateMicButtonVisibility();
             } else if (msg.command === 'load_sessions') {
@@ -3170,6 +3430,9 @@
                 savedSettings.provider = configProvider.value;
                 savedSettings.apiHost = configHostInput.value.trim();
                 savedSettings.model = configModelInput.value.trim();
+                // Se digitou nova chave, reflete; senao mantem a existente
+                // (campo vazio = "nao alterar"). Assim os pontinhos persistem.
+                if (configKeyInput.value.trim()) { savedSettings.apiKey = configKeyInput.value.trim(); }
                 savedSettings.enabledTools = getEnabledTools();
                 savedSettings.ragEnabled = configRagEnabled.checked;
                 savedSettings.ragEndpoint = configRagEndpoint.value.trim();
@@ -3184,9 +3447,12 @@
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
                 savedSettings.jarvisEnabled = configJarvisEnabled.checked;
                 savedSettings.jarvisAutoSpeak = configJarvisAutoSpeak.checked;
+                savedSettings.jarvisTtsVoice = configTtsVoice.value || '';
+                _ttsVoice = null; // forca re-selecao com a nova preferencia
                 savedSettings.whisperEndpoint = configWhisperEndpoint.value.trim() || 'http://localhost:1234';
                 savedSettings.whisperModel = configWhisperModel.value.trim() || 'whisper-1';
                 savedSettings.whisperLanguage = configWhisperLanguage.value.trim();
+                savedSettings.micDeviceIndex = configMicDevice.value || '';
                 savedSettings.voiceServerEnabled = configVoiceServerEnabled.checked;
                 savedSettings.voiceServerPort = parseInt(configVoiceServerPort.value, 10) || 9876;
                 savedSettings.voiceServerExposeNetwork = configVoiceServerExpose.checked;
@@ -3195,6 +3461,11 @@
                 // anterior (usuario precisa clicar no botao do header para usar).
                 syncHybridModeWithSettings();
                 updateMicButtonVisibility();
+                // Limpa os campos de chave e mostra os pontinhos, confirmando
+                // visualmente que a(s) chave(s) seguem salvas.
+                configKeyInput.value = '';
+                configHybridKey.value = '';
+                applyKeyPlaceholders();
                 configFeedback.textContent = 'Configuracao salva.';
                 setTimeout(() => {
                     configFeedback.textContent = '';
@@ -3337,6 +3608,30 @@
                         chatContainer.scrollTop = chatContainer.scrollHeight;
                     });
                 }
+            } else if (msg.command === 'voice_devices_result') {
+                if (msg.ok) {
+                    renderMicDevices(msg.devices || [], msg.selected != null ? msg.selected : (savedSettings.micDeviceIndex || ''));
+                } else {
+                    jlog('voice_devices_result erro: ' + (msg.error || ''));
+                    renderMicDevices([], savedSettings.micDeviceIndex || '');
+                }
+                return;
+            } else if (msg.command === 'voice_record_started') {
+                jlog('host confirmou: gravando');
+                return;
+            } else if (msg.command === 'voice_record_error') {
+                resetMicButton();
+                alert('Microfone (JARVIS): ' + (msg.error || 'erro desconhecido'));
+                return;
+            } else if (msg.command === 'voice_record_result') {
+                resetMicButton();
+                if (msg.ok && msg.text) {
+                    // JARVIS: ao parar de falar, envia direto (sem passar pelo input).
+                    sendTranscriptDirectly(msg.text);
+                } else if (!msg.ok) {
+                    alert('Falha ao transcrever: ' + (msg.error || 'erro desconhecido'));
+                }
+                return;
             } else if (msg.command === 'voice_transcribe_result') {
                 micBtn.classList.remove('mic-transcribing', 'mic-recording');
                 micBtn.title = 'Modo JARVIS — BETA (push-to-talk)';
@@ -3378,8 +3673,11 @@
                 setAgentRunning(false);
                 sendBtn.disabled = false;
 
-                // Fala a resposta em voz alta quando JARVIS + autospeak ativos
-                speakIfJarvisAutoSpeak(msg.text);
+                // Fala a resposta em voz alta quando JARVIS + autospeak ativos.
+                // Provedores com streaming mandam msg.text vazio aqui (o texto
+                // foi acumulado em streamText via stream_chunk). Por isso o
+                // fallback — senao o TTS nao fala com esses provedores.
+                speakIfJarvisAutoSpeak(msg.text || streamText);
 
                 const tl = getTimeline();
                 // Pode ser o item ativo de resposta (se ainda nao foi congelado pelo CLEAR)
@@ -3548,6 +3846,8 @@
             item.appendChild(body);
             timeline.appendChild(item);
             chatContainer.scrollTop = chatContainer.scrollHeight;
+            // JARVIS: narra cada passo da timeline em voz alta (se ativo).
+            if (text && String(text).trim()) { speakTimelineStep(text); }
             return item;
         }
 
