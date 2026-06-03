@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.2
+
+- **Pronuncia de termos tecnicos em ingles na fala (TTS)** — a voz PT-BR lia palavras como "deploy", "commit", "build", "file" com pronuncia portuguesa errada. Agora um dicionario aportuguesa a grafia so na fala (deploy→déploi, commit→câmit, build→bíld, file→fáiou, release→rilíss, etc.). Aplicado apenas quando a voz e PT-BR; o texto exibido no chat nao muda
+
 ## 0.11.1
 
 - **TTS fala apenas a resposta final do LLM** — a narracao passo-a-passo da timeline (Analisando, Lendo arquivo, etc.) foi removida. Agora o JARVIS le em voz alta somente o texto que o modelo retorna (blocos de codigo continuam omitidos pelo `cleanForSpeech`)

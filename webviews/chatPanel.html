@@ -2180,6 +2180,57 @@
         // Estrategia: pega o texto recebido em agent_response, remove blocos
         // de codigo (``` ... ```), inline code e markdown pesado, e fala o
         // restante com speechSynthesis nativo do navegador.
+        // Dicionario de pronuncia: aportuguesa termos tecnicos em ingles para
+        // a voz PT-BR nao le-los com pronuncia portuguesa errada. A grafia da
+        // direita e uma aproximacao fonetica em portugues. Aplicado SO na fala
+        // (nao no texto exibido) e SO quando a voz e PT-BR.
+        const SPEECH_PRONUNCIATION_PT = {
+            'deploy': 'déploi', 'deployment': 'déploimênt', 'deploys': 'déplois',
+            'commit': 'câmit', 'commits': 'câmits', 'committing': 'câmiting',
+            'build': 'bíld', 'builds': 'bílds', 'building': 'bílding',
+            'cache': 'quéx', 'caching': 'quéxing',
+            'merge': 'mârj', 'merged': 'mârjed', 'merging': 'mârjing',
+            'branch': 'brânt', 'branches': 'brântches',
+            'push': 'púx', 'pushed': 'púxt',
+            'pull': 'púl', 'pull request': 'púl requést',
+            'request': 'requést', 'requests': 'requésts',
+            'release': 'rilíss', 'releases': 'rilísses',
+            'file': 'fáiou', 'files': 'fáious',
+            'queue': 'quiú',
+            'array': 'arrêi', 'arrays': 'arrêis',
+            'string': 'striing', 'strings': 'striings',
+            'boolean': 'búlian',
+            'default': 'defôlt', 'defaults': 'defôlts',
+            'token': 'tôuken', 'tokens': 'tôukens',
+            'layout': 'lêiaut',
+            'package': 'péquidj', 'packages': 'péquidjes',
+            'framework': 'frêimuork', 'frameworks': 'frêimuorks',
+            'backend': 'béquend', 'frontend': 'frântend',
+            'endpoint': 'êndpoint', 'endpoints': 'êndpoints',
+            'webhook': 'uébruk', 'webhooks': 'uébruks',
+            'pipeline': 'páiplain', 'pipelines': 'páiplains',
+            'runtime': 'rântaim',
+            'timeout': 'táimaut',
+            'overflow': 'ôverflou',
+            'feature': 'fítcher', 'features': 'fítchers',
+            'bug': 'bâg', 'bugs': 'bâgs',
+            'debug': 'dibâg', 'debugging': 'dibâguing',
+            'log': 'lóg', 'logs': 'lógs', 'logging': 'lóguing',
+            'lint': 'lint', 'linter': 'linter',
+            'output': 'autput', 'input': 'input'
+        };
+
+        function applyPtPronunciation(text) {
+            let out = text;
+            for (const [en, pt] of Object.entries(SPEECH_PRONUNCIATION_PT)) {
+                // \b...\b com flag 'i' — substitui a palavra inteira ignorando caixa.
+                // Termos com espaco (pull request) tambem funcionam com \b nas pontas.
+                const re = new RegExp('\\b' + en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+                out = out.replace(re, pt);
+            }
+            return out;
+        }
+
         function cleanForSpeech(text) {
             if (!text) { return ''; }
             let out = text;
@@ -2194,9 +2245,21 @@
             out = out.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
             // Colapsa whitespace
             out = out.replace(/\n{2,}/g, '. ').replace(/\s+/g, ' ').trim();
+            // Aportuguesa termos tecnicos em ingles para a voz PT-BR pronunciar
+            // melhor. So aplica quando a voz/idioma e portugues.
+            if (isPtSpeech()) { out = applyPtPronunciation(out); }
             // Cap defensivo — TTS lento em respostas muito longas
             if (out.length > 1500) { out = out.slice(0, 1500) + '...'; }
             return out;
+        }
+
+        // Decide se a fala atual sera em portugues (para aplicar o dicionario
+        // de pronuncia). Usa a voz selecionada; se nao houver, cai no idioma
+        // configurado no JARVIS (whisperLanguage).
+        function isPtSpeech() {
+            const v = (typeof ensureVoice === 'function') ? ensureVoice() : null;
+            if (v && v.lang) { return v.lang.toLowerCase().startsWith('pt'); }
+            return !(savedSettings && savedSettings.whisperLanguage === 'en');
         }
 
         // ── Seleção de voz (preferencia: masculina e moderna) ─────────────
