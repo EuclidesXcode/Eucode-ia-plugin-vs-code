@@ -2277,71 +2277,15 @@
             const clean = cleanForSpeech(text);
             if (!clean) { jlog('TTS: texto vazio apos limpeza — nao fala'); return; }
             try {
-                // A resposta final tem prioridade: limpa a fila da timeline.
+                // Fala apenas a resposta final do LLM. Cancela qualquer fala
+                // anterior antes de iniciar a nova.
                 speechSynthesis.cancel();
-                _speakQueue.length = 0;
-                _speaking = false;
                 const utter = new SpeechSynthesisUtterance(clean);
                 applyVoiceParams(utter);
                 speechSynthesis.speak(utter);
             } catch (e) {
                 console.warn('TTS falhou:', e);
             }
-        }
-
-        // ── Narração da timeline (fila, não cancela passos anteriores) ─────
-        const _speakQueue = [];
-        let _speaking = false;
-
-        function _drainSpeakQueue() {
-            if (_speaking) { return; }
-            const next = _speakQueue.shift();
-            if (!next) { return; }
-            _speaking = true;
-            try {
-                const utter = new SpeechSynthesisUtterance(next);
-                applyVoiceParams(utter);
-                utter.onend = () => { _speaking = false; _drainSpeakQueue(); };
-                utter.onerror = () => { _speaking = false; _drainSpeakQueue(); };
-                speechSynthesis.speak(utter);
-            } catch (e) {
-                _speaking = false;
-            }
-        }
-
-        // Humaniza o rótulo da timeline para algo natural de ouvir.
-        function timelineToSpeech(text) {
-            if (!text) { return ''; }
-            let t = String(text).trim();
-            // Remove reticencias e ruido visual
-            t = t.replace(/\.\.\.$/, '').trim();
-            const map = [
-                [/^Analisando sua solicitacao$/i, 'Analisando sua solicitação'],
-                [/^Mapeando workspace$/i, 'Mapeando o workspace'],
-                [/^Processing project context$/i, 'Processando o contexto do projeto'],
-                [/^Processing file contents$/i, 'Processando o conteúdo do arquivo'],
-                [/^Abertos no editor:\s*(.+)$/i, 'Arquivos abertos: $1'],
-                [/^Reading file:\s*(.+)$/i, 'Lendo $1'],
-                [/^Editing file:\s*(.+)$/i, 'Editando $1'],
-                [/^Writing file:\s*(.+)$/i, 'Escrevendo $1'],
-                [/^Running command:\s*(.+)$/i, 'Executando comando'],
-                [/^Searching:\s*(.+)$/i, 'Buscando $1'],
-            ];
-            for (const [re, rep] of map) {
-                if (re.test(t)) { return t.replace(re, rep); }
-            }
-            return t;
-        }
-
-        function speakTimelineStep(text) {
-            if (!savedSettings || !savedSettings.jarvisEnabled || !savedSettings.jarvisAutoSpeak) { return; }
-            if (typeof speechSynthesis === 'undefined') { return; }
-            const phrase = timelineToSpeech(text);
-            if (!phrase) { return; }
-            // Evita repetir a mesma frase em sequencia (passos duplicados).
-            if (_speakQueue[_speakQueue.length - 1] === phrase) { return; }
-            _speakQueue.push(phrase);
-            _drainSpeakQueue();
         }
 
         function updateContextBar(files) {
@@ -3846,8 +3790,8 @@
             item.appendChild(body);
             timeline.appendChild(item);
             chatContainer.scrollTop = chatContainer.scrollHeight;
-            // JARVIS: narra cada passo da timeline em voz alta (se ativo).
-            if (text && String(text).trim()) { speakTimelineStep(text); }
+            // Nota: a timeline NAO e narrada. O TTS fala apenas a resposta
+            // final do LLM (ver speakIfJarvisAutoSpeak no handler agent_response).
             return item;
         }
 

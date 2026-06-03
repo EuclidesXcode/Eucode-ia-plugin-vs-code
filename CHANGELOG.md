@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1
+
+- **TTS fala apenas a resposta final do LLM** — a narracao passo-a-passo da timeline (Analisando, Lendo arquivo, etc.) foi removida. Agora o JARVIS le em voz alta somente o texto que o modelo retorna (blocos de codigo continuam omitidos pelo `cleanForSpeech`)
+
 ## 0.11.0
 
 JARVIS funcional de ponta a ponta + correcao critica de API key.
