@@ -1779,14 +1779,14 @@
         </details>
         <div style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#ff4757;">
-                🎙 JARVIS — Modo de voz
+                <span>🎙 JARVIS — Modo de voz <span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:2px 6px;border-radius:3px;letter-spacing:0.06em;margin-left:6px;vertical-align:middle;">BETA</span></span>
                 <label class="switch" style="margin-left:auto">
                     <input type="checkbox" id="config-jarvis-enabled">
                     <span class="slider"></span>
                 </label>
             </div>
             <div class="config-hint" style="margin-top:6px;margin-bottom:8px;color:#aa7080;">
-                Pressione o microfone no chat e fale — o audio e transcrito localmente via Whisper no LM Studio. O agente pode responder em voz alta.
+                Pressione o microfone no chat e fale — o audio e transcrito localmente via Whisper no LM Studio. O agente pode responder em voz alta. <strong style="color:#ff8e8e;">Feature em BETA</strong> — reporte bugs no GitHub.
             </div>
             <div id="config-jarvis-rows" style="display:none;gap:8px;flex-direction:column;">
                 <div class="editor-feature-row" style="border-color:#3a2030;">
@@ -1926,7 +1926,7 @@
     <div id="input-area">
         <button id="config-btn" class="icon-btn" title="Configuracoes"><span class="mi">settings</span></button>
         <button id="image-btn" class="icon-btn" title="Anexar imagem"><span class="mi">add_photo_alternate</span></button>
-        <button id="mic-btn" class="icon-btn" title="Modo JARVIS (push-to-talk)" style="display:none"><span class="mi">mic</span></button>
+        <button id="mic-btn" class="icon-btn" title="Modo JARVIS — BETA (push-to-talk)" style="display:none"><span class="mi">mic</span></button>
         <textarea id="user-input" rows="1" placeholder="Pergunte algo ou descreva uma tarefa... ( / para comandos)"></textarea>
         <button id="stop-btn"><span class="mi" style="font-size:16px">stop_circle</span>Stop</button>
         <button id="send-btn"><span class="mi" style="font-size:16px">send</span>Enviar</button>
@@ -3339,7 +3339,7 @@
                 }
             } else if (msg.command === 'voice_transcribe_result') {
                 micBtn.classList.remove('mic-transcribing', 'mic-recording');
-                micBtn.title = 'Modo JARVIS (push-to-talk)';
+                micBtn.title = 'Modo JARVIS — BETA (push-to-talk)';
                 if (msg.ok && msg.text) {
                     const current = input.value.trim();
                     input.value = current ? (current + ' ' + msg.text) : msg.text;

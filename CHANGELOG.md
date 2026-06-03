@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.2
+
+- **JARVIS marcado como BETA** explicitamente — selo no painel de configuracoes (`🎙 JARVIS — Modo de voz BETA`), tooltip do botao de microfone e secao do README com aviso. Feature funciona mas integracoes ainda em estabilizacao
+- **README com guia completo do whisper-server standalone para Apple Silicon** — alternativa recomendada enquanto o LM Studio 0.4.x tem bug no carregamento de modelos ASR. Setup em 4 comandos via `brew install whisper-cpp`, lista de modelos disponiveis (tiny/base/small/medium/large-v3) com tamanho e qualidade, configuracao do plugin (`http://localhost:1235`), e exemplo de LaunchAgent para auto-iniciar no boot do Mac
+
 ## 0.10.1
 
 Compatibilidade com servidores Whisper alternativos.

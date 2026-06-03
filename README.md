@@ -73,7 +73,9 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 
 ---
 
-## 🎙 Modo JARVIS — voz local (Whisper) + leitura em voz alta
+## 🎙 Modo JARVIS (BETA) — voz local (Whisper) + leitura em voz alta
+
+> ⚠ **Feature em BETA.** O fluxo push-to-talk funciona, mas algumas integracoes (servidor de voz, app mobile, ajustes de qualidade) ainda estao em estabilizacao. Reporte bugs no GitHub.
 
 Pressione o botao de microfone no chat e fale com o Eucode IA. O audio e transcrito **localmente** via Whisper rodando no LM Studio (zero custo, sem enviar audio pra cloud). O agente pode responder em voz alta usando o TTS nativo do sistema.
 
@@ -124,6 +126,90 @@ O LM Studio expoe um endpoint compativel com a API da OpenAI em `/v1/audio/trans
 - Ative o microfone
 - Fale "ola Eucode" e pressione pra parar
 - O texto deve aparecer no input em 1-3 segundos
+
+### Alternativa para Mac com Apple Silicon — whisper-server standalone (recomendado)
+
+O LM Studio na versao 0.4.x tem um bug recorrente no carregamento de modelos ASR (`AsrProcess Failed to load model TypeError: ... is not a constructor`). Se voce esta no Mac com chip M1/M2/M3/M4/M5, o caminho mais confiavel e usar o **`whisper-server`** standalone via Homebrew. Ele roda em paralelo ao LM Studio (que continua servindo o LLM de chat), usa GPU Metal automaticamente e nunca apresenta esse erro.
+
+**Setup em 4 comandos:**
+
+```bash
+# 1. Instalar whisper.cpp via Homebrew (vem com whisper-server, whisper-cli e outros binarios)
+brew install whisper-cpp
+
+# 2. Criar pasta para os modelos
+mkdir -p ~/whisper-models
+
+# 3. Baixar o modelo GGML small (~465MB, qualidade boa pra portugues, rapido)
+curl -L -o ~/whisper-models/ggml-small.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+
+# 4. Subir o servidor na porta 1235 (deixa a 1234 livre pro LM Studio do chat)
+whisper-server --port 1235 --model ~/whisper-models/ggml-small.bin --language pt
+```
+
+Deixe o terminal aberto enquanto usar o JARVIS. Se quiser modelos maiores:
+
+| Modelo | Tamanho | Qualidade | Velocidade |
+|---|---|---|---|
+| `ggml-tiny.bin` | ~75MB | Baixa | Muito rapida |
+| `ggml-base.bin` | ~140MB | Media-baixa | Rapida |
+| `ggml-small.bin` (recomendado) | ~465MB | Boa | Rapida |
+| `ggml-medium.bin` | ~1.5GB | Alta | Media |
+| `ggml-large-v3.bin` | ~3GB | Maxima | Lenta |
+
+Troque o arquivo no comando `curl` e no `--model` do servidor.
+
+**Configurar no plugin:**
+
+| Campo | Valor |
+|---|---|
+| Endpoint do Whisper | `http://localhost:1235` |
+| Modelo Whisper | `whisper-1` (campo ignorado pelo whisper-server, mantenha por compatibilidade) |
+| Idioma | `pt` |
+
+O plugin detecta automaticamente o path correto do servidor (`/inference` no whisper-server vs `/v1/audio/transcriptions` no LM Studio) — voce nao precisa configurar nada extra.
+
+**Auto-iniciar no boot do Mac (opcional):**
+
+Crie `~/Library/LaunchAgents/com.eucode.whisper-server.plist` com:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.eucode.whisper-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/whisper-server</string>
+        <string>--port</string>
+        <string>1235</string>
+        <string>--model</string>
+        <string>/Users/SEU_USUARIO/whisper-models/ggml-small.bin</string>
+        <string>--language</string>
+        <string>pt</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/whisper-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/whisper-server.err</string>
+</dict>
+</plist>
+```
+
+Troque `SEU_USUARIO` pelo seu nome de usuario, depois rode:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.eucode.whisper-server.plist
+```
+
+A partir do proximo boot, o whisper-server sobe automaticamente.
 
 ### Servidor de voz (para app mobile)
 
@@ -642,6 +728,14 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 ---
 
 ## Ultimas versoes
+
+### 0.10.2
+- **JARVIS marcado como BETA** com selo visual no painel de configuracoes e tooltip do microfone
+- **Guia completo de whisper-server standalone para Apple Silicon** no README — alternativa recomendada ao LM Studio (que tem bug no carregamento ASR), com setup em 4 comandos brew + auto-start via LaunchAgent
+
+### 0.10.1
+- Fallback automatico de endpoint Whisper: tenta `/v1/audio/transcriptions` (LM Studio/OpenAI) e cai para `/inference` (whisper.cpp standalone) se 404
+- Permite usar `whisper-server` do brew como alternativa ao LM Studio sem mudar configuracao do plugin
 
 ### 0.10.0
 - **NOVO: Modo JARVIS** — botao de microfone no chat (push-to-talk), STT 100% local via Whisper no LM Studio, TTS automatico do agente via `speechSynthesis`
