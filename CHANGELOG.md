@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.1
+
+Compatibilidade com servidores Whisper alternativos.
+
+- `transcribeViaWhisper` no extension.ts e o handler `/transcribe` do voice-server agora tentam **2 paths em sequencia**:
+  1. `/v1/audio/transcriptions` — LM Studio, faster-whisper-server, OpenAI API
+  2. `/inference` — whisper.cpp standalone (`whisper-server` do brew)
+- Se o primeiro retorna 404, tenta o segundo automaticamente. Outros erros (timeout, 500) param o loop
+- Permite usar `brew install whisper-cpp` + `whisper-server --port 1235` como alternativa quando o LM Studio nao consegue carregar modelos ASR (bug recorrente em 0.4.x)
+- Sem mudancas necessarias na config do usuario alem de trocar o `whisperEndpoint` para a porta correta
+
 ## 0.10.0
 
 NOVA FEATURE — Modo JARVIS (push-to-talk + TTS + servidor de voz):

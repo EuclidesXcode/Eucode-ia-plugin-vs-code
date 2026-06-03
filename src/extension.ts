@@ -694,7 +694,33 @@ async function transcribeViaWhisper(
     audio: Buffer,
     contentType: string
 ): Promise<string> {
-    if (!endpoint) { throw new Error('LM Studio endpoint not configured for Whisper.'); }
+    if (!endpoint) { throw new Error('Whisper endpoint nao configurado.'); }
+    // Tenta os 2 paths em sequencia:
+    //   /v1/audio/transcriptions  → LM Studio, faster-whisper-server, OpenAI
+    //   /inference                → whisper.cpp standalone (whisper-server)
+    const base = endpoint.replace(/\/+$/, '');
+    const paths = ['/v1/audio/transcriptions', '/inference'];
+    let lastError: Error | null = null;
+    for (const p of paths) {
+        try {
+            return await postWhisperRequest(base + p, model, language, audio, contentType);
+        } catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            lastError = err;
+            // 404 → tenta o proximo path. Outros erros (timeout, 500) param o loop.
+            if (!/^Whisper 404/.test(err.message)) { break; }
+        }
+    }
+    throw lastError || new Error('Whisper: nenhum path conhecido respondeu.');
+}
+
+function postWhisperRequest(
+    url: string,
+    model: string,
+    language: string,
+    audio: Buffer,
+    contentType: string
+): Promise<string> {
     const boundary = '----eucode' + crypto.randomBytes(16).toString('hex');
     const parts: Buffer[] = [];
     const push = (s: string) => parts.push(Buffer.from(s, 'utf8'));
@@ -713,15 +739,15 @@ async function transcribeViaWhisper(
     push(`\r\n--${boundary}--\r\n`);
 
     const body = Buffer.concat(parts);
-    const url = new URL(endpoint.replace(/\/+$/, '') + '/v1/audio/transcriptions');
-    const transport = url.protocol === 'https:' ? https : http;
+    const parsedUrl = new URL(url);
+    const transport = parsedUrl.protocol === 'https:' ? https : http;
 
     return new Promise((resolve, reject) => {
         const req = transport.request({
             method: 'POST',
-            hostname: url.hostname,
-            port: url.port || (url.protocol === 'https:' ? 443 : 80),
-            path: url.pathname + url.search,
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+            path: parsedUrl.pathname + parsedUrl.search,
             headers: {
                 'Content-Type': `multipart/form-data; boundary=${boundary}`,
                 'Content-Length': body.length,

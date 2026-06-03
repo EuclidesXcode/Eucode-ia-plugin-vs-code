@@ -166,14 +166,24 @@ export class VoiceServer {
             const model = this.cfg.whisperModel || 'whisper-1';
             const language = (req.headers['x-language'] as string) || '';
 
-            const result = await postMultipartToWhisper(
-                `${this.cfg.whisperEndpoint.replace(/\/+$/, '')}/v1/audio/transcriptions`,
-                model,
-                audioBuf,
-                filename,
-                contentType,
-                language
-            );
+            // Fallback de path: LM Studio/faster-whisper usam
+            // /v1/audio/transcriptions, whisper.cpp standalone usa /inference.
+            const base = this.cfg.whisperEndpoint.replace(/\/+$/, '');
+            const paths = ['/v1/audio/transcriptions', '/inference'];
+            let result = '';
+            let lastError: Error | null = null;
+            for (const p of paths) {
+                try {
+                    result = await postMultipartToWhisper(base + p, model, audioBuf, filename, contentType, language);
+                    lastError = null;
+                    break;
+                } catch (e) {
+                    const err = e instanceof Error ? e : new Error(String(e));
+                    lastError = err;
+                    if (!/^Whisper 404/.test(err.message)) { break; }
+                }
+            }
+            if (lastError) { throw lastError; }
 
             this.json(res, 200, { ok: true, text: result });
         } catch (e) {
