@@ -1432,6 +1432,91 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
+        function appendCommandConfirmCard(id, commandText, reason) {
+            const row = document.createElement('div');
+            row.className = 'message-row agent';
+
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = 'EI';
+            const label = document.createElement('span');
+            label.className = 'message-label';
+            label.textContent = 'Eucode IA';
+            meta.appendChild(avatar);
+            meta.appendChild(label);
+
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.style.padding = '0';
+            bubble.style.overflow = 'hidden';
+            bubble.style.width = '100%';
+            bubble.style.maxWidth = '100%';
+
+            const card = document.createElement('div');
+            card.className = 'confirm-card';
+
+            const header = document.createElement('div');
+            header.className = 'confirm-card-header';
+            const icon = document.createElement('div');
+            icon.className = 'confirm-card-icon';
+            icon.innerHTML = '<span class="mi" style="font-size:12px">warning</span>';
+            const title = document.createElement('div');
+            title.className = 'confirm-card-title';
+            title.textContent = 'Confirmar comando perigoso';
+            const badge = document.createElement('span');
+            badge.className = 'confirm-card-badge edit';
+            badge.textContent = 'Risco';
+            header.appendChild(icon);
+            header.appendChild(title);
+            header.appendChild(badge);
+
+            const body = document.createElement('div');
+            body.style.cssText = 'padding:12px 14px;border-top:1px solid #1a1a2e;font-size:12px;color:#c9d1d9';
+            const commandLabel = document.createElement('div');
+            commandLabel.style.cssText = 'font-size:10px;text-transform:uppercase;color:#3a5080;margin-bottom:6px;font-weight:700';
+            commandLabel.textContent = 'Comando';
+            const commandBlock = document.createElement('pre');
+            commandBlock.style.cssText = 'white-space:pre-wrap;background:#080812;border:1px solid #1a1a2e;border-radius:6px;padding:10px;margin-bottom:10px;color:#e6edf3';
+            commandBlock.textContent = commandText;
+            const reasonText = document.createElement('div');
+            reasonText.textContent = 'Motivo: ' + reason;
+            body.appendChild(commandLabel);
+            body.appendChild(commandBlock);
+            body.appendChild(reasonText);
+
+            const actions = document.createElement('div');
+            actions.className = 'confirm-actions';
+
+            const rejectBtn = document.createElement('button');
+            rejectBtn.className = 'confirm-reject-btn';
+            rejectBtn.innerHTML = '<span class="mi" style="font-size:14px">close</span>Não, cancelar';
+
+            const acceptBtn = document.createElement('button');
+            acceptBtn.className = 'confirm-accept-btn';
+            acceptBtn.innerHTML = '<span class="mi" style="font-size:14px">check</span>Sim, executar';
+
+            function decide(approved) {
+                vscode.postMessage({ command: 'confirm_command_response', id, approved });
+                row.remove();
+            }
+
+            rejectBtn.addEventListener('click', () => decide(false));
+            acceptBtn.addEventListener('click', () => decide(true));
+            actions.appendChild(rejectBtn);
+            actions.appendChild(acceptBtn);
+
+            card.appendChild(header);
+            card.appendChild(body);
+            card.appendChild(actions);
+            bubble.appendChild(card);
+            row.appendChild(meta);
+            row.appendChild(bubble);
+            chatContainer.appendChild(row);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
         // ── Messages from extension ──
         window.addEventListener('message', function(event) {
             const msg = event.data;
@@ -1474,6 +1559,9 @@
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
+            } else if (msg.command === 'confirm_command') {
+                clearStatus();
+                appendCommandConfirmCard(msg.id, msg.commandText, msg.reason);
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
             } else if (msg.command === 'agent_running') {

@@ -3,12 +3,20 @@
  */
 
 module.exports = {
-  preset: 'ts-jest',
   testEnvironment: 'node',
-  // Removendo moduleNameMapper para evitar conflitos com módulos internos como source-map, 
-  // confiando na configuração padrão do ts-jest e no path resolution do Node/Jest.
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: {
+        types: ['node', 'jest'],
+      },
+    }],
+  },
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/tests/eucode-generated/',
+  ],
   modulePaths: ['node_modules'],
   collectCoverageFrom: [
-    'src/**/*.{js,jsx,ts,tsx}', // Coleta de cobertura em src/
+    'src/**/*.{js,jsx,ts,tsx}',
   ],
 };

@@ -5,10 +5,85 @@ import { callAIWithVision, checkConnection } from './services/api-client';
 import { buildHistorySummary, HistoryEntry } from './services/history-service';
 import { HistoryManagerService } from './services/HistoryManagerService';
 import { collectWorkspaceContext, getDefaultCwd } from './workspace/context';
-import { runAgentLoop, ConfirmWriteRequest } from './agent/loop';
+import { runAgentLoop, ConfirmWriteRequest, ConfirmCommandRequest } from './agent/loop';
 import { SYSTEM_PROMPT } from './agent/prompt';
 import { loadSettings, saveSettings, buildApiEndpoint, buildAuthHeader, EucodeSettings } from './config/settings';
 import { DEFAULT_MODEL } from './utils/constants';
+
+type WebviewMessage =
+    | { command: 'webview_ready' }
+    | { command: 'new_session' }
+    | { command: 'load_session'; id: string }
+    | { command: 'delete_session'; id: string }
+    | { command: 'save_config'; provider?: EucodeSettings['provider']; apiHost?: string; apiKey?: string; model?: string }
+    | { command: 'confirm_write_response'; id: string; approved: boolean }
+    | { command: 'confirm_command_response'; id: string; approved: boolean }
+    | { command: 'stop' }
+    | { command: 'inject_message'; text?: string }
+    | { command: 'user_input'; text?: string; image?: { base64: string; mimeType: string } | null; autoMode?: boolean };
+
+type StatusNotifier = ((text: string) => void) & { flush: () => void; dispose: () => void };
+
+function createThrottledStatusNotifier(post: (text: string) => void, delayMs = 150): StatusNotifier {
+    let lastSent = 0;
+    let pending: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const send = (text: string) => {
+        lastSent = Date.now();
+        post(text);
+    };
+
+    const notify = ((text: string) => {
+        const now = Date.now();
+        const elapsed = now - lastSent;
+        if (elapsed >= delayMs && !timer) {
+            send(text);
+            return;
+        }
+        pending = text;
+        if (!timer) {
+            timer = setTimeout(() => {
+                timer = null;
+                if (pending !== null) {
+                    const next = pending;
+                    pending = null;
+                    send(next);
+                }
+            }, Math.max(delayMs - elapsed, 0));
+        }
+    }) as StatusNotifier;
+
+    notify.flush = () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        if (pending !== null) {
+            const next = pending;
+            pending = null;
+            send(next);
+        }
+    };
+
+    notify.dispose = () => {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        pending = null;
+    };
+
+    return notify;
+}
+
+function debounce<T extends (...args: unknown[]) => void>(fn: T, delayMs = 150): T {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    return ((...args: Parameters<T>) => {
+        if (timer) { clearTimeout(timer); }
+        timer = setTimeout(() => fn(...args), delayMs);
+    }) as T;
+}
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'eucode-ia.chatView';
@@ -38,13 +113,22 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
         const htmlPath = path.join(this._context.extensionUri.fsPath, 'webviews', 'chatPanel.html');
         webviewView.webview.html = fs.readFileSync(htmlPath, 'utf8');
 
-        const notify = (text: string) => webviewView.webview.postMessage({ command: 'status', text });
+        const notify = createThrottledStatusNotifier((text: string) => {
+            webviewView.webview.postMessage({ command: 'status', text });
+        });
 
         const makeConfirmWrite = (): (req: ConfirmWriteRequest) => Promise<boolean> =>
             (req) => new Promise<boolean>((resolve) => {
                 const id = `confirm_${Date.now()}`;
                 this._pendingConfirms.set(id, resolve);
                 webviewView.webview.postMessage({ command: 'confirm_write', id, filePath: req.filePath, before: req.before, after: req.after });
+            });
+
+        const makeConfirmCommand = (): (req: ConfirmCommandRequest) => Promise<boolean> =>
+            (req) => new Promise<boolean>((resolve) => {
+                const id = `confirm_cmd_${Date.now()}`;
+                this._pendingConfirms.set(id, resolve);
+                webviewView.webview.postMessage({ command: 'confirm_command', id, commandText: req.command, reason: req.reason });
             });
 
         const pingAndNotify = async (s: EucodeSettings) => {
@@ -64,14 +148,15 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             const ctx = collectWorkspaceContext();
             webviewView.webview.postMessage({ command: 'open_files', files: ctx.openFiles });
         };
+        const debouncedSendOpenFiles = debounce(sendOpenFiles, 150);
 
         // Atualiza arquivos abertos quando o usuário troca de aba
         this._context.subscriptions.push(
-            vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()),
-            vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles())
+            vscode.window.onDidChangeActiveTextEditor(() => debouncedSendOpenFiles()),
+            vscode.window.tabGroups.onDidChangeTabs(() => debouncedSendOpenFiles())
         );
 
-        webviewView.webview.onDidReceiveMessage(async (message: any) => {
+        webviewView.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
             if (message?.command === 'webview_ready') {
                 webviewView.webview.postMessage({ command: 'load_config', provider: this._settings.provider, apiHost: this._settings.apiHost, apiKey: this._settings.apiKey, model: this._settings.model });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
@@ -117,6 +202,12 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 return;
             }
 
+            if (message?.command === 'confirm_command_response') {
+                const resolve = this._pendingConfirms.get(message.id);
+                if (resolve) { this._pendingConfirms.delete(message.id); resolve(message.approved === true); }
+                return;
+            }
+
             if (message?.command === 'stop') {
                 this._abortController?.abort();
                 return;
@@ -157,16 +248,18 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 response = await runAgentLoop(
                     message.text, ctx.contextBlock, defaultCwd, endpoint, authHeaders,
                     this._sessionHistory, notify, notifyCommandStart, notifyCommandOutput,
-                    makeConfirmWrite(), activeModel, !!message.autoMode,
+                    makeConfirmWrite(), makeConfirmCommand(), activeModel, !!message.autoMode,
                     this._abortController.signal,
                     (handler) => { this._injectMessage = handler; }
                 );
+                notify.flush();
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: response, timestamp: Date.now() });
             }
 
+            notify.flush();
             webviewView.webview.postMessage({ command: 'agent_response', text: response });
         }, undefined, this._context.subscriptions);
     }

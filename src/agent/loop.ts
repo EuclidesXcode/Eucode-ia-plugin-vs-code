@@ -10,13 +10,21 @@ import { SYSTEM_PROMPT } from './prompt';
 import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS } from '../utils/constants';
 import { resolveFilePath } from '../utils/validation';
+import { executeBrowserAction } from '../tools/browser-tools';
+import { validateCommandSafety } from '../tools/command-safety';
 
 type Message = { role: string; content: string | null; tool_calls?: any[]; tool_call_id?: string };
+type BrowserType = 'chromium' | 'webkit';
 
 export type ConfirmWriteRequest = {
     filePath: string;
     before: string | null;
     after: string;
+};
+
+export type ConfirmCommandRequest = {
+    command: string;
+    reason: string;
 };
 
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
@@ -63,6 +71,7 @@ function buildToolHandlers(
     onCommandStart: (cmd: string) => void,
     onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
+    onConfirmCommand: (req: ConfirmCommandRequest) => Promise<boolean>,
     autoMode: boolean
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
@@ -115,6 +124,17 @@ function buildToolHandlers(
         },
         run_command: async (args, cwd, _step, _max) => {
             const cmd: string = args.command || '';
+            const safety = validateCommandSafety(cmd);
+            if (safety.risk === 'blocked') {
+                return `[BLOQUEADO] Comando bloqueado por segurança: pode afetar arquivos fora do projeto ou causar dano irreversível. Motivo: ${safety.reason ?? 'risco alto.'}`;
+            }
+            if (safety.risk === 'dangerous') {
+                onStatus(`Aguardando confirmacao para comando perigoso: ${cmd}`);
+                const approved = await onConfirmCommand({ command: cmd, reason: safety.reason ?? 'comando classificado como perigoso.' });
+                if (!approved) {
+                    return 'Execução cancelada pelo usuário.';
+                }
+            }
             onStatus(`Executando: ${cmd}`);
             onCommandStart(cmd);
             return new Promise<string>((resolve) => {
@@ -134,6 +154,51 @@ function buildToolHandlers(
                     }
                 });
             });
+        },
+        browser_action: async (args, _cwd, _step, _max) => {
+            const {
+                action,
+                url,
+                selector,
+                text,
+                script,
+                browser,
+                attribute,
+                value,
+                key,
+                direction,
+                amount,
+                timeoutMs,
+                urlContains,
+                method,
+                statusMin,
+                statusMax,
+                testName,
+                outputPath,
+            } = args;
+            onStatus(`Navegador: ${action}${url ? ' → ' + url : ''}${selector ? ' (' + selector + ')' : ''}`);
+            return executeBrowserAction(
+                action,
+                {
+                    url,
+                    selector,
+                    text,
+                    script,
+                    attribute,
+                    value,
+                    key,
+                    direction,
+                    amount,
+                    timeoutMs,
+                    urlContains,
+                    method,
+                    statusMin,
+                    statusMax,
+                    testName,
+                    outputPath,
+                },
+                browser || 'chromium'
+            );
         },
     };
 }
@@ -220,6 +285,127 @@ function detectEscapedToolCall(text: string): ToolCall | null {
     return null;
 }
 
+function getRecommendedBrowser(): BrowserType {
+    return process.platform === 'darwin' ? 'webkit' : 'chromium';
+}
+
+function describeRecommendedBrowser(): string {
+    if (process.platform === 'darwin') {
+        return 'webkit (motor do Safari) no macOS';
+    }
+    if (process.platform === 'win32') {
+        return 'chromium no Windows';
+    }
+    return 'chromium no Linux';
+}
+
+function truncateToolOutput(output: string, maxLength = 900): string {
+    const clean = output.trim();
+    if (clean.length <= maxLength) { return clean; }
+    return `${clean.slice(0, maxLength)}\n...`;
+}
+
+function formatBrowserSummary(entries: { action: string; args: Record<string, any>; output: string }[]): string {
+    if (entries.length === 0) { return ''; }
+    const lines = entries.map((entry, index) => {
+        const details = [
+            entry.args.url ? `url=${entry.args.url}` : '',
+            entry.args.selector ? `selector=${entry.args.selector}` : '',
+            entry.args.text !== undefined ? `text=${entry.args.text}` : '',
+            entry.args.key ? `key=${entry.args.key}` : '',
+        ].filter(Boolean).join(', ');
+        return `${index + 1}. ${entry.action}${details ? ` (${details})` : ''}\n${truncateToolOutput(entry.output, 500)}`;
+    });
+    return `\n\nAcoes executadas no navegador:\n${lines.join('\n\n')}`;
+}
+
+function isUnhelpfulModelResponse(text: string): boolean {
+    const normalized = text.trim().toLowerCase();
+    return !normalized || normalized === 'nao foi possivel obter resposta.' || normalized === 'não foi possível obter resposta.';
+}
+
+function extractUrlLike(text: string): string | null {
+    const fileUrl = text.match(/file:\/\/\/[^\s"'`]+/i);
+    if (fileUrl) { return fileUrl[0]; }
+    const webUrl = text.match(/https?:\/\/[^\s"'`]+/i);
+    if (webUrl) { return webUrl[0]; }
+    const windowsPath = text.match(/[a-zA-Z]:\\[^\n"'`]+?\.(?:html?|xhtml)/i);
+    if (windowsPath) { return windowsPath[0].trim(); }
+    return null;
+}
+
+function extractSelectorAfterAction(text: string, action: string): string | null {
+    const escaped = action.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const quoted = new RegExp(`${escaped}[\\s\\S]{0,120}selector\\s+["']([^"']+)["']`, 'i').exec(text);
+    if (quoted?.[1]) { return quoted[1]; }
+    const bare = new RegExp(`${escaped}[\\s\\S]{0,120}selector\\s+([^\\s,.]+)`, 'i').exec(text);
+    if (bare?.[1]) { return bare[1]; }
+    return null;
+}
+
+function shouldRunBrowserFallback(userPrompt: string, responseText: string): boolean {
+    if (!isUnhelpfulModelResponse(responseText)) { return false; }
+    if (!extractUrlLike(userPrompt)) { return false; }
+    return /browser_action|abr[aeir]|pagina|p[aá]gina|chromium|chrome|navegador|click|clique|clicar|test/i.test(userPrompt);
+}
+
+async function runBrowserFallback(userPrompt: string, browserType: BrowserType): Promise<{ response: string; summary: { action: string; args: Record<string, any>; output: string }[] }> {
+    const summary: { action: string; args: Record<string, any>; output: string }[] = [];
+    const run = async (action: string, args: Record<string, any>) => {
+        const output = await executeBrowserAction(action, args, browserType);
+        summary.push({ action, args, output });
+        return output;
+    };
+
+    const url = extractUrlLike(userPrompt);
+    if (!url) {
+        return {
+            response: `Nao consegui identificar uma URL ou arquivo HTML para abrir. Browser recomendado aqui: ${describeRecommendedBrowser()}.`,
+            summary,
+        };
+    }
+
+    await run('navigate', { url });
+
+    const waitSelector = extractSelectorAfterAction(userPrompt, 'wait_for');
+    if (waitSelector) {
+        await run('wait_for', { selector: waitSelector });
+    }
+
+    const clickSelector = extractSelectorAfterAction(userPrompt, 'click') || extractSelectorAfterAction(userPrompt, 'clique');
+    if (clickSelector) {
+        await run('click', { selector: clickSelector });
+    }
+
+    const textSelector = extractSelectorAfterAction(userPrompt, 'get_text');
+    if (textSelector) {
+        await run('get_text', { selector: textSelector });
+    }
+
+    if (/get_errors_only|erro[s]? do console|console/i.test(userPrompt)) {
+        await run('get_errors_only', {});
+    }
+
+    if (/get_network_errors|erro[s]? de rede|request/i.test(userPrompt)) {
+        await run('get_network_errors', {});
+    }
+
+    if (/screenshot|print|captura/i.test(userPrompt)) {
+        await run('screenshot', {});
+    }
+
+    const hasClick = summary.some(entry => entry.action === 'click');
+    const hasText = summary.find(entry => entry.action === 'get_text')?.output || '';
+    const response = [
+        `Executei o teste automaticamente usando ${browserType}.`,
+        hasClick ? 'Cliquei no elemento solicitado.' : 'Abri a pagina, mas nao identifiquei seletor de clique no pedido.',
+        hasText ? `Resultado lido: ${hasText}` : '',
+    ].filter(Boolean).join('\n');
+
+    await run('close', {});
+    return { response, summary };
+}
+
 export async function runAgentLoop(
     userPrompt: string,
     contextBlock: string,
@@ -231,6 +417,7 @@ export async function runAgentLoop(
     onCommandStart: (cmd: string) => void,
     onCommandOutput: (chunk: string) => void,
     onConfirmWrite: (req: ConfirmWriteRequest) => Promise<boolean>,
+    onConfirmCommand: (req: ConfirmCommandRequest) => Promise<boolean>,
     model: string = DEFAULT_MODEL,
     autoMode: boolean = false,
     signal?: AbortSignal,
@@ -239,7 +426,8 @@ export async function runAgentLoop(
     const autoBlock = autoMode
         ? `\nMODO AUTOMATICO ATIVO: Escreva arquivos diretamente sem pedir confirmacao. Apos cada escrita, rode os testes do projeto automaticamente com run_command. Se os testes falharem, corrija o codigo e rode os testes de novo. Repita ate todos os testes passarem ou atingir o limite de tentativas.`
         : '';
-    const systemContent = [SYSTEM_PROMPT + autoBlock, contextBlock].filter(Boolean).join('\n\n');
+    const browserGuidance = `# NAVEGADOR PADRAO\nSistema atual: ${process.platform}. Browser recomendado: ${describeRecommendedBrowser()}. Use esse browser quando o usuario nao especificar outro.`;
+    const systemContent = [SYSTEM_PROMPT + autoBlock, browserGuidance, contextBlock].filter(Boolean).join('\n\n');
     const priorMessages = buildMessagesFromHistory(sessionHistory.slice(0, -1));
     const roundMessages: Message[] = [
         { role: 'system', content: systemContent },
@@ -253,7 +441,7 @@ export async function runAgentLoop(
         onInjectMessage((msg) => { injectedMessage = msg; });
     }
 
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, autoMode);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onConfirmWrite, onConfirmCommand, autoMode);
 
     const thinkingStatus = [
         'Analisando sua solicitacao...',
@@ -266,6 +454,7 @@ export async function runAgentLoop(
     ];
 
     let lastToolName = '';
+    const browserActionSummary: { action: string; args: Record<string, any>; output: string }[] = [];
     const maxSteps = autoMode ? 200 : MAX_AGENT_STEPS;
     let step = 0;
 
@@ -286,6 +475,7 @@ export async function runAgentLoop(
             search_in_workspace: 'Analisando resultados da busca...',
             write_local_file:  'Elaborando proxima acao...',
             run_command:       'Analisando output do comando...',
+            browser_action: 'Analisando resultado do navegador...',
         };
         const thinking = lastToolName && statusAfterTool[lastToolName]
             ? statusAfterTool[lastToolName]
@@ -316,6 +506,13 @@ export async function runAgentLoop(
             const toolOutput = handler
                 ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+            if (name === 'browser_action') {
+                browserActionSummary.push({
+                    action: String((args as Record<string, any>).action || 'browser_action'),
+                    args: args as Record<string, any>,
+                    output: toolOutput,
+                });
+            }
 
             roundMessages.push({
                 role: 'assistant',
@@ -333,6 +530,12 @@ export async function runAgentLoop(
             });
         } else if (result.responseText !== undefined) {
             const text = result.responseText || '';
+            if (shouldRunBrowserFallback(userPrompt, text)) {
+                onStatus(`Executando teste no navegador (${describeRecommendedBrowser()})...`);
+                const fallback = await runBrowserFallback(userPrompt, getRecommendedBrowser());
+                browserActionSummary.push(...fallback.summary);
+                return `${fallback.response}${formatBrowserSummary(browserActionSummary)}`;
+            }
             if (text && detectsPendingAction(text, autoMode)) {
                 // Modelo anunciou ou fingiu ter feito algo sem chamar a ferramenta — empurra de volta
                 roundMessages.push({ role: 'assistant', content: text });
@@ -345,7 +548,10 @@ export async function runAgentLoop(
                 lastToolName = '';
                 continue;
             }
-            return text || 'Nao foi possivel obter resposta.';
+            if (browserActionSummary.length > 0) {
+                return `${text || 'Conclui as acoes de navegador, mas o modelo nao gerou uma resposta final.'}${formatBrowserSummary(browserActionSummary)}`;
+            }
+            return text || `Nao foi possivel obter resposta. Se voce pediu teste no navegador, o modelo atual pode nao ter chamado browser_action. Browser recomendado neste sistema: ${describeRecommendedBrowser()}.`;
         } else {
             break;
         }

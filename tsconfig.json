@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "rootDir": "./src",
     "outDir": "./dist",
-    "types": ["node", "jest"]  /* Adicionado 'jest' aqui */
+    "types": ["node"]
   },
   "include": [
     "src/**/*.ts"
