@@ -133,5 +133,101 @@ exports.TOOLS = [
             required: ['command'],
         },
     },
+    {
+        name: 'browser_action',
+        description: 'Controla um navegador web real de forma autonoma. Use para navegar em sites, capturar erros de console, inspecionar requests de rede, acessar cookies, clicar em elementos, preencher formularios e tirar screenshots. Suporta Chrome (chromium) e Safari (webkit). Sempre chame navigate antes de qualquer outra acao.',
+        parameters: {
+            type: 'object',
+            properties: {
+                action: {
+                    type: 'string',
+                    enum: [
+                        'navigate',
+                        'get_html',
+                        'get_console',
+                        'get_network',
+                        'get_cookies',
+                        'click',
+                        'type',
+                        'screenshot',
+                        'evaluate',
+                        'close',
+                        'wait_for',
+                        'get_text',
+                        'get_attribute',
+                        'select',
+                        'hover',
+                        'scroll',
+                        'press',
+                        'clear',
+                        'get_title',
+                        'get_url',
+                        'reload',
+                        'wait',
+                        'get_errors_only',
+                        'get_network_errors',
+                        'network_filter',
+                        'save_test',
+                    ],
+                    description: 'Acao a executar. navigate abre uma URL. get_console retorna logs de console. get_network retorna requests de rede. get_cookies retorna cookies. click clica num elemento CSS. type preenche um campo. screenshot captura a tela inteira. evaluate executa JavaScript na pagina. close fecha o navegador.',
+                },
+                url: { type: 'string', description: 'URL completa para navegar. Obrigatorio em navigate. Ex: http://localhost:3000' },
+                selector: { type: 'string', description: 'Seletor CSS do elemento. Obrigatorio em click, type, wait_for, get_text, get_attribute, select, hover e clear. Ex: #email, .btn-submit, button[type=submit]' },
+                text: { type: 'string', description: 'Texto a digitar no campo. Obrigatorio em type.' },
+                script: { type: 'string', description: 'Codigo JavaScript a executar na pagina. Obrigatorio em evaluate. Ex: document.title' },
+                browser: { type: 'string', enum: ['chromium', 'webkit'], description: 'Navegador a usar: chromium para Chrome, webkit para Safari. Padrao: chromium.' },
+                attribute: {
+                    type: 'string',
+                    description: 'Nome do atributo a ler em get_attribute. Ex: href, src, value, aria-label.',
+                },
+                value: {
+                    type: 'string',
+                    description: 'Valor usado em select.',
+                },
+                key: {
+                    type: 'string',
+                    description: 'Tecla usada em press. Ex: Enter, Escape, Tab, ArrowDown.',
+                },
+                direction: {
+                    type: 'string',
+                    enum: ['up', 'down'],
+                    description: 'Direcao do scroll.',
+                },
+                amount: {
+                    type: 'number',
+                    description: 'Quantidade de pixels para scroll.',
+                },
+                timeoutMs: {
+                    type: 'number',
+                    description: 'Tempo em milissegundos para wait_for ou wait.',
+                },
+                urlContains: {
+                    type: 'string',
+                    description: 'Filtro para requests cuja URL contem esse trecho.',
+                },
+                method: {
+                    type: 'string',
+                    description: 'Filtro de metodo HTTP. Ex: GET, POST, PUT, DELETE.',
+                },
+                statusMin: {
+                    type: 'number',
+                    description: 'Status HTTP minimo para filtro de rede.',
+                },
+                statusMax: {
+                    type: 'number',
+                    description: 'Status HTTP maximo para filtro de rede.',
+                },
+                testName: {
+                    type: 'string',
+                    description: 'Nome opcional do teste gerado por save_test.',
+                },
+                outputPath: {
+                    type: 'string',
+                    description: 'Caminho opcional para salvar o teste gerado.',
+                },
+            },
+            required: ['action'],
+        },
+    },
 ];
 exports.TOOL_NAMES = new Set(exports.TOOLS.map(t => t.name));

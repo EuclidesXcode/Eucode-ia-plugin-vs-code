@@ -35,8 +35,9 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.searchInWorkspace = searchInWorkspace;
 exports.runCommand = runCommand;
-const child_process_1 = require("child_process");
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+const child_process_1 = require("child_process");
 const ALLOWED_PREFIXES = [
     'python', 'python3', 'node', 'npm', 'npx', 'yarn',
     'tsc', 'eslint', 'prettier', 'jest', 'vitest', 'mocha',
@@ -44,6 +45,12 @@ const ALLOWED_PREFIXES = [
     'ls', 'cat', 'find', 'grep', 'mkdir', 'cp', 'mv',
     'echo', 'pwd', 'which',
 ];
+const SEARCH_EXTS = new Set([
+    '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.dart',
+]);
+const SEARCH_IGNORED_DIRS = new Set([
+    'node_modules', '.git', 'dist', 'out', 'build', 'coverage',
+]);
 const BLOCKED_PATTERNS = [
     /rm\s+-rf/i, /rm\s+-r/i,
     /sudo/i,
@@ -78,12 +85,56 @@ function runAsync(command, cwd, timeoutMs) {
     });
 }
 async function searchInWorkspace(query, dirPath) {
-    const escaped = query.replace(/'/g, "'\\''");
-    const cmd = `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.py" --include="*.go" --include="*.rs" --include="*.java" --include="*.dart" -e '${escaped}' ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
-    const result = await runAsync(cmd, '/', 10000);
-    return result === '[OK] Comando executado sem saida.'
-        ? `Nenhum resultado para "${query}" em ${dirPath}`
-        : result;
+    if (!query) {
+        return 'Nenhum resultado para "" em ' + dirPath;
+    }
+    const root = path.resolve(dirPath || process.cwd());
+    const results = [];
+    function visit(currentPath) {
+        if (results.length >= 60) {
+            return;
+        }
+        let entries;
+        try {
+            entries = fs.readdirSync(currentPath, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const entry of entries) {
+            if (results.length >= 60) {
+                return;
+            }
+            if (SEARCH_IGNORED_DIRS.has(entry.name)) {
+                continue;
+            }
+            const fullPath = path.join(currentPath, entry.name);
+            if (entry.isDirectory()) {
+                visit(fullPath);
+                continue;
+            }
+            if (!entry.isFile() || !SEARCH_EXTS.has(path.extname(entry.name).toLowerCase())) {
+                continue;
+            }
+            let content;
+            try {
+                content = fs.readFileSync(fullPath, 'utf8');
+            }
+            catch {
+                continue;
+            }
+            const lines = content.split(/\r?\n/);
+            for (let index = 0; index < lines.length && results.length < 60; index++) {
+                if (lines[index].includes(query)) {
+                    results.push(`${fullPath}:${index + 1}:${lines[index].trim()}`);
+                }
+            }
+        }
+    }
+    visit(root);
+    return results.length > 0
+        ? results.join('\n')
+        : `Nenhum resultado para "${query}" em ${root}`;
 }
 async function runCommand(command, cwd) {
     const trimmed = command.trim();
