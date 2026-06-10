@@ -51,6 +51,8 @@ const prompt_1 = require("./prompt");
 const tools_definition_2 = require("./tools-definition");
 const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
+const context_sanitizer_1 = require("../services/context-sanitizer");
+const execution_guard_1 = require("../services/execution-guard");
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code) {
     const patterns = [
@@ -533,29 +535,29 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     // The system prompt is just the conversational instructions.
     const effectiveAutoMode = chatMode ? false : autoMode;
     const effectiveHybridConfig = chatMode ? undefined : hybridConfig;
+    // Bloco do modo AUTO: conciso e em PT-BR. Modelo pequeno segue melhor 4
+    // princípios curtos do que 25 linhas com MAIÚSCULAS e "NEVER/ALWAYS"
+    // repetidos. O detalhe da sequência de build é tratado em runtime pelos
+    // guards (ExecutionGuardService), não empurrado preventivamente aqui.
     const autoBlock = effectiveAutoMode
-        ? `\nAUTO MODE ACTIVE — strict rules:
-- Execute the task end-to-end without asking the user anything.
-- After writing files, ALWAYS run a build/test command to verify (npm run build, npm test, tsc, etc.).
-- If a command fails (exit code != 0), READ the error output, diagnose the root cause, fix it with edit_file/write_local_file, and RE-RUN the command. Do NOT stop or describe — fix and retry.
-- Never end with phrases like "I'll try", "let me try", "vou tentar", "vou ajustar" — execute the action immediately instead.
-- Only finish when: (a) a build/test command exited with code 0, OR (b) the task explicitly does not require a build.
-- When truly done, respond with a one-line summary.
-
-# CRITICAL — BUILD/PACKAGE TASKS
-When the user task mentions ANY of: build, compile, package, deploy, release, .vsix, npm run, gerar versao, marketplace — you MUST follow this exact sequence and NOT stop until it completes:
-1. read_local_file("package.json") to see current scripts and version
-2. edit_file if version bump is needed
-3. run_command for the appropriate build (npm run build, vsce package, npm run package, etc.)
-4. After the command finishes, use list_directory or read_local_file to VERIFY the output artifact (.vsix, dist/, etc.) actually exists on disk
-5. Only then declare done
-
-NEVER do multiple consecutive file edits without running the build between them. After ANY edit of package.json (or similar config), the NEXT tool call MUST be run_command.
-NEVER assume a file was created without verifying with list_directory or read_local_file.`
+        ? `\nModo AUTO ativo:
+- Execute a tarefa de ponta a ponta sem perguntar nada ao usuário.
+- Depois de escrever arquivos, rode o build/teste para verificar (npm run build, npm test, tsc...).
+- Comando falhou? Leia o erro, corrija o arquivo certo e rode de novo. Não descreva — corrija.
+- Só conclua quando o build/teste sair com código 0 (ou quando a tarefa não exigir build). Encerre com uma frase.`
         : '';
+    // ── Contexto LAZY ─────────────────────────────────────────────────
+    // ProjectIntel e RAG são caros em tokens (~700+) e na maioria das rodadas
+    // de continuação o modelo já tem o contexto na própria conversa. Em vez de
+    // empurrá-los em TODO turno, só injetamos quando agregam: na 1ª rodada da
+    // sessão (modelo ainda não conhece o projeto) ou quando o pedido sugere
+    // navegar/encontrar código. Libera a janela do modelo pequeno para a tarefa.
+    const isFirstRoundOfSession = sessionHistory.filter(h => h.role === 'assistant').length === 0;
+    const promptNeedsCodebaseContext = /\b(onde|qual arquivo|encontr|busc|procur|refator|implement|adicion|cri[ae]|corrig|fix|where|find|search|implement|add|create|refactor)\b/i.test(userPrompt);
+    const injectHeavyContext = isFirstRoundOfSession || promptNeedsCodebaseContext;
     // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
-    if (!chatMode && ragEndpoint && ragCollection) {
+    if (!chatMode && ragEndpoint && ragCollection && injectHeavyContext) {
         const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
         ragContext = (0, rag_client_1.formatRagContext)(ragResults);
     }
@@ -571,7 +573,7 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     // Cap reduzido de 40 para 20 arquivos (libera ~700 tokens em todo prompt).
     // Pode ser desligado nas configuracoes para modelos < 4B ou monorepos.
     let projectIntelSummary = '';
-    if (!chatMode && projectIntelEnabled && defaultCwd) {
+    if (!chatMode && projectIntelEnabled && defaultCwd && injectHeavyContext) {
         try {
             const intel = new project_intel_1.ProjectIntelService(defaultCwd);
             projectIntelSummary = intel.summarizeForPrompt(20, 120);
@@ -605,6 +607,8 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     const sessionApprovedCommands = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedCommands : []);
     const fileCache = new Map();
     const dirCache = new Map();
+    // Guard único de execução — fonte única dos nudges corretivos do loop.
+    const executionGuard = new execution_guard_1.ExecutionGuardService();
     const counters = {
         filesWritten: 0,
         lastCommandFailed: false,
@@ -628,6 +632,12 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
+    // Auto-continuação: em modo AUTO o usuário não quer clicar "continuar" a
+    // cada parada branda (contexto cheio / limite de passos). O loop retoma
+    // sozinho do checkpoint até MAX_AUTO_CONTINUES vezes; só então devolve o
+    // botão para clique manual — teto que evita loop infinito queimando recursos.
+    const MAX_AUTO_CONTINUES = 3;
+    let autoContinueCount = 0;
     // Quando o agente atinge um limite (passos ou respostas vazias) sem concluir,
     // salva um resumo do progresso na memoria da sessao. Assim, ao continuar, o
     // proximo turno recebe esse contexto (via buildMemorySummary) e retoma de
@@ -657,6 +667,39 @@ NEVER assume a file was created without verifying with list_directory or read_lo
         }
         catch { /* noop */ }
         onStatus('Progresso salvo na memoria — posso continuar de onde parei.');
+    };
+    // Trata uma parada BRANDA (contexto cheio ou limite de passos). Em modo
+    // AUTO, retoma a tarefa sozinho do checkpoint enquanto houver orçamento de
+    // auto-continuação. Retorna:
+    //   - null  → a execução deve CONTINUAR (o while segue); o estado foi
+    //             resetado e uma mensagem de continuação foi injetada.
+    //   - string→ texto final a ser retornado ao usuário (com [CONTINUE_BUTTON]
+    //             em AUTO já sem orçamento, ou texto puro fora do AUTO).
+    const handleSoftStop = (reason, manualText) => {
+        persistProgressCheckpoint(reason);
+        if (effectiveAutoMode && autoContinueCount < MAX_AUTO_CONTINUES) {
+            autoContinueCount++;
+            onStatus(`AUTO: retomando sozinho do checkpoint (${autoContinueCount}/${MAX_AUTO_CONTINUES})...`);
+            // Reseta os contadores de parada e poda o contexto para liberar a
+            // janela, igual ao que o clique manual provocaria — mas sem clique.
+            emptyResponseStreak = 0;
+            pendingActionStreak = 0;
+            step = 0;
+            pruneRoundToolMessages(roundMessages, 1);
+            roundMessages.push({
+                role: 'user',
+                content: 'Continue a tarefa de onde parou. Voce nao terminou — execute as proximas etapas ate o build passar com sucesso. Nao refaca o que ja foi feito.',
+            });
+            lastToolName = '';
+            return null;
+        }
+        emitTelemetry();
+        if (effectiveAutoMode) {
+            // Esgotou o teto de auto-continuação — devolve o botão para o usuário.
+            return `${manualText}\n\n[CONTINUE_BUTTON]`;
+        }
+        // Fora do AUTO o comportamento original: oferece o botão de continuar.
+        return `${manualText}\n\n[CONTINUE_BUTTON]`;
     };
     // Tracks repeated identical tool calls (tool name + args). If the model
     // keeps calling the same thing, we nudge it to do something else.
@@ -779,351 +822,385 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             });
         }
     }
-    while (++step <= maxSteps) {
-        if (signal?.aborted) {
-            emitTelemetry();
-            return '[INTERRUPTED] Execution cancelled by user.';
-        }
-        if (injectedMessages.length > 0) {
-            const combined = injectedMessages.splice(0).join('\n');
-            roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${combined}` });
-            lastToolName = '';
-        }
-        const statusAfterTool = {
-            list_directory: 'Analyzing project structure...',
-            read_local_file: 'Processing file contents...',
-            edit_file: 'Working out next action...',
-            search_in_workspace: 'Analyzing search results...',
-            get_diagnostics: 'Analyzing editor diagnostics...',
-            write_local_file: 'Working out next action...',
-            run_command: 'Analyzing command output...',
-            run_git: 'Analyzing git result...',
-            web_search: 'Analyzing web results...',
-            todo_update: 'Updating task list...',
-        };
-        const thinking = lastToolName && statusAfterTool[lastToolName]
-            ? statusAfterTool[lastToolName]
-            : thinkingStatus[step % thinkingStatus.length];
-        onStatus(thinking);
-        // In CHAT mode, only expose web_search (and only if the user
-        // explicitly enabled it). All code-editing tools are hidden.
-        const baseTools = enabledTools?.length
-            ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
-            : tools_definition_2.TOOLS;
-        const activeTools = chatMode
-            ? baseTools.filter(t => t.name === 'web_search')
-            : baseTools;
-        // Preventive pruning calibrated for a 2048-token context window.
-        // Only prune when significantly over budget, keeping the most recent pairs
-        // so the model retains context of what it just read/did.
-        {
-            const totalChars = roundMessages.reduce((acc, m) => {
-                const content = typeof m.content === 'string' ? m.content : '';
-                const toolArgs = m.tool_calls ? JSON.stringify(m.tool_calls) : '';
-                return acc + content.length + toolArgs.length;
-            }, 0);
-            const estimatedTokens = Math.floor(totalChars / 4);
-            if (estimatedTokens > 1200) {
-                // Keep more pairs in auto mode so model doesn't lose what it just read
-                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
+    // ── Âncora de plano local (sem HYBRID) ─────────────────────────────
+    // Modelo pequeno se perde em tarefas multi-passo sem um plano que o
+    // ancore. Quando NÃO há HYBRID gerando o plano e a tarefa parece ter
+    // vários passos, pedimos que ele próprio comece pelo todo_update — isso
+    // cria um scratchpad de estado que guia as rodadas seguintes muito melhor
+    // do que regras abstratas. Mensagem curta, só uma vez, na 1ª rodada.
+    const taskLooksMultiStep = userPrompt.trim().split(/\s+/).length >= 12
+        || /\b(e depois|então|primeiro|em seguida|todos os|cada|refator|implement|migr|criar?\s+\w+.*\be\b)\b/i.test(userPrompt);
+    if (!chatMode && !hybridActive && isFirstRoundOfSession && taskLooksMultiStep) {
+        roundMessages.push({
+            role: 'user',
+            content: 'Antes de agir, chame todo_update com 3 a 5 passos curtos para esta tarefa. Depois execute o primeiro passo.',
+        });
+    }
+    // Loop externo: permite que o limite de passos seja "rearmado" pela
+    // auto-continuação em modo AUTO (handleSoftStop reseta step=0). Sem AUTO,
+    // ou esgotado o teto, sai com o texto final.
+    autoContinueLoop: while (true) {
+        while (++step <= maxSteps) {
+            if (signal?.aborted) {
+                emitTelemetry();
+                return '[INTERRUPTED] Execution cancelled by user.';
             }
-        }
-        // Only stream text to UI when there's a chance this is the final reply.
-        // If the model ends up calling a tool instead, onStreamChunk output is
-        // discarded — the UI bubble gets cleared before the tool result is shown.
-        let streamedSoFar = '';
-        const onChunk = onStreamChunk
-            ? (text) => { streamedSoFar += text; onStreamChunk(text); }
-            : undefined;
-        const result = provider === 'anthropic' && anthropicApiKey
-            ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
-            : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
-        // If the model called a tool, the streamed text was reasoning/preamble —
-        // tell the UI to discard it so the bubble doesn't show stale content.
-        if (result.toolCall && streamedSoFar) {
-            onStreamChunk?.('\x00CLEAR');
-        }
-        if (result.responseText === '__ABORTED__') {
-            emitTelemetry();
-            return '[INTERRUPTED] Execution cancelled by user.';
-        }
-        if (result.responseText === '__INFRA_ERROR__') {
-            emitTelemetry();
-            // Se o stream ja tinha gerado texto antes de cair, preserva o que
-            // veio em vez de descartar — o usuario pode aproveitar a resposta
-            // parcial mesmo com erro. A mensagem de diagnostico vai junto.
-            const detail = result.errorDetail || 'Erro ao chamar o modelo.';
-            if (result.partialText && result.partialText.length > 20) {
-                return `${result.partialText}\n\n---\n\n⚠ ${detail}\n(resposta interrompida apos ${result.partialText.length} chars)`;
+            if (injectedMessages.length > 0) {
+                const combined = injectedMessages.splice(0).join('\n');
+                roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${combined}` });
+                lastToolName = '';
             }
-            return `⚠ ${detail}`;
-        }
-        // Accumulate telemetry
-        if (result.usage) {
-            totalPromptTokens += result.usage.promptTokens;
-            totalCompletionTokens += result.usage.completionTokens;
-            totalElapsedMs += result.usage.elapsedMs;
-        }
-        if (!result.toolCall && result.responseText) {
-            const escaped = detectEscapedToolCall(result.responseText);
-            if (escaped) {
-                result.toolCall = escaped;
-                result.responseText = '';
+            const statusAfterTool = {
+                list_directory: 'Analyzing project structure...',
+                read_local_file: 'Processing file contents...',
+                edit_file: 'Working out next action...',
+                search_in_workspace: 'Analyzing search results...',
+                get_diagnostics: 'Analyzing editor diagnostics...',
+                write_local_file: 'Working out next action...',
+                run_command: 'Analyzing command output...',
+                run_git: 'Analyzing git result...',
+                web_search: 'Analyzing web results...',
+                todo_update: 'Updating task list...',
+            };
+            const thinking = lastToolName && statusAfterTool[lastToolName]
+                ? statusAfterTool[lastToolName]
+                : thinkingStatus[step % thinkingStatus.length];
+            onStatus(thinking);
+            // In CHAT mode, only expose web_search (and only if the user
+            // explicitly enabled it). All code-editing tools are hidden.
+            const baseTools = enabledTools?.length
+                ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
+                : tools_definition_2.TOOLS;
+            // Gating de ferramentas por fase: para modelo pequeno, menos opções =
+            // decisão mais fácil. Escondemos run_git e web_search a menos que a
+            // tarefa os peça (palavra-chave no prompt) ou o modelo já os tenha usado
+            // nesta rodada. As ferramentas de edição/leitura ficam sempre visíveis.
+            const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag)\b/i.test(userPrompt)
+                || lastToolName === 'run_git';
+            const webRelevant = /\b(http|https|www\.|documenta|pesquis|search|web|api d[eo]|como usar|biblioteca|library|erro desconhecido)\b/i.test(userPrompt)
+                || lastToolName === 'web_search';
+            const activeTools = chatMode
+                ? baseTools.filter(t => t.name === 'web_search')
+                : baseTools.filter(t => (t.name !== 'run_git' || gitRelevant) &&
+                    (t.name !== 'web_search' || webRelevant));
+            // Preventive pruning calibrated for a 2048-token context window.
+            // Only prune when significantly over budget, keeping the most recent pairs
+            // so the model retains context of what it just read/did.
+            {
+                const totalChars = roundMessages.reduce((acc, m) => {
+                    const content = typeof m.content === 'string' ? m.content : '';
+                    const toolArgs = m.tool_calls ? JSON.stringify(m.tool_calls) : '';
+                    return acc + content.length + toolArgs.length;
+                }, 0);
+                const estimatedTokens = Math.floor(totalChars / 4);
+                if (estimatedTokens > 1200) {
+                    // Keep more pairs in auto mode so model doesn't lose what it just read
+                    pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
+                }
             }
-        }
-        if (result.toolCall) {
-            const { name, arguments: args } = result.toolCall.function;
-            lastToolName = name;
-            const toolCallId = result.toolCall.id || `call_${step}`;
-            const handler = toolHandlers[name];
-            // Loop guard: if the model calls the same tool with the same args
-            // 3+ times in a row, inject a corrective message instead of running
-            // it again. Skips for run_command (legitimately retried) and
-            // todo_update (whole list is the arg, changes per call).
-            const sig = `${name}:${JSON.stringify(args)}`;
-            const sigCount = (toolCallSignatures.get(sig) || 0) + 1;
-            toolCallSignatures.set(sig, sigCount);
-            if (sigCount >= 3 && name !== 'run_command' && name !== 'todo_update') {
+            // Only stream text to UI when there's a chance this is the final reply.
+            // If the model ends up calling a tool instead, onStreamChunk output is
+            // discarded — the UI bubble gets cleared before the tool result is shown.
+            let streamedSoFar = '';
+            const onChunk = onStreamChunk
+                ? (text) => { streamedSoFar += text; onStreamChunk(text); }
+                : undefined;
+            const result = provider === 'anthropic' && anthropicApiKey
+                ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
+                : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
+            // If the model called a tool, the streamed text was reasoning/preamble —
+            // tell the UI to discard it so the bubble doesn't show stale content.
+            if (result.toolCall && streamedSoFar) {
+                onStreamChunk?.('\x00CLEAR');
+            }
+            if (result.responseText === '__ABORTED__') {
+                emitTelemetry();
+                return '[INTERRUPTED] Execution cancelled by user.';
+            }
+            if (result.responseText === '__INFRA_ERROR__') {
+                emitTelemetry();
+                // Se o stream ja tinha gerado texto antes de cair, preserva o que
+                // veio em vez de descartar — o usuario pode aproveitar a resposta
+                // parcial mesmo com erro. A mensagem de diagnostico vai junto.
+                const detail = result.errorDetail || 'Erro ao chamar o modelo.';
+                if (result.partialText && result.partialText.length > 20) {
+                    return `${result.partialText}\n\n---\n\n⚠ ${detail}\n(resposta interrompida apos ${result.partialText.length} chars)`;
+                }
+                return `⚠ ${detail}`;
+            }
+            // Accumulate telemetry
+            if (result.usage) {
+                totalPromptTokens += result.usage.promptTokens;
+                totalCompletionTokens += result.usage.completionTokens;
+                totalElapsedMs += result.usage.elapsedMs;
+            }
+            if (!result.toolCall && result.responseText) {
+                const escaped = detectEscapedToolCall(result.responseText);
+                if (escaped) {
+                    result.toolCall = escaped;
+                    result.responseText = '';
+                }
+            }
+            if (result.toolCall) {
+                const { name, arguments: args } = result.toolCall.function;
+                lastToolName = name;
+                const toolCallId = result.toolCall.id || `call_${step}`;
+                const handler = toolHandlers[name];
+                // Loop guard: if the model calls the same tool with the same args
+                // 3+ times in a row, inject a corrective message instead of running
+                // it again. Skips for run_command (legitimately retried) and
+                // todo_update (whole list is the arg, changes per call).
+                const sig = `${name}:${JSON.stringify(args)}`;
+                const sigCount = (toolCallSignatures.get(sig) || 0) + 1;
+                toolCallSignatures.set(sig, sigCount);
+                if (sigCount >= 3 && name !== 'run_command' && name !== 'todo_update') {
+                    roundMessages.push({
+                        role: 'assistant',
+                        content: null,
+                        tool_calls: [{ id: toolCallId, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+                    });
+                    roundMessages.push({
+                        role: 'tool',
+                        content: `[LOOP DETECTED] You have called ${name} with the same arguments ${sigCount} times. The result has not changed. Stop repeating this call. Either: (a) use a different tool, (b) use different arguments, or (c) act on the information you already have.`,
+                        tool_call_id: toolCallId,
+                    });
+                    lastToolName = name;
+                    continue;
+                }
+                const toolOutput = handler
+                    ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
+                    : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+                // Limpa o output antes de mandar pro LLM: remove lixo (ANSI, barras
+                // de progresso, linhas em branco/spinners repetidos), aplica limpeza
+                // por tool (run_command prioriza erros + cauda, git diff descarta
+                // contexto, search deduplica) e so entao trunca de forma inteligente
+                // (head+tail em limites de linha) se ainda passar do limite.
+                // Substitui o slice cego antigo. Limpeza adaptativa por modo:
+                // agressiva em AUTO (contexto apertado), leve no modo manual.
+                const truncatedOutput = context_sanitizer_1.contextSanitizer.clean(name, toolOutput, {
+                    autoMode: effectiveAutoMode,
+                });
                 roundMessages.push({
                     role: 'assistant',
                     content: null,
-                    tool_calls: [{ id: toolCallId, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+                    tool_calls: [{
+                            id: toolCallId,
+                            type: 'function',
+                            function: { name, arguments: JSON.stringify(args) },
+                        }],
                 });
                 roundMessages.push({
                     role: 'tool',
-                    content: `[LOOP DETECTED] You have called ${name} with the same arguments ${sigCount} times. The result has not changed. Stop repeating this call. Either: (a) use a different tool, (b) use different arguments, or (c) act on the information you already have.`,
+                    content: truncatedOutput,
                     tool_call_id: toolCallId,
                 });
-                lastToolName = name;
-                continue;
-            }
-            const toolOutput = handler
-                ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
-                : `ERRO: Ferramenta "${name}" nao reconhecida.`;
-            // Truncate large tool outputs to avoid filling the context window.
-            // In auto mode limits are tighter — no history budget and test/build
-            // output (jest, coverage tables) can be thousands of chars.
-            // Calibrated for 2048-token context: system (~250t) + prompt + response (1024t).
-            // Leaves ~750 tokens (~3000 chars) for tool output + conversation.
-            const TOOL_OUTPUT_LIMITS = {
-                list_directory: 600,
-                search_in_workspace: 800,
-                read_local_file: 1200,
-                run_command: 800,
-                run_git: 600,
-                web_search: 1000,
-            };
-            const limit = TOOL_OUTPUT_LIMITS[name] ?? 800;
-            const truncatedOutput = toolOutput.length > limit
-                ? toolOutput.slice(0, limit) + `\n...[truncated — ${toolOutput.length - limit} chars omitted]`
-                : toolOutput;
-            roundMessages.push({
-                role: 'assistant',
-                content: null,
-                tool_calls: [{
-                        id: toolCallId,
-                        type: 'function',
-                        function: { name, arguments: JSON.stringify(args) },
-                    }],
-            });
-            roundMessages.push({
-                role: 'tool',
-                content: truncatedOutput,
-                tool_call_id: toolCallId,
-            });
-            // ── GATILHO 2: verificacao apos escrita / build ────────────
-            // V1 (deterministica) roda sempre que houve escrita/edicao.
-            // V2 (semantica via pago) so roda em milestones: build verde
-            // ou escrita que tenha "implementado" algo nao-trivial.
-            if (hybridActive) {
-                if ((name === 'write_local_file' || name === 'edit_file') && !toolOutput.startsWith('[ERROR') && !toolOutput.startsWith('[ERRO')) {
-                    const fp = args.filePath || '';
-                    if (fp) {
-                        const absPath = (0, validation_1.resolveFilePath)(fp, defaultCwd);
-                        const v1 = v1VerifyWrite(absPath, toolOutput);
-                        roundMessages.push({
-                            role: 'user',
-                            content: `[VERIFICATION] ${v1}`,
-                        });
+                // ── GATILHO 2: verificacao apos escrita / build ────────────
+                // V1 (deterministica) roda sempre que houve escrita/edicao.
+                // V2 (semantica via pago) so roda em milestones: build verde
+                // ou escrita que tenha "implementado" algo nao-trivial.
+                if (hybridActive) {
+                    if ((name === 'write_local_file' || name === 'edit_file') && !toolOutput.startsWith('[ERROR') && !toolOutput.startsWith('[ERRO')) {
+                        const fp = args.filePath || '';
+                        if (fp) {
+                            const absPath = (0, validation_1.resolveFilePath)(fp, defaultCwd);
+                            const v1 = v1VerifyWrite(absPath, toolOutput);
+                            roundMessages.push({
+                                role: 'user',
+                                content: `[VERIFICATION] ${v1}`,
+                            });
+                        }
+                    }
+                    else if (name === 'run_command' && counters.lastBuildPassed && !counters.lastCommandFailed) {
+                        // V2: build acabou de passar — pago confirma se de fato esta tudo certo
+                        const verifySystem = 'You are a code reviewer. The local agent just ran a build/test command successfully. Look at the command output and decide: is the build truly OK, or are there warnings/skipped tests/incomplete work the local agent might be ignoring? Reply in ONE LINE: either "BUILD OK" or "BUILD CONCERN: <one sentence>".';
+                        const verifyUser = `Command: ${args.command || ''}\nOutput:\n${toolOutput.slice(0, 1500)}`;
+                        const verdict = await askSupport('verify_build', verifySystem, verifyUser, 150);
+                        if (verdict && verdict.toUpperCase().includes('CONCERN')) {
+                            roundMessages.push({
+                                role: 'user',
+                                content: `[BUILD REVIEW from support model] ${verdict}\n\nAddress this concern before declaring done.`,
+                            });
+                        }
                     }
                 }
-                else if (name === 'run_command' && counters.lastBuildPassed && !counters.lastCommandFailed) {
-                    // V2: build acabou de passar — pago confirma se de fato esta tudo certo
-                    const verifySystem = 'You are a code reviewer. The local agent just ran a build/test command successfully. Look at the command output and decide: is the build truly OK, or are there warnings/skipped tests/incomplete work the local agent might be ignoring? Reply in ONE LINE: either "BUILD OK" or "BUILD CONCERN: <one sentence>".';
-                    const verifyUser = `Command: ${args.command || ''}\nOutput:\n${toolOutput.slice(0, 1500)}`;
-                    const verdict = await askSupport('verify_build', verifySystem, verifyUser, 150);
-                    if (verdict && verdict.toUpperCase().includes('CONCERN')) {
-                        roundMessages.push({
-                            role: 'user',
-                            content: `[BUILD REVIEW from support model] ${verdict}\n\nAddress this concern before declaring done.`,
-                        });
+                // In auto mode keep fewer pairs since there's no history budget to spare.
+                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 6);
+            }
+            else if (result.responseText !== undefined) {
+                const text = result.responseText || '';
+                // Only treat completely empty response as recoverable overflow.
+                // Short responses are legitimate (model may say "Ok." then call a tool).
+                if (!text) {
+                    emptyResponseStreak++;
+                    onStatus(`Modelo retornou vazio — recarregando contexto (tentativa ${emptyResponseStreak}/3)`);
+                    if (emptyResponseStreak >= 3) {
+                        // Parada branda: contexto do modelo encheu. Em AUTO o loop
+                        // retoma sozinho do checkpoint (handleSoftStop); só devolve o
+                        // botão quando esgota o teto de auto-continuação ou fora do AUTO.
+                        const outcome = handleSoftStop('o modelo ficou sem contexto', 'A tarefa e longa e o contexto do modelo encheu. Salvei o progresso ate aqui na memoria. Clique para continuar de onde parei.');
+                        if (outcome === null) {
+                            continue;
+                        }
+                        return outcome;
                     }
+                    // Progressive pruning: each retry removes more pairs
+                    const keepPairs = Math.max(1, 3 - emptyResponseStreak);
+                    pruneRoundToolMessages(roundMessages, keepPairs);
+                    roundMessages.push({
+                        role: 'user',
+                        content: step <= 1
+                            ? userPrompt
+                            : 'Continue a tarefa de onde parou.',
+                    });
+                    lastToolName = '';
+                    continue;
                 }
-            }
-            // In auto mode keep fewer pairs since there's no history budget to spare.
-            pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 6);
-        }
-        else if (result.responseText !== undefined) {
-            const text = result.responseText || '';
-            // Only treat completely empty response as recoverable overflow.
-            // Short responses are legitimate (model may say "Ok." then call a tool).
-            if (!text) {
-                emptyResponseStreak++;
-                onStatus(`Modelo retornou vazio — recarregando contexto (tentativa ${emptyResponseStreak}/3)`);
-                if (emptyResponseStreak >= 3) {
-                    // Em vez de desistir e perder o progresso: salva um checkpoint
-                    // na memoria e oferece continuar (retoma de onde parou).
-                    persistProgressCheckpoint('o modelo ficou sem contexto');
-                    emitTelemetry();
-                    return 'A tarefa e longa e o contexto do modelo encheu. Salvei o progresso ate aqui na memoria. '
-                        + 'Clique para continuar de onde parei.\n\n[CONTINUE_BUTTON]';
-                }
-                // Progressive pruning: each retry removes more pairs
-                const keepPairs = Math.max(1, 3 - emptyResponseStreak);
-                pruneRoundToolMessages(roundMessages, keepPairs);
-                roundMessages.push({
-                    role: 'user',
-                    content: step <= 1
-                        ? userPrompt
-                        : 'Continue a tarefa de onde parou.',
-                });
-                lastToolName = '';
-                continue;
-            }
-            emptyResponseStreak = 0;
-            // Detect "code dumped in chat instead of using a tool":
-            // model included a fenced code block of substantial size but
-            // didn't call write_local_file/edit_file. Common failure mode
-            // when the model gives up on a tool error.
-            const codeBlockMatch = text.match(/```[a-z]*\n([\s\S]+?)\n```/i);
-            const dumpedCodeInChat = !!codeBlockMatch && codeBlockMatch[1].length > 200;
-            // ── Auto mode: force continuation rules ────────────────────────
-            // The user activated AUTO expecting the agent NOT to stop until
-            // the build passes. Any of these conditions mean "not done yet":
-            //   - model described an action but didn't call a tool
-            //   - planning text without ever writing a file
-            //   - last command failed (build/test/install error)
-            //   - never ran a successful build
-            //   - dumped code in chat instead of using write_local_file
-            // In all cases: push the model to act, don't return to the user.
-            const modelIsPlanning = effectiveAutoMode && counters.filesWritten === 0 && !lastToolName;
-            const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
-            const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
-            const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
-            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
-                pendingActionStreak++;
-                // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
-                // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
-                // com recovery em CADA multiplo de 4 (4, 8, 12) — cada chamada
-                // tenta dar um plano novo se o anterior nao destravou.
-                const RECOVERY_INTERVAL = 4;
-                const HARD_CAP_AUTO = 15;
-                if (hybridActive && pendingActionStreak > 0 && pendingActionStreak % RECOVERY_INTERVAL === 0) {
-                    const reason = lastCommandFailed
-                        ? 'recover_command'
-                        : buildNotYetPassed
-                            ? 'recover_syntax'
-                            : 'recover_stop';
-                    const sys = 'You are a senior engineer helping a stuck local agent. The local agent failed multiple attempts. Diagnose and produce a SHORT, SPECIFIC corrective plan in 3-5 bullets. Name exact files and exact actions. Be concrete.';
-                    const errCtx = counters.lastErrorFiles.length > 0
-                        ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
+                emptyResponseStreak = 0;
+                // Detect "code dumped in chat instead of using a tool":
+                // model included a fenced code block of substantial size but
+                // didn't call write_local_file/edit_file. Common failure mode
+                // when the model gives up on a tool error.
+                const codeBlockMatch = text.match(/```[a-z]*\n([\s\S]+?)\n```/i);
+                const dumpedCodeInChat = !!codeBlockMatch && codeBlockMatch[1].length > 200;
+                // ── Auto mode: force continuation rules ────────────────────────
+                // The user activated AUTO expecting the agent NOT to stop until
+                // the build passes. Any of these conditions mean "not done yet":
+                //   - model described an action but didn't call a tool
+                //   - planning text without ever writing a file
+                //   - last command failed (build/test/install error)
+                //   - never ran a successful build
+                //   - dumped code in chat instead of using write_local_file
+                // In all cases: push the model to act, don't return to the user.
+                const modelIsPlanning = effectiveAutoMode && counters.filesWritten === 0 && !lastToolName;
+                const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
+                const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
+                const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
+                if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+                    pendingActionStreak++;
+                    // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
+                    // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
+                    // com recovery em CADA multiplo de 4 (4, 8, 12) — cada chamada
+                    // tenta dar um plano novo se o anterior nao destravou.
+                    const RECOVERY_INTERVAL = 4;
+                    const HARD_CAP_AUTO = 15;
+                    if (hybridActive && pendingActionStreak > 0 && pendingActionStreak % RECOVERY_INTERVAL === 0) {
+                        const reason = lastCommandFailed
+                            ? 'recover_command'
+                            : buildNotYetPassed
+                                ? 'recover_syntax'
+                                : 'recover_stop';
+                        const sys = 'You are a senior engineer helping a stuck local agent. The local agent failed multiple attempts. Diagnose and produce a SHORT, SPECIFIC corrective plan in 3-5 bullets. Name exact files and exact actions. Be concrete.';
+                        const errCtx = counters.lastErrorFiles.length > 0
+                            ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
+                            : '';
+                        const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nAttempt: ${pendingActionStreak}/${HARD_CAP_AUTO}\n\nWhat should the local agent do next?`;
+                        const recovery = await askSupport(reason, sys, usr, 500);
+                        if (recovery) {
+                            roundMessages.push({ role: 'assistant', content: text });
+                            roundMessages.push({
+                                role: 'user',
+                                content: `[HYBRID RECOVERY from support model] Tentativa ${pendingActionStreak}/${HARD_CAP_AUTO}. Follow this exactly:\n\n${recovery}`,
+                            });
+                            lastToolName = '';
+                            continue;
+                        }
+                    }
+                    if (pendingActionStreak >= HARD_CAP_AUTO) {
+                        // Hard cap to avoid eternal loop. Surface what happened
+                        // so the user knows the agent gave up and why.
+                        pendingActionStreak = 0;
+                        emitTelemetry();
+                        const reason = dumpedInsteadOfWriting
+                            ? 'O modelo escreveu codigo no chat em vez de salvar via tool — possivelmente o modelo local nao esta seguindo o protocolo de tool calling.'
+                            : lastCommandFailed
+                                ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
+                                : !counters.lastBuildPassed && counters.filesWritten > 0
+                                    ? 'O build ainda nao passou apos varias tentativas.'
+                                    : 'O modelo descreveu acoes mas nao executou.';
+                        return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}\n\n[CONTINUE_BUTTON]`;
+                    }
+                    // Fonte ÚNICA de nudge: o ExecutionGuardService decide qual
+                    // correção injetar (PT-BR, curta, colaborativa). Antes havia um
+                    // bloco de ternários aqui que duplicava — e divergia — da mesma
+                    // lógica do guard. Montamos o estado a partir dos counters do loop.
+                    // O loop não mantém o ToolCallRecord completo. O guard só lê
+                    // toolCalls em dois detectores: buildPendingNoCommand (algum
+                    // run_command de build já rodou?) e modelPlanning (toolCalls
+                    // vazio). Reconstruímos só esses dois sinais honestamente:
+                    // marcador de build se ele ocorreu, marcador genérico se houve
+                    // qualquer tool nesta rodada (lastToolName), senão vazio.
+                    const buildWasAttempted = lastBuildAttempted(roundMessages);
+                    const syntheticToolCalls = buildWasAttempted
+                        ? [{ name: 'run_command', args: { command: 'npm run build' }, output: '', success: true, timestamp: Date.now() }]
+                        : lastToolName
+                            ? [{ name: lastToolName, args: {}, output: '', success: true, timestamp: Date.now() }]
+                            : [];
+                    const guardState = {
+                        userPrompt,
+                        autoMode: effectiveAutoMode,
+                        hybridActive,
+                        toolCalls: syntheticToolCalls,
+                        filesWritten: counters.filesWritten,
+                        filesRead: filesReadThisRound.size,
+                        lastBuildPassed: counters.lastBuildPassed,
+                        lastCommandFailed: counters.lastCommandFailed,
+                        lastErrorFiles: counters.lastErrorFiles,
+                        lastEditedFile: counters.lastEditedFile,
+                        lastModelText: text,
+                        pendingActionStreak,
+                        emptyResponseStreak,
+                    };
+                    const guardResult = executionGuard.evaluate(guardState);
+                    // Anexa a localização do erro quando há arquivos apontados — dá
+                    // ao modelo o alvo concreto sem inflar o nudge base.
+                    const errorContext = (lastCommandFailed && counters.lastErrorFiles.length > 0)
+                        ? `\nArquivos do erro: ${counters.lastErrorFiles.join(', ')}${counters.lastErrorSummary ? ' — ' + counters.lastErrorSummary : ''}`
                         : '';
-                    const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nAttempt: ${pendingActionStreak}/${HARD_CAP_AUTO}\n\nWhat should the local agent do next?`;
-                    const recovery = await askSupport(reason, sys, usr, 500);
-                    if (recovery) {
+                    const nudge = guardResult
+                        ? guardResult.message + (guardResult.reason === 'command_failed' ? '' : errorContext)
+                        : 'Continue a tarefa.';
+                    roundMessages.push({ role: 'assistant', content: text });
+                    roundMessages.push({ role: 'user', content: nudge });
+                    lastToolName = '';
+                    continue;
+                }
+                pendingActionStreak = 0;
+                // In auto mode: before returning, check editor diagnostics.
+                // Only relevant if the model actually wrote/edited files this round.
+                // Wait 2s for the TypeScript language server to process the new files.
+                if (effectiveAutoMode && counters.filesWritten > 0) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    const diag = onGetDiagnostics();
+                    // Only block on actual errors — warnings are ignored in auto mode
+                    const hasErrors = diag && /\[ERROR\]/.test(diag);
+                    if (hasErrors) {
+                        onStatus('Erros detectados — corrigindo...');
                         roundMessages.push({ role: 'assistant', content: text });
                         roundMessages.push({
                             role: 'user',
-                            content: `[HYBRID RECOVERY from support model] Tentativa ${pendingActionStreak}/${HARD_CAP_AUTO}. Follow this exactly:\n\n${recovery}`,
+                            content: `The editor found TypeScript/build errors in the files you wrote. Fix all [ERROR] items now using edit_file. Ignore any [WARNING] lines.\n\n${diag}`,
                         });
                         lastToolName = '';
                         continue;
                     }
                 }
-                if (pendingActionStreak >= HARD_CAP_AUTO) {
-                    // Hard cap to avoid eternal loop. Surface what happened
-                    // so the user knows the agent gave up and why.
-                    pendingActionStreak = 0;
-                    emitTelemetry();
-                    const reason = dumpedInsteadOfWriting
-                        ? 'O modelo escreveu codigo no chat em vez de salvar via tool — possivelmente o modelo local nao esta seguindo o protocolo de tool calling.'
-                        : lastCommandFailed
-                            ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
-                            : !counters.lastBuildPassed && counters.filesWritten > 0
-                                ? 'O build ainda nao passou apos varias tentativas.'
-                                : 'O modelo descreveu acoes mas nao executou.';
-                    return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}\n\n[CONTINUE_BUTTON]`;
-                }
-                // Detector: model is editing the wrong file.
-                // If the error points to a file but the model just edited a
-                // different file, alert it explicitly with both paths.
-                const wrongFileEdit = lastCommandFailed
-                    && counters.lastErrorFiles.length > 0
-                    && counters.lastEditedFile
-                    && !counters.lastErrorFiles.some(f => counters.lastEditedFile.endsWith(f) || f.endsWith(path.basename(counters.lastEditedFile)));
-                const errorContext = (lastCommandFailed && counters.lastErrorFiles.length > 0)
-                    ? `\n\nERROR LOCATION (focus here):\n  Files: ${counters.lastErrorFiles.join(', ')}\n  Message: ${counters.lastErrorSummary || '(see command output)'}`
-                    : '';
-                // Detector "build task without any run_command": when the user
-                // prompt mentions build/package/compile/deploy/vsix/release but
-                // the model edited files without ever running a build command.
-                // Common failure: model bumps version in package.json and stops.
-                const taskRequiresBuild = effectiveAutoMode
-                    && /\b(build|compile|package|deploy|vsix|release|gerar versao|marketplace)\b/i.test(userPrompt);
-                const noCommandRunYet = counters.filesWritten > 0 && !lastBuildAttempted(roundMessages);
-                const buildPendingNoCommand = taskRequiresBuild && noCommandRunYet;
-                const nudge = dumpedInsteadOfWriting
-                    ? 'You wrote code in the chat instead of saving it to a file. The user cannot use code in the chat. Use write_local_file (for new/full-rewrite) or edit_file (for partial edits) NOW to save that code to disk. Do not paste code in your reply — call the tool.'
-                    : wrongFileEdit
-                        ? `WRONG FILE. You edited "${counters.lastEditedFile}" but the error is in "${counters.lastErrorFiles[0]}". Read "${counters.lastErrorFiles[0]}" now and fix THAT file. The bug is not where you were looking.${errorContext}`
-                        : buildPendingNoCommand
-                            ? `You edited files but have NOT yet run the build/package command that the user task requires. Call run_command now with the appropriate build command (e.g. "npm run build", "vsce package", "npm run package"). After it finishes, use list_directory to verify the output artifact exists. Do NOT keep editing without running the build.`
-                            : lastCommandFailed
-                                ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
-                                : buildNotYetPassed
-                                    ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                                    : effectiveAutoMode
-                                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
-                                        : 'continue';
-                roundMessages.push({ role: 'assistant', content: text });
-                roundMessages.push({ role: 'user', content: nudge });
-                lastToolName = '';
-                continue;
+                emitTelemetry();
+                return text;
             }
-            pendingActionStreak = 0;
-            // In auto mode: before returning, check editor diagnostics.
-            // Only relevant if the model actually wrote/edited files this round.
-            // Wait 2s for the TypeScript language server to process the new files.
-            if (effectiveAutoMode && counters.filesWritten > 0) {
-                await new Promise(r => setTimeout(r, 2000));
-                const diag = onGetDiagnostics();
-                // Only block on actual errors — warnings are ignored in auto mode
-                const hasErrors = diag && /\[ERROR\]/.test(diag);
-                if (hasErrors) {
-                    onStatus('Erros detectados — corrigindo...');
-                    roundMessages.push({ role: 'assistant', content: text });
-                    roundMessages.push({
-                        role: 'user',
-                        content: `The editor found TypeScript/build errors in the files you wrote. Fix all [ERROR] items now using edit_file. Ignore any [WARNING] lines.\n\n${diag}`,
-                    });
-                    lastToolName = '';
-                    continue;
-                }
+            else {
+                // result.responseText is undefined and no toolCall — API returned
+                // an unexpected shape. Treat as infra issue, don't loop silently.
+                emitTelemetry();
+                return 'Resposta inesperada do modelo. Tente novamente.';
             }
-            emitTelemetry();
-            return text;
         }
-        else {
-            // result.responseText is undefined and no toolCall — API returned
-            // an unexpected shape. Treat as infra issue, don't loop silently.
-            emitTelemetry();
-            return 'Resposta inesperada do modelo. Tente novamente.';
+        // Atingiu o limite de passos sem concluir. Parada branda: em AUTO o loop
+        // se rearma sozinho (handleSoftStop reseta step=0 e re-injeta continuação),
+        // voltando ao topo do loop externo. Fora do AUTO ou esgotado o teto, retorna.
+        const outcome = handleSoftStop('limite de passos atingido', 'Cheguei ao limite de passos desta rodada, mas salvei o progresso na memoria. Clique para continuar a tarefa de onde parei.');
+        if (outcome === null) {
+            continue autoContinueLoop;
         }
-    }
-    // Atingiu o limite de passos sem concluir: salva checkpoint e oferece
-    // continuar, em vez de pedir para o usuario refazer do zero.
-    persistProgressCheckpoint('limite de passos atingido');
-    emitTelemetry();
-    return 'Cheguei ao limite de passos desta rodada, mas salvei o progresso na memoria. '
-        + 'Clique para continuar a tarefa de onde parei.\n\n[CONTINUE_BUTTON]';
+        return outcome;
+    } // fim do autoContinueLoop
 }

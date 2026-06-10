@@ -4019,7 +4019,7 @@
                     if (!hasContinueBtn) { return; }
                     const btn = document.createElement('button');
                     btn.className = 'continue-btn';
-                    btn.innerHTML = '<span class="mi" style="font-size:14px">replay</span>Tentar mais 5 vezes';
+                    btn.innerHTML = '<span class="mi" style="font-size:14px">replay</span>Continuar tarefa';
                     btn.addEventListener('click', () => {
                         btn.disabled = true;
                         vscode.postMessage({ command: 'user_input', text: 'Continue a tarefa de onde parou. Voce nao terminou — execute as proximas etapas ate o build passar com sucesso.', autoMode: true });

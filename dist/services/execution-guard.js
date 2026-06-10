@@ -48,7 +48,7 @@ class ExecutionGuardService {
         return {
             severity: 'critical',
             reason: 'dumped_code_in_chat',
-            message: 'You wrote code in the chat instead of saving it to a file. The user cannot use code in the chat. Use write_local_file (for new/full-rewrite) or edit_file (for partial edits) NOW to save that code to disk. Do not paste code in your reply — call the tool.',
+            message: 'Próximo passo: salve esse código com write_local_file (novo arquivo) ou edit_file (mudança parcial). Código no chat não chega ao projeto — chame a ferramenta agora.',
             requireHybridIfAvailable: true,
         };
     }
@@ -68,7 +68,7 @@ class ExecutionGuardService {
         return {
             severity: 'critical',
             reason: 'wrong_file_edit',
-            message: `WRONG FILE. You edited "${state.lastEditedFile}" but the error is in "${state.lastErrorFiles[0]}". Read "${state.lastErrorFiles[0]}" now and fix THAT file. The bug is not where you were looking.`,
+            message: `Arquivo errado: o erro está em "${state.lastErrorFiles[0]}", não em "${state.lastEditedFile}". Abra "${state.lastErrorFiles[0]}" e corrija esse arquivo.`,
             requireHybridIfAvailable: true,
         };
     }
@@ -90,7 +90,7 @@ class ExecutionGuardService {
         return {
             severity: 'critical',
             reason: 'build_pending_no_command',
-            message: 'You edited files but have NOT yet run the build/package command that the user task requires. Call run_command now with the appropriate build command (e.g. "npm run build", "vsce package", "npm run package"). After it finishes, use list_directory to verify the output artifact exists. Do NOT keep editing without running the build.',
+            message: 'Você editou arquivos mas ainda não rodou o build que a tarefa pede. Próximo passo: chame run_command com o comando certo (ex: "npm run build", "vsce package"). Depois confirme o artefato com list_directory.',
             requireHybridIfAvailable: false,
         };
     }
@@ -100,12 +100,12 @@ class ExecutionGuardService {
             return null;
         }
         const errCtx = state.lastErrorFiles.length > 0
-            ? `\n\nERROR LOCATION:\n  Files: ${state.lastErrorFiles.join(', ')}`
+            ? `\nArquivos do erro: ${state.lastErrorFiles.join(', ')}`
             : '';
         return {
             severity: 'warn',
             reason: 'command_failed',
-            message: `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errCtx}`,
+            message: `O comando falhou. Leia o erro, ache a causa, corrija o arquivo apontado e rode de novo.${errCtx}`,
             requireHybridIfAvailable: state.pendingActionStreak >= 3,
         };
     }
@@ -123,7 +123,7 @@ class ExecutionGuardService {
         return {
             severity: 'warn',
             reason: 'build_not_passed',
-            message: 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.',
+            message: 'Você escreveu arquivos mas o build ainda não passou. Próximo passo: rode o build (ex: npm run build). Se falhar, corrija e tente de novo.',
             requireHybridIfAvailable: false,
         };
     }
@@ -141,7 +141,7 @@ class ExecutionGuardService {
         return {
             severity: 'info',
             reason: 'model_planning',
-            message: 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.',
+            message: 'Próximo passo: comece a executar. Use write_local_file, edit_file ou run_command agora — sem descrever antes.',
             requireHybridIfAvailable: false,
         };
     }

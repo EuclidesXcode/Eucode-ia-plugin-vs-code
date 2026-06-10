@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0
+
+- **Modo AUTO se auto-continua sozinho** — quando o agente trava por parada branda (contexto do modelo enche ou atinge o limite de passos), em AUTO ele agora retoma sozinho do checkpoint, sem voce precisar clicar "Continuar". Faz isso ate 3 vezes; so depois mostra o botao para clique manual. STOP corta na hora. O `[AUTO PAUSADO]` real (apos 15 tentativas + recovery HYBRID) continua pedindo clique, pois indica que o modelo nao da conta
+- **Economia de tokens: nova camada `ContextSanitizer`** — todo output de ferramenta (run_command, git, read, search...) passa por uma limpeza unica antes de ir ao modelo: remove ruido (codigos ANSI, barras de progresso, spinners, linhas repetidas), aplica limpeza por ferramenta (run_command prioriza erros + fim do output, git diff descarta contexto inalterado, search deduplica) e, quando ainda for grande, trunca de forma inteligente preservando inicio + fim (antes cortava cego no meio, descartando o erro). Adaptativo por modo: leve no manual, agressivo no AUTO
+- **Regras de negocio otimizadas para modelos pequenos (9-13B)** — system prompt enxugado (~40 regras → principios essenciais, sem duplicar o que ja vai no schema das ferramentas); nudges corretivos unificados em uma fonte unica (`ExecutionGuardService`), traduzidos para portugues, curtos e com tom de "proximo passo" em vez de punitivo
+- **Contexto pesado sob demanda** — ProjectIntel e RAG so sao injetados na 1a rodada da sessao ou quando o pedido sugere navegar/buscar codigo, liberando ~700 tokens nas rodadas de continuacao
+- **Ancora de plano local** — em tarefas multi-passo sem HYBRID, o agente comeca pedindo um `todo_update` curto, criando um scratchpad que guia melhor o modelo pequeno
+- **Ferramentas por fase** — `run_git` e `web_search` ficam ocultas ate a tarefa pedir, reduzindo o espaco de decisao do modelo
+
 ## 0.14.3
 
 - **Tarefas longas: checkpoint na memoria em vez de zerar** — quando o agente atinge o limite de passos ou o contexto do modelo enche (respostas vazias), em vez de desistir com "nao foi possivel concluir", ele salva um resumo do progresso na memoria da sessao (passo atingido, arquivos analisados/editados, ultimo erro, pedido original) e oferece um botao para continuar. Ao continuar, esse checkpoint e injetado no contexto (via memoria da sessao), retomando de onde parou sem refazer o que ja foi feito
