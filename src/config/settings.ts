@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
+import { RagProvider } from '../services/rag-client';
 
 export type AIProvider = 'lmstudio' | 'anthropic' | 'ollama';
 export type SupportProvider = 'anthropic' | 'openai' | 'gemini';
+export type { RagProvider };
 
 export const DEFAULT_SUPPORT_MODELS: Record<SupportProvider, string> = {
     anthropic: 'claude-sonnet-4-6',
@@ -33,8 +35,15 @@ export interface EucodeSettings {
     model: string;
     enabledTools: ToolName[];
     ragEnabled: boolean;
+    // Which vector DB backend. 'chroma' embeds text server-side; 'qdrant' is a
+    // pure vector store, so the plugin embeds the query first (see ragEmbed*).
+    ragProvider: RagProvider;
     ragEndpoint: string;
     ragCollection: string;
+    // Qdrant only: OpenAI-compatible /v1/embeddings host + model used to turn
+    // the query into a vector before searching. Defaults to the LM Studio host.
+    ragEmbedHost: string;
+    ragEmbedModel: string;
     hybridEnabled: boolean;
     supportProvider: SupportProvider;
     supportApiKey: string;
@@ -78,8 +87,11 @@ const DEFAULTS: EucodeSettings = {
     model: '',
     enabledTools: [...ALL_TOOL_NAMES],
     ragEnabled: false,
+    ragProvider: 'chroma',
     ragEndpoint: 'http://localhost:8000',
     ragCollection: 'eucode',
+    ragEmbedHost: 'http://localhost:1234',
+    ragEmbedModel: '',
     hybridEnabled: false,
     supportProvider: 'anthropic',
     supportApiKey: '',
@@ -112,8 +124,11 @@ const KEYS = {
     model: 'eucode.model',
     enabledTools: 'eucode.enabledTools',
     ragEnabled: 'eucode.ragEnabled',
+    ragProvider: 'eucode.ragProvider',
     ragEndpoint: 'eucode.ragEndpoint',
     ragCollection: 'eucode.ragCollection',
+    ragEmbedHost: 'eucode.ragEmbedHost',
+    ragEmbedModel: 'eucode.ragEmbedModel',
     hybridEnabled: 'eucode.hybridEnabled',
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
@@ -153,8 +168,11 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         model: context.globalState.get<string>(KEYS.model) ?? DEFAULTS.model,
         enabledTools,
         ragEnabled: context.globalState.get<boolean>(KEYS.ragEnabled) ?? DEFAULTS.ragEnabled,
+        ragProvider: context.globalState.get<RagProvider>(KEYS.ragProvider) ?? DEFAULTS.ragProvider,
         ragEndpoint: context.globalState.get<string>(KEYS.ragEndpoint) ?? DEFAULTS.ragEndpoint,
         ragCollection: context.globalState.get<string>(KEYS.ragCollection) ?? DEFAULTS.ragCollection,
+        ragEmbedHost: context.globalState.get<string>(KEYS.ragEmbedHost) ?? DEFAULTS.ragEmbedHost,
+        ragEmbedModel: context.globalState.get<string>(KEYS.ragEmbedModel) ?? DEFAULTS.ragEmbedModel,
         hybridEnabled: context.globalState.get<boolean>(KEYS.hybridEnabled) ?? DEFAULTS.hybridEnabled,
         supportProvider: context.globalState.get<SupportProvider>(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get<string>(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
@@ -188,8 +206,11 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.model, settings.model.trim());
     await context.globalState.update(KEYS.enabledTools, settings.enabledTools);
     await context.globalState.update(KEYS.ragEnabled, settings.ragEnabled);
+    await context.globalState.update(KEYS.ragProvider, settings.ragProvider);
     await context.globalState.update(KEYS.ragEndpoint, settings.ragEndpoint.replace(/\/+$/, ''));
     await context.globalState.update(KEYS.ragCollection, settings.ragCollection.trim());
+    await context.globalState.update(KEYS.ragEmbedHost, settings.ragEmbedHost.replace(/\/+$/, ''));
+    await context.globalState.update(KEYS.ragEmbedModel, settings.ragEmbedModel.trim());
     await context.globalState.update(KEYS.hybridEnabled, settings.hybridEnabled);
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);

@@ -313,6 +313,13 @@
         .config-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
 
         .config-hint { font-size: 11px; color: #2a3a4a; margin-top: 5px; }
+        .config-sublabel {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #5a6a8a;
+            margin: 2px 0 -2px 2px;
+        }
         .claude-model-chip {
             font-size: 10px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
             background: #0d1a2e; border: 1px solid #1e2a3a; border-radius: 4px;
@@ -1929,9 +1936,22 @@
                 </label>
             </div>
             <div id="config-rag-rows" style="display:none;margin-top:8px;gap:6px;flex-direction:column;">
+                <label class="config-sublabel">Backend</label>
+                <select id="config-rag-provider" class="config-select">
+                    <option value="chroma">Chroma</option>
+                    <option value="qdrant">Qdrant (BETA)</option>
+                </select>
+                <label class="config-sublabel" id="config-rag-endpoint-label">Endpoint do Chroma</label>
                 <input id="config-rag-endpoint" class="config-input mono" type="text" placeholder="http://localhost:8000" spellcheck="false">
+                <label class="config-sublabel">Collection</label>
                 <input id="config-rag-collection" class="config-input mono" type="text" placeholder="eucode" spellcheck="false">
-                <div class="config-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
+                <div id="config-rag-qdrant-rows" style="display:none;gap:6px;flex-direction:column;">
+                    <label class="config-sublabel">Host de embeddings (LM Studio)</label>
+                    <input id="config-rag-embed-host" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
+                    <label class="config-sublabel">Modelo de embedding</label>
+                    <input id="config-rag-embed-model" class="config-input mono" type="text" placeholder="ex: text-embedding-nomic-embed-text-v1.5" spellcheck="false">
+                </div>
+                <div class="config-hint" id="config-rag-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
             </div>
         </div>
         <div style="border: 1px solid #00d4ff44; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #001a2611 0%, transparent 100%);">
@@ -2789,8 +2809,27 @@
         const configKeyLabel = document.getElementById('config-key-label');
         const configRagEnabled = document.getElementById('config-rag-enabled');
         const configRagRows = document.getElementById('config-rag-rows');
+        const configRagProvider = document.getElementById('config-rag-provider');
         const configRagEndpoint = document.getElementById('config-rag-endpoint');
         const configRagCollection = document.getElementById('config-rag-collection');
+        const configRagQdrantRows = document.getElementById('config-rag-qdrant-rows');
+        const configRagEmbedHost = document.getElementById('config-rag-embed-host');
+        const configRagEmbedModel = document.getElementById('config-rag-embed-model');
+        const configRagHint = document.getElementById('config-rag-hint');
+        const configRagEndpointLabel = document.getElementById('config-rag-endpoint-label');
+
+        // Toggles the Qdrant-only embedding fields and updates the endpoint
+        // label/placeholder/hint to match the selected backend. Qdrant is BETA.
+        function applyRagProviderUI() {
+            const isQdrant = configRagProvider.value === 'qdrant';
+            configRagQdrantRows.style.display = isQdrant ? 'flex' : 'none';
+            configRagEndpoint.placeholder = isQdrant ? 'http://localhost:6333' : 'http://localhost:8000';
+            configRagEndpointLabel.textContent = isQdrant ? 'Endpoint do Qdrant' : 'Endpoint do Chroma';
+            configRagHint.innerHTML = isQdrant
+                ? '<span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:1px 5px;border-radius:3px;letter-spacing:0.06em;margin-right:6px;">BETA</span>Requer Qdrant rodando localmente. O Qdrant nao embeda texto: informe um host /v1/embeddings (ex: LM Studio) e o modelo de embedding usado para indexar. <a href="https://qdrant.tech/documentation/" style="color:#3a7bd5;text-decoration:none">Docs Qdrant</a>'
+                : 'Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a>';
+        }
+        configRagProvider.addEventListener('change', applyRagProviderUI);
 
         const configHybridEnabled = document.getElementById('config-hybrid-enabled');
         const configHybridRows = document.getElementById('config-hybrid-rows');
@@ -3041,9 +3080,13 @@
                 applyKeyPlaceholders();
                 renderToolsGrid(savedSettings.enabledTools || ALL_TOOLS.map(t => t.name));
                 configRagEnabled.checked = !!savedSettings.ragEnabled;
+                configRagProvider.value = savedSettings.ragProvider || 'chroma';
                 configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
                 configRagCollection.value = savedSettings.ragCollection || 'eucode';
+                configRagEmbedHost.value = savedSettings.ragEmbedHost || 'http://localhost:1234';
+                configRagEmbedModel.value = savedSettings.ragEmbedModel || '';
                 configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
+                applyRagProviderUI();
 
                 configHybridEnabled.checked = !!savedSettings.hybridEnabled;
                 configHybridProvider.value = savedSettings.supportProvider || 'anthropic';
@@ -3103,8 +3146,11 @@
                 apiKey: configKeyInput.value.trim(),
                 enabledTools: getEnabledTools(),
                 ragEnabled: configRagEnabled.checked,
+                ragProvider: configRagProvider.value,
                 ragEndpoint: configRagEndpoint.value.trim(),
                 ragCollection: configRagCollection.value.trim(),
+                ragEmbedHost: configRagEmbedHost.value.trim(),
+                ragEmbedModel: configRagEmbedModel.value.trim(),
                 hybridEnabled: configHybridEnabled.checked,
                 supportProvider: configHybridProvider.value,
                 supportApiKey: configHybridKey.value.trim(),
@@ -3665,7 +3711,7 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '', wakeWordEnabled: !!msg.wakeWordEnabled, wakeWord: msg.wakeWord || 'eucode' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragProvider: msg.ragProvider || 'chroma', ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', ragEmbedHost: msg.ragEmbedHost || 'http://localhost:1234', ragEmbedModel: msg.ragEmbedModel || '', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '', wakeWordEnabled: !!msg.wakeWordEnabled, wakeWord: msg.wakeWord || 'eucode' };
                 customCommandsScope = savedSettings.customCommandsScope;
                 jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
                     '| whisperEndpoint =', savedSettings.whisperEndpoint);
@@ -3698,8 +3744,11 @@
                 if (configKeyInput.value.trim()) { savedSettings.apiKey = configKeyInput.value.trim(); }
                 savedSettings.enabledTools = getEnabledTools();
                 savedSettings.ragEnabled = configRagEnabled.checked;
+                savedSettings.ragProvider = configRagProvider.value;
                 savedSettings.ragEndpoint = configRagEndpoint.value.trim();
                 savedSettings.ragCollection = configRagCollection.value.trim();
+                savedSettings.ragEmbedHost = configRagEmbedHost.value.trim();
+                savedSettings.ragEmbedModel = configRagEmbedModel.value.trim();
                 savedSettings.hybridEnabled = configHybridEnabled.checked;
                 savedSettings.supportProvider = configHybridProvider.value;
                 if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }

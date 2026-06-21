@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { callAI, callAnthropicAI, ToolCall } from '../services/api-client';
-import { queryRag, formatRagContext } from '../services/rag-client';
+import { queryRag, formatRagContext, RagProvider } from '../services/rag-client';
 import { callSupportProvider } from '../services/hybrid-client';
 import { loadSessionMemory, rememberApprovedCommand, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
 import { ProjectIntelService } from '../services/project-intel';
@@ -567,7 +567,12 @@ export async function runAgentLoop(
     sessionId?: string,
     chatMode: boolean = false,
     hybridIntensity: 25 | 50 | 75 | 100 = 50,
-    projectIntelEnabled: boolean = true
+    projectIntelEnabled: boolean = true,
+    // RAG backend + embedding config. Defaults keep Chroma behavior (text is
+    // embedded server-side, so embed* are ignored).
+    ragProvider: RagProvider = 'chroma',
+    ragEmbedHost?: string,
+    ragEmbedModel?: string
 ): Promise<string> {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
@@ -600,7 +605,14 @@ export async function runAgentLoop(
     // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
     if (!chatMode && ragEndpoint && ragCollection && injectHeavyContext) {
-        const ragResults = await queryRag(ragEndpoint, ragCollection, userPrompt);
+        const ragResults = await queryRag({
+            provider: ragProvider,
+            endpoint: ragEndpoint,
+            collection: ragCollection,
+            query: userPrompt,
+            embedHost: ragEmbedHost,
+            embedModel: ragEmbedModel,
+        });
         ragContext = formatRagContext(ragResults);
     }
 

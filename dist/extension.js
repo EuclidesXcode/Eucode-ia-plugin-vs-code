@@ -322,8 +322,11 @@ class EucodeViewProvider {
                     model: this._settings.model,
                     enabledTools: this._settings.enabledTools,
                     ragEnabled: this._settings.ragEnabled,
+                    ragProvider: this._settings.ragProvider,
                     ragEndpoint: this._settings.ragEndpoint,
                     ragCollection: this._settings.ragCollection,
+                    ragEmbedHost: this._settings.ragEmbedHost,
+                    ragEmbedModel: this._settings.ragEmbedModel,
                     hybridEnabled: this._settings.hybridEnabled,
                     supportProvider: this._settings.supportProvider,
                     supportApiKey: this._settings.supportApiKey,
@@ -387,8 +390,11 @@ class EucodeViewProvider {
                     model: message.model ?? '',
                     enabledTools: message.enabledTools ?? this._settings.enabledTools,
                     ragEnabled: message.ragEnabled ?? this._settings.ragEnabled,
+                    ragProvider: message.ragProvider ?? this._settings.ragProvider,
                     ragEndpoint: message.ragEndpoint ?? this._settings.ragEndpoint,
                     ragCollection: message.ragCollection ?? this._settings.ragCollection,
+                    ragEmbedHost: message.ragEmbedHost ?? this._settings.ragEmbedHost,
+                    ragEmbedModel: message.ragEmbedModel ?? this._settings.ragEmbedModel,
                     hybridEnabled: message.hybridEnabled ?? this._settings.hybridEnabled,
                     supportProvider: message.supportProvider ?? this._settings.supportProvider,
                     // Empty string from UI means "don't change" — preserve stored key
@@ -749,7 +755,7 @@ class EucodeViewProvider {
                     }
                     : undefined;
                 const notifyHybridActivity = (evt) => webviewView.webview.postMessage({ command: 'hybrid_activity', ...evt });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity, this._settings.projectIntelEnabled);
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity, this._settings.projectIntelEnabled, this._settings.ragProvider, this._settings.ragEnabled ? this._settings.ragEmbedHost : undefined, this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined);
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });

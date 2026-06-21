@@ -1,6 +1,10 @@
 src/
 node_modules/
 .vscode/
+.eucode/
+__tests__/
+jest.config.js
+*.vsix
 tsconfig.json
 yarn.lock
 package-lock.json

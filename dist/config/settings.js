@@ -31,8 +31,11 @@ const DEFAULTS = {
     model: '',
     enabledTools: [...exports.ALL_TOOL_NAMES],
     ragEnabled: false,
+    ragProvider: 'chroma',
     ragEndpoint: 'http://localhost:8000',
     ragCollection: 'eucode',
+    ragEmbedHost: 'http://localhost:1234',
+    ragEmbedModel: '',
     hybridEnabled: false,
     supportProvider: 'anthropic',
     supportApiKey: '',
@@ -64,8 +67,11 @@ const KEYS = {
     model: 'eucode.model',
     enabledTools: 'eucode.enabledTools',
     ragEnabled: 'eucode.ragEnabled',
+    ragProvider: 'eucode.ragProvider',
     ragEndpoint: 'eucode.ragEndpoint',
     ragCollection: 'eucode.ragCollection',
+    ragEmbedHost: 'eucode.ragEmbedHost',
+    ragEmbedModel: 'eucode.ragEmbedModel',
     hybridEnabled: 'eucode.hybridEnabled',
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
@@ -103,8 +109,11 @@ function loadSettings(context) {
         model: context.globalState.get(KEYS.model) ?? DEFAULTS.model,
         enabledTools,
         ragEnabled: context.globalState.get(KEYS.ragEnabled) ?? DEFAULTS.ragEnabled,
+        ragProvider: context.globalState.get(KEYS.ragProvider) ?? DEFAULTS.ragProvider,
         ragEndpoint: context.globalState.get(KEYS.ragEndpoint) ?? DEFAULTS.ragEndpoint,
         ragCollection: context.globalState.get(KEYS.ragCollection) ?? DEFAULTS.ragCollection,
+        ragEmbedHost: context.globalState.get(KEYS.ragEmbedHost) ?? DEFAULTS.ragEmbedHost,
+        ragEmbedModel: context.globalState.get(KEYS.ragEmbedModel) ?? DEFAULTS.ragEmbedModel,
         hybridEnabled: context.globalState.get(KEYS.hybridEnabled) ?? DEFAULTS.hybridEnabled,
         supportProvider: context.globalState.get(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
@@ -137,8 +146,11 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.model, settings.model.trim());
     await context.globalState.update(KEYS.enabledTools, settings.enabledTools);
     await context.globalState.update(KEYS.ragEnabled, settings.ragEnabled);
+    await context.globalState.update(KEYS.ragProvider, settings.ragProvider);
     await context.globalState.update(KEYS.ragEndpoint, settings.ragEndpoint.replace(/\/+$/, ''));
     await context.globalState.update(KEYS.ragCollection, settings.ragCollection.trim());
+    await context.globalState.update(KEYS.ragEmbedHost, settings.ragEmbedHost.replace(/\/+$/, ''));
+    await context.globalState.update(KEYS.ragEmbedModel, settings.ragEmbedModel.trim());
     await context.globalState.update(KEYS.hybridEnabled, settings.hybridEnabled);
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);

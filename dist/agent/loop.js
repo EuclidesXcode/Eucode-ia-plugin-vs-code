@@ -529,7 +529,10 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50, projectIntelEnabled = true) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50, projectIntelEnabled = true, 
+// RAG backend + embedding config. Defaults keep Chroma behavior (text is
+// embedded server-side, so embed* are ignored).
+ragProvider = 'chroma', ragEmbedHost, ragEmbedModel) {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
     // The system prompt is just the conversational instructions.
@@ -558,7 +561,14 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
     // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
     if (!chatMode && ragEndpoint && ragCollection && injectHeavyContext) {
-        const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
+        const ragResults = await (0, rag_client_1.queryRag)({
+            provider: ragProvider,
+            endpoint: ragEndpoint,
+            collection: ragCollection,
+            query: userPrompt,
+            embedHost: ragEmbedHost,
+            embedModel: ragEmbedModel,
+        });
         ragContext = (0, rag_client_1.formatRagContext)(ragResults);
     }
     // Session memory: detect stack + inject summary (skipped in CHAT — chat mode

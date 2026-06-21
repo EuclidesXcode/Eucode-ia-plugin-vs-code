@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.1
+
+- **NOVO (BETA): suporte a Qdrant no RAG** — alem do Chroma, o contexto vetorial agora aceita [Qdrant](https://qdrant.tech) como backend. Como o Qdrant self-hosted nao embeda texto, o plugin gera o embedding da pergunta via endpoint OpenAI-compativel `/v1/embeddings` (por padrao o mesmo host do LM Studio) antes de consultar. Seletor de backend Chroma/Qdrant nas configuracoes, com campos dedicados de host + modelo de embedding
+- **Config de RAG mais clara** — cada campo agora tem label visivel (Endpoint, Collection, Host de embeddings, Modelo de embedding); antes eram inputs sem rotulo, faceis de confundir. Placeholder e ajuda mudam conforme o backend escolhido
+
 ## 0.15.0
 
 - **Modo AUTO se auto-continua sozinho** — quando o agente trava por parada branda (contexto do modelo enche ou atinge o limite de passos), em AUTO ele agora retoma sozinho do checkpoint, sem voce precisar clicar "Continuar". Faz isso ate 3 vezes; so depois mostra o botao para clique manual. STOP corta na hora. O `[AUTO PAUSADO]` real (apos 15 tentativas + recovery HYBRID) continua pedindo clique, pois indica que o modelo nao da conta

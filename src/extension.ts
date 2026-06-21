@@ -338,8 +338,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     model: this._settings.model,
                     enabledTools: this._settings.enabledTools,
                     ragEnabled: this._settings.ragEnabled,
+                    ragProvider: this._settings.ragProvider,
                     ragEndpoint: this._settings.ragEndpoint,
                     ragCollection: this._settings.ragCollection,
+                    ragEmbedHost: this._settings.ragEmbedHost,
+                    ragEmbedModel: this._settings.ragEmbedModel,
                     hybridEnabled: this._settings.hybridEnabled,
                     supportProvider: this._settings.supportProvider,
                     supportApiKey: this._settings.supportApiKey,
@@ -407,8 +410,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     model: message.model ?? '',
                     enabledTools: message.enabledTools ?? this._settings.enabledTools,
                     ragEnabled: message.ragEnabled ?? this._settings.ragEnabled,
+                    ragProvider: message.ragProvider ?? this._settings.ragProvider,
                     ragEndpoint: message.ragEndpoint ?? this._settings.ragEndpoint,
                     ragCollection: message.ragCollection ?? this._settings.ragCollection,
+                    ragEmbedHost: message.ragEmbedHost ?? this._settings.ragEmbedHost,
+                    ragEmbedModel: message.ragEmbedModel ?? this._settings.ragEmbedModel,
                     hybridEnabled: message.hybridEnabled ?? this._settings.hybridEnabled,
                     supportProvider: message.supportProvider ?? this._settings.supportProvider,
                     // Empty string from UI means "don't change" — preserve stored key
@@ -823,7 +829,10 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     this._historyManager.getActiveId(),
                     !!message.chatMode,
                     this._settings.hybridIntensity,
-                    this._settings.projectIntelEnabled
+                    this._settings.projectIntelEnabled,
+                    this._settings.ragProvider,
+                    this._settings.ragEnabled ? this._settings.ragEmbedHost : undefined,
+                    this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined
                 );
                 this._abortController = null;
                 this._injectMessage = null;
