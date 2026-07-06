@@ -1826,7 +1826,7 @@
                 </button>
             </div>
         </details>
-        <div style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
+        <div id="config-jarvis-section" style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#ff4757;">
                 <span>🎙 JARVIS — Modo de voz <span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:2px 6px;border-radius:3px;letter-spacing:0.06em;margin-left:6px;vertical-align:middle;">BETA</span></span>
                 <label class="switch" style="margin-left:auto">
@@ -2181,9 +2181,22 @@
             } catch (_) { /* noop */ }
         }
 
+        // Flag vinda do host (constants.ts JARVIS_ENABLED). Enquanto o JARVIS
+        // está pausado, a UI de voz fica oculta e o mic nunca aparece — mesmo
+        // que settings antigos tenham jarvisEnabled=true persistido.
+        let jarvisFeatureEnabled = false;
+
         function updateMicButtonVisibility() {
-            const on = !!(savedSettings && savedSettings.jarvisEnabled);
+            const on = jarvisFeatureEnabled && !!(savedSettings && savedSettings.jarvisEnabled);
             micBtn.style.display = on ? '' : 'none';
+        }
+
+        // Mostra ou esconde toda a seção de configuração do JARVIS conforme a
+        // feature flag do host.
+        function applyJarvisFeatureFlag() {
+            const section = document.getElementById('config-jarvis-section');
+            if (section) { section.style.display = jarvisFeatureEnabled ? '' : 'none'; }
+            updateMicButtonVisibility();
         }
 
         // ── Borda pulsante de escuta (estilo Apple Intelligence) ───────────
@@ -3715,8 +3728,9 @@
                 customCommandsScope = savedSettings.customCommandsScope;
                 jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
                     '| whisperEndpoint =', savedSettings.whisperEndpoint);
+                jarvisFeatureEnabled = !!msg.jarvisFeatureEnabled;
                 syncHybridModeWithSettings();
-                updateMicButtonVisibility();
+                applyJarvisFeatureFlag();
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {

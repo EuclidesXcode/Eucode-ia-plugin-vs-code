@@ -16,7 +16,7 @@ import { ensureEucodeWorkspace, revealEucodeDir } from './services/workspace-ini
 import { VoiceServer, generatePairingToken } from './services/voice-server';
 import { AudioCapture } from './services/audio-capture';
 import { WakeWordListener, WakeWordState } from './services/wake-word';
-import { DEFAULT_MODEL } from './utils/constants';
+import { DEFAULT_MODEL, JARVIS_ENABLED } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'eucode-ia.chatView';
@@ -218,6 +218,13 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
         this._injectFromVoice = dispatchVoiceText;
 
         const startOrUpdateVoiceServer = async () => {
+            // JARVIS pausado: nunca sobe o servidor HTTP de voz (remove a
+            // superfície de rede do caminho padrão). Se já estava rodando de
+            // uma sessão anterior, garante que pare.
+            if (!JARVIS_ENABLED) {
+                if (this._voiceServer?.isRunning()) { await this._voiceServer.stop(); }
+                return;
+            }
             if (!this._settings.voiceServerEnabled) {
                 if (this._voiceServer?.isRunning()) { await this._voiceServer.stop(); }
                 return;
@@ -263,6 +270,12 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
         };
         const startOrUpdateWakeWord = async () => {
+            // JARVIS pausado: nunca inicia a escuta contínua por wake word.
+            if (!JARVIS_ENABLED) {
+                if (this._wakeWord?.isRunning()) { this._wakeWord.stop(); }
+                webviewView.webview.postMessage({ command: 'wake_word_state', state: 'idle' });
+                return;
+            }
             const wantOn = this._settings.jarvisEnabled && this._settings.wakeWordEnabled;
             if (!wantOn) {
                 if (this._wakeWord?.isRunning()) { this._wakeWord.stop(); }
@@ -332,6 +345,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
                 webviewView.webview.postMessage({
                     command: 'load_config',
+                    jarvisFeatureEnabled: JARVIS_ENABLED,
                     provider: this._settings.provider,
                     apiHost: this._settings.apiHost,
                     apiKey: this._settings.apiKey,
