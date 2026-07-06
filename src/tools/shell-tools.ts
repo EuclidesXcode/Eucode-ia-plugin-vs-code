@@ -1,26 +1,43 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 
+// Blocklist de comandos destrutivos. IMPORTANTE: isto é defesa em
+// profundidade, NÃO uma sandbox. Um shell é infinitamente contornável
+// (aspas, variáveis, base64, encadeamento). O gate real de segurança é a
+// confirmação do usuário no modo manual. Em modo AUTO não há confirmação, então
+// esta lista é a única barreira automática — por isso normalizamos o comando
+// antes de testar, para pegar as evasões triviais (flags separadas, espaços
+// múltiplos) sem a falsa sensação de que isto bloqueia um atacante determinado.
 const ALWAYS_BLOCKED = [
-    /rm\s+-rf/i, /rm\s+-r\s/i,
-    /sudo/i,
-    />\s*\/dev\/(sd|hd|nvme)/i,
-    /mkfs/i, /fdisk/i, /parted/i,
-    /curl\s+.*\|\s*(bash|sh|zsh)/i,
-    /wget\s+.*\|\s*(bash|sh|zsh)/i,
-    /chmod\s+777/i,
-    /:\(\)\{.*\}/i,
-    /git\s+push\s+.*--force/i,
-    /git\s+reset\s+--hard/i,
-    /git\s+clean\s+-f/i,
+    // rm recursivo+forçado em qualquer ordem de flags (rm -rf, rm -fr, rm -r -f)
+    /\brm\s+(-\w*\s+)*-\w*[rf]\w*\s+(-\w*\s+)*-\w*[rf]/i, // duas flags r e f separadas
+    /\brm\s+-\w*r\w*f|\brm\s+-\w*f\w*r/i,                 // -rf / -fr combinadas
+    /\brm\s+(-\w+\s+)*--(recursive|force)\b/i,            // formas longas
+    /\bsudo\b/i, /\bdoas\b/i,
+    />\s*\/dev\/(sd|hd|nvme|disk)/i,
+    /\b(mkfs|fdisk|parted|dd)\b/i,
+    // pipe de download direto para um shell (curl/wget ... | sh)
+    /\b(curl|wget|fetch)\b[^|]*\|\s*(bash|sh|zsh|ksh)\b/i,
+    /\bchmod\s+(-\w+\s+)*(777|a\+rwx)\b/i,
+    /:\s*\(\)\s*\{.*\}/i,                                 // fork bomb :(){ }
+    /\bgit\s+push\b[^&|;]*--force/i,
+    /\bgit\s+reset\s+(-\w+\s+)*--hard/i,
+    /\bgit\s+clean\s+(-\w+\s+)*-\w*f/i,
+    // substituição de comando embutindo um destrutivo, ex: $(rm -rf /)
+    /\$\(\s*(rm|sudo|mkfs|dd)\b/i,
+    /`\s*(rm|sudo|mkfs|dd)\b/i,
 ];
 
-const eucode = [
-    {
-        "command": "/testar",
-        "prompt": "Quero que faça o teste de ponta a ponta x vezes",    
-    }
-]
+// Normaliza o comando antes de testar contra a blocklist: colapsa espaços/tabs
+// repetidos, remove quebras de linha de continuação. Reduz o espaço de evasões
+// triviais (ex: "rm   -r    -f") sem tentar (impossivelmente) desfazer todo
+// tipo de ofuscação de shell.
+function normalizeForBlocklist(command: string): string {
+    return command
+        .replace(/\\\r?\n/g, ' ')   // continuação de linha
+        .replace(/[\t ]+/g, ' ')    // espaços/tabs múltiplos → 1
+        .trim();
+}
 
 // Subcomandos git que apenas leem — aprovados sem confirmacao do usuario
 const GIT_READ_ONLY = new Set([
@@ -83,7 +100,8 @@ export async function searchInWorkspace(query: string, dirPath: string, workspac
 }
 
 export function isCommandBlocked(command: string): boolean {
-    return ALWAYS_BLOCKED.some(p => p.test(command));
+    const normalized = normalizeForBlocklist(command);
+    return ALWAYS_BLOCKED.some(p => p.test(normalized));
 }
 
 export async function runCommand(command: string, cwd?: string): Promise<string> {
