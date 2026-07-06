@@ -2713,9 +2713,21 @@
             updateModesUI();
         });
 
+        // Aviso mostrado uma vez por sessao quando o usuario liga o AUTO. Em
+        // AUTO o agente escreve arquivos E roda comandos SEM pedir aprovacao —
+        // o usuario precisa saber disso antes de ativar. Nao usa modal (alert)
+        // pra nao virar friccao a cada toggle; e uma nota discreta no chat.
+        let autoWarningShown = false;
         modeAutoToggle.addEventListener('change', () => {
             if (chatMode) { modeAutoToggle.checked = false; return; }
             autoMode = modeAutoToggle.checked;
+            if (autoMode && !autoWarningShown) {
+                autoWarningShown = true;
+                appendMessage(
+                    '⚡ Modo AUTO ligado. O agente vai editar arquivos e executar comandos no seu terminal sem pedir aprovacao, ate a tarefa terminar. Comandos destrutivos conhecidos (rm -rf, git reset --hard...) continuam bloqueados, mas isso nao substitui sua revisao. Desligue o AUTO se quiser aprovar cada acao.',
+                    'agent'
+                );
+            }
             updateModesUI();
         });
 
