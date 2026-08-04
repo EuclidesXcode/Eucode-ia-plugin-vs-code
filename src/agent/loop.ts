@@ -19,6 +19,7 @@ import { MAX_AGENT_STEPS } from '../utils/constants';
 import { resolveFilePath } from '../utils/validation';
 import { contextSanitizer } from '../services/context-sanitizer';
 import { ExecutionGuardService, ExecutionState } from '../services/execution-guard';
+import { OrchestrationMetrics } from '../services/orchestration-metrics';
 
 export type TodoItem = { content: string; status: 'pending' | 'in_progress' | 'completed' };
 
@@ -669,6 +670,10 @@ export async function runAgentLoop(
     const dirCache = new Map<string, string>();
     // Guard único de execução — fonte única dos nudges corretivos do loop.
     const executionGuard = new ExecutionGuardService();
+    // Telemetria determinística da orquestração (por rodada). Mede tool vs
+    // texto, alucinação no passo 1 (firstStepWasText), re-leitura de arquivos
+    // (perda de contexto) e acionamento das redes de segurança. Só loga.
+    const orchMetrics = new OrchestrationMetrics();
     const counters = {
         filesWritten: 0,
         lastCommandFailed: false,
@@ -695,7 +700,12 @@ export async function runAgentLoop(
     ];
 
     let lastToolName = '';
-    const maxSteps = effectiveAutoMode ? 40 : MAX_AGENT_STEPS;
+    // LLMs pagas (cloud) sao mais capazes: nao aplicamos limite artificial.
+    // Provedores locais (lmstudio, ollama) ficam com o cap para evitar travar a maquina.
+    const isLocalProvider = provider === 'lmstudio' || provider === 'ollama';
+    const maxSteps = isLocalProvider
+        ? (effectiveAutoMode ? 40 : MAX_AGENT_STEPS)
+        : Number.POSITIVE_INFINITY;
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
@@ -767,7 +777,14 @@ export async function runAgentLoop(
     let totalElapsedMs = 0;
     const sessionStart = Date.now();
 
+    // Guarda para logar a telemetria de orquestração uma única vez por rodada,
+    // já que emitTelemetry pode ser chamada em vários pontos de saída.
+    let orchLogged = false;
     const emitTelemetry = () => {
+        if (!orchLogged) {
+            orchLogged = true;
+            console.log(orchMetrics.format());
+        }
         if (!onTelemetry) { return; }
         if (totalCompletionTokens === 0 && totalElapsedMs === 0) { return; }
         const elapsedSec = totalElapsedMs / 1000;
@@ -1000,17 +1017,25 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             totalElapsedMs += result.usage.elapsedMs;
         }
 
+        let toolCallViaEscape = false;
         if (!result.toolCall && result.responseText) {
             const escaped = detectEscapedToolCall(result.responseText);
             if (escaped) {
                 result.toolCall = escaped;
                 result.responseText = '';
+                toolCallViaEscape = true;
             }
         }
 
         if (result.toolCall) {
             const { name, arguments: args } = result.toolCall.function;
             lastToolName = name;
+            // Telemetria: passo que emitiu tool. Registra re-leitura de arquivo
+            // (perda de contexto) quando a tool é read_local_file.
+            orchMetrics.recordToolStep(toolCallViaEscape);
+            if (name === 'read_local_file' && (args as any)?.filePath) {
+                orchMetrics.recordFileRead(path.resolve(defaultCwd, String((args as any).filePath)));
+            }
             const toolCallId = result.toolCall.id || `call_${step}`;
             const handler = toolHandlers[name];
 
@@ -1129,6 +1154,10 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 continue;
             }
             emptyResponseStreak = 0;
+            // Telemetria: passo de texto puro (modelo respondeu sem tool). Se
+            // for o 1º passo, firstStepWasText sinaliza "planejou/alucinou antes
+            // de observar o projeto".
+            orchMetrics.recordTextStep();
 
             // Detect "code dumped in chat instead of using a tool":
             // model included a fenced code block of substantial size but
@@ -1153,6 +1182,7 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
 
             if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                 pendingActionStreak++;
+                orchMetrics.recordPendingNudge();
 
                 // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
                 // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
