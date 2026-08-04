@@ -20,6 +20,7 @@ import { resolveFilePath } from '../utils/validation';
 import { contextSanitizer } from '../services/context-sanitizer';
 import { ExecutionGuardService, ExecutionState } from '../services/execution-guard';
 import { OrchestrationMetrics } from '../services/orchestration-metrics';
+import { FactSheet } from '../services/fact-sheet';
 
 export type TodoItem = { content: string; status: 'pending' | 'in_progress' | 'completed' };
 
@@ -647,11 +648,28 @@ export async function runAgentLoop(
     const priorMessages = effectiveAutoMode
         ? buildMessagesFromHistory(historySlice.slice(-2))  // last user+assistant pair
         : buildMessagesFromHistory(historySlice);
+    // systemContent é o conteúdo BASE (imutável). O fact sheet (fatos já
+    // descobertos) é anexado a ele a cada iteração via refreshSystemWithFacts,
+    // porque cresce ao longo da rodada e precisa sobreviver à poda das leituras.
+    const baseSystemContent = systemContent;
     const roundMessages: Message[] = [
-        { role: 'system', content: systemContent },
+        { role: 'system', content: baseSystemContent },
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
+
+    // Fact sheet: scratchpad determinístico de fatos destilados (arquivos lidos
+    // + símbolos, arquivos escritos, último erro). Reinjetado no system a cada
+    // passo para que a poda das leituras brutas não faça o modelo esquecer o que
+    // já viu (e re-ler o mesmo arquivo até acabar os passos). Desligado em CHAT.
+    const factSheet = new FactSheet();
+    const refreshSystemWithFacts = (): void => {
+        const facts = factSheet.build();
+        roundMessages[0] = {
+            role: 'system',
+            content: facts ? `${baseSystemContent}\n\n${facts}` : baseSystemContent,
+        };
+    };
 
     // Queue (not single slot) so multiple user messages sent during a slow
     // API call are all preserved instead of last-write-wins.
@@ -894,19 +912,28 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
         }
     }
 
-    // ── Âncora de plano local (sem HYBRID) ─────────────────────────────
-    // Modelo pequeno se perde em tarefas multi-passo sem um plano que o
-    // ancore. Quando NÃO há HYBRID gerando o plano e a tarefa parece ter
-    // vários passos, pedimos que ele próprio comece pelo todo_update — isso
-    // cria um scratchpad de estado que guia as rodadas seguintes muito melhor
-    // do que regras abstratas. Mensagem curta, só uma vez, na 1ª rodada.
-    const taskLooksMultiStep = userPrompt.trim().split(/\s+/).length >= 12
-        || /\b(e depois|então|primeiro|em seguida|todos os|cada|refator|implement|migr|criar?\s+\w+.*\be\b)\b/i.test(userPrompt);
-    if (!chatMode && !hybridActive && isFirstRoundOfSession && taskLooksMultiStep) {
-        roundMessages.push({
-            role: 'user',
-            content: 'Antes de agir, chame todo_update com 3 a 5 passos curtos para esta tarefa. Depois execute o primeiro passo.',
-        });
+    // ── Observar ANTES de planejar (sem HYBRID) ────────────────────────
+    // Antes esta âncora forçava o modelo a chamar todo_update ANTES de agir —
+    // ou seja, planejar no vazio. Para um modelo pequeno isso é convite a
+    // alucinar o plano inteiro (lista passos sobre arquivos que nem existem).
+    //
+    // Princípio (o mesmo do Claude Code, adaptado ao contexto pequeno): o
+    // raciocínio tem que ser FUNDAMENTADO em observação, não em suposição. Então
+    // o 1º passo passa a ser uma AÇÃO CONCRETA de leitura. A escolha de qual é
+    // determinística: se o prompt cita um caminho/arquivo, manda ler; senão,
+    // manda listar a raiz. Só depois de ter visto algo real o modelo planeja.
+    const isFirstRound = isFirstRoundOfSession;
+    if (!chatMode && !hybridActive && isFirstRound) {
+        // Detecta um caminho/arquivo citado no prompt (ex: "src/x.ts").
+        const pathMatch = userPrompt.match(/([A-Za-z0-9_\-./]+\.[A-Za-z0-9]{1,8})/);
+        // Se o arquivo citado é ALVO de criação ("crie/gere um README.md"), não
+        // mandamos lê-lo (ele não existe) — mandamos observar o projeto primeiro.
+        const citedFileIsCreationTarget = !!pathMatch
+            && new RegExp(`\\b(cri[ae]r?|ger[ae]r?|escrev[ae]r?|novo|nova)\\b[^.]{0,40}${pathMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(userPrompt);
+        const firstAction = (pathMatch && !citedFileIsCreationTarget)
+            ? `Comece agora chamando read_local_file em "${pathMatch[1]}". Não descreva um plano antes — leia o arquivo primeiro.`
+            : 'Comece agora chamando list_directory na raiz do projeto para ver a estrutura real. Não descreva um plano antes — observe primeiro.';
+        roundMessages.push({ role: 'user', content: firstAction });
     }
 
     // Loop externo: permite que o limite de passos seja "rearmado" pela
@@ -974,6 +1001,11 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
             }
         }
+
+        // Reinjeta os fatos destilados no system ANTES de cada chamada. Mesmo
+        // que a poda acima tenha descartado a leitura bruta de um arquivo, o
+        // fato ("x.ts expõe A, B") continua presente — o modelo não re-lê.
+        if (!chatMode) { refreshSystemWithFacts(); }
 
         // Only stream text to UI when there's a chance this is the final reply.
         // If the model ends up calling a tool instead, onStreamChunk output is
@@ -1064,6 +1096,23 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             const toolOutput = handler
                 ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+
+            // Alimenta o fact sheet com o essencial ANTES de qualquer poda, para
+            // que o fato sobreviva mesmo que o par tool bruto seja descartado.
+            // Leitura: destila símbolos do conteúdo. Escrita/edição: registra o
+            // path. Erro de comando: registra o resumo (via counters).
+            {
+                const fp = (args as any)?.filePath;
+                if (name === 'read_local_file' && fp) {
+                    factSheet.recordRead(path.basename(String(fp)), toolOutput, extractSymbols);
+                } else if ((name === 'write_local_file' || name === 'edit_file') && fp
+                    && !toolOutput.startsWith('[ERRO') && !toolOutput.startsWith('[ERROR')
+                    && !toolOutput.startsWith('[CANCELLED')) {
+                    factSheet.recordWrite(path.basename(String(fp)));
+                } else if (name === 'run_command' && counters.lastCommandFailed && counters.lastErrorSummary) {
+                    factSheet.recordError(counters.lastErrorSummary);
+                }
+            }
 
             // Limpa o output antes de mandar pro LLM: remove lixo (ANSI, barras
             // de progresso, linhas em branco/spinners repetidos), aplica limpeza
