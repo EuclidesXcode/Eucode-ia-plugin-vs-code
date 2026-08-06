@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.2
+
+- **NOVO: janela de contexto configuravel, com default por provedor** — o Eucode agora tem um campo **Janela de contexto (tokens)** nas configuracoes. Antes a calibragem de contexto (quando podar o historico, quanto de cada output de ferramenta manter) era fixa em ~2048 tokens — bom para LM Studio com modelo pequeno, mas desperdicava a janela em servidores modernos. Agora voce ajusta manualmente, e ao trocar de provedor o campo ja sugere um default coerente: **LM Studio 2048, Ollama 4096, Apple MLX 8192, Anthropic 32768**. Toda a calibragem deriva desse valor: a poda so dispara perto de 60% da janela, o numero de leituras/acoes que o modelo retem escala com o tamanho, e os limites de output crescem junto. Deixe vazio para usar o default do provedor
+- **Correcao: 404 ao chamar modelo via Apple MLX** — o `mlx_lm.server` conhece o modelo pelo id completo (ex: `mlx-community/Qwen2.5-Coder-14B-Instruct-4bit`). Se voce digitasse o nome sem o prefixo `org/` (ou deixasse errado), a conexao aparecia OK mas a primeira mensagem falhava com 404. Agora, para MLX, o Eucode consulta `/v1/models` e usa o id real do servidor automaticamente — o campo Modelo virou opcional de verdade
+
 ## 0.16.1
 
 - **NOVO: suporte a Apple MLX como provedor** — alem de LM Studio, Ollama e Anthropic, o Eucode agora conversa direto com o [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm), o runtime de inferencia da Apple otimizado para Apple Silicon (M1/M2/M3/M4/M5). Selecione **Apple MLX** no dropdown de provedor: o host default `http://localhost:8080` ja vem preenchido e a ajuda mostra o comando para subir o servidor. Como o `mlx_lm.server` e compativel com a API da OpenAI, todo o resto (ferramentas, streaming, telemetria) funciona sem mudanca. Suba o servidor com:

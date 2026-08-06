@@ -14,9 +14,13 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.contextSanitizer = exports.ContextSanitizer = void 0;
-// Limite de caracteres por tool DEPOIS da limpeza. Calibrado para janela de
-// 2048 tokens (~4 chars/token). Em modo AUTO encolhemos ainda mais.
-const TOOL_CHAR_LIMITS = {
+const constants_1 = require("../utils/constants");
+// Limite de caracteres por tool DEPOIS da limpeza. Os valores-base foram
+// calibrados para uma janela de 2048 tokens (~4 chars/token) e escalam com o
+// orcamento de contexto informado em runtime (SanitizeOptions.tokenBudget):
+// com uma janela maior (ex: 8192 via MLX), um arquivo lido pode ocupar mais
+// caracteres sem sufocar o contexto.
+const BASE_TOOL_CHAR_LIMITS = {
     list_directory: 600,
     search_in_workspace: 800,
     read_local_file: 1200,
@@ -24,7 +28,12 @@ const TOOL_CHAR_LIMITS = {
     run_git: 600,
     web_search: 1000,
 };
-const DEFAULT_LIMIT = 800;
+const BASE_DEFAULT_LIMIT = 800;
+// Fator de escala derivado do orcamento de contexto. Base = 2048 (fator 1).
+// Teto de 4x para janelas grandes nao deixarem um so output dominar o prompt.
+function contextScale(tokenBudget) {
+    return Math.min(4, Math.max(1, tokenBudget / 2048));
+}
 // Em modo AUTO multiplicamos o limite por isto (history budget e ~zero la).
 const AUTO_LIMIT_FACTOR = 0.7;
 // Regex de codigos de escape ANSI (cores, movimento de cursor) — lixo puro
@@ -72,11 +81,14 @@ class ContextSanitizer {
                 break;
             // read_local_file / list_directory / web_search: so limpeza generica.
         }
-        return this.truncate(toolName, out, mode);
+        return this.truncate(toolName, out, mode, opts.tokenBudget ?? constants_1.CONTEXT_TOKEN_BUDGET);
     }
-    /** Limite efetivo de caracteres para a tool no modo dado. */
-    limitFor(toolName, mode) {
-        const base = TOOL_CHAR_LIMITS[toolName] ?? DEFAULT_LIMIT;
+    /** Limite efetivo de caracteres para a tool no modo dado, escalado pelo
+     *  orcamento de contexto. */
+    limitFor(toolName, mode, tokenBudget = constants_1.CONTEXT_TOKEN_BUDGET) {
+        const scale = contextScale(tokenBudget);
+        const baseRaw = BASE_TOOL_CHAR_LIMITS[toolName] ?? BASE_DEFAULT_LIMIT;
+        const base = Math.round(baseRaw * scale);
         return mode === 'aggressive' ? Math.floor(base * AUTO_LIMIT_FACTOR) : base;
     }
     /**
@@ -202,8 +214,8 @@ class ContextSanitizer {
      * inicio (perdendo o erro/resumo do fim), mantem HEAD + TAIL. Sempre corta
      * em limites de linha para nao quebrar JSON/stack trace no meio.
      */
-    truncate(toolName, text, mode) {
-        const limit = this.limitFor(toolName, mode);
+    truncate(toolName, text, mode, tokenBudget = constants_1.CONTEXT_TOKEN_BUDGET) {
+        const limit = this.limitFor(toolName, mode, tokenBudget);
         if (text.length <= limit) {
             return text;
         }

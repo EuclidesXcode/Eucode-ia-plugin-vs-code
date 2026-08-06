@@ -45,6 +45,7 @@ const DEFAULTS = {
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
     projectIntelEnabled: true,
+    contextTokenBudget: 0, // 0 = usa o default do provedor
     jarvisEnabled: false,
     jarvisAutoSpeak: true,
     jarvisTtsVoice: '',
@@ -81,6 +82,7 @@ const KEYS = {
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
     projectIntelEnabled: 'eucode.projectIntelEnabled',
+    contextTokenBudget: 'eucode.contextTokenBudget',
     jarvisEnabled: 'eucode.jarvisEnabled',
     jarvisAutoSpeak: 'eucode.jarvisAutoSpeak',
     jarvisTtsVoice: 'eucode.jarvisTtsVoice',
@@ -123,6 +125,7 @@ function loadSettings(context) {
         customCommandsScope: context.globalState.get(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
         projectIntelEnabled: context.globalState.get(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
+        contextTokenBudget: context.globalState.get(KEYS.contextTokenBudget) ?? DEFAULTS.contextTokenBudget,
         jarvisEnabled: context.globalState.get(KEYS.jarvisEnabled) ?? DEFAULTS.jarvisEnabled,
         jarvisAutoSpeak: context.globalState.get(KEYS.jarvisAutoSpeak) ?? DEFAULTS.jarvisAutoSpeak,
         jarvisTtsVoice: context.globalState.get(KEYS.jarvisTtsVoice) ?? DEFAULTS.jarvisTtsVoice,
@@ -160,6 +163,7 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
     await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
+    await context.globalState.update(KEYS.contextTokenBudget, settings.contextTokenBudget);
     await context.globalState.update(KEYS.jarvisEnabled, settings.jarvisEnabled);
     await context.globalState.update(KEYS.jarvisAutoSpeak, settings.jarvisAutoSpeak);
     await context.globalState.update(KEYS.jarvisTtsVoice, settings.jarvisTtsVoice);

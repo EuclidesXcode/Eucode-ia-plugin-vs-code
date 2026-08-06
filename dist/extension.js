@@ -354,6 +354,13 @@ class EucodeViewProvider {
                     customCommandsScope: this._settings.customCommandsScope,
                     hybridIntensity: this._settings.hybridIntensity,
                     projectIntelEnabled: this._settings.projectIntelEnabled,
+                    contextTokenBudget: this._settings.contextTokenBudget,
+                    providerContextDefaults: {
+                        lmstudio: (0, constants_1.defaultContextBudgetForProvider)('lmstudio'),
+                        mlx: (0, constants_1.defaultContextBudgetForProvider)('mlx'),
+                        ollama: (0, constants_1.defaultContextBudgetForProvider)('ollama'),
+                        anthropic: (0, constants_1.defaultContextBudgetForProvider)('anthropic'),
+                    },
                     jarvisEnabled: this._settings.jarvisEnabled,
                     jarvisAutoSpeak: this._settings.jarvisAutoSpeak,
                     jarvisTtsVoice: this._settings.jarvisTtsVoice,
@@ -425,6 +432,9 @@ class EucodeViewProvider {
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                     hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity),
                     projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
+                    contextTokenBudget: typeof message.contextTokenBudget === 'number'
+                        ? message.contextTokenBudget
+                        : this._settings.contextTokenBudget,
                     jarvisEnabled: message.jarvisEnabled ?? this._settings.jarvisEnabled,
                     jarvisAutoSpeak: message.jarvisAutoSpeak ?? this._settings.jarvisAutoSpeak,
                     jarvisTtsVoice: message.jarvisTtsVoice ?? this._settings.jarvisTtsVoice,
@@ -790,7 +800,12 @@ class EucodeViewProvider {
                     }
                     : undefined;
                 const notifyHybridActivity = (evt) => webviewView.webview.postMessage({ command: 'hybrid_activity', ...evt });
-                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity, this._settings.projectIntelEnabled, this._settings.ragProvider, this._settings.ragEnabled ? this._settings.ragEmbedHost : undefined, this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined);
+                response = await (0, loop_1.runAgentLoop)(message.text, fullContextBlock, defaultCwd, endpoint, authHeaders, this._sessionHistory, notifyStatus, notifyCommandStart, notifyCommandOutput, notifyCommandEnd, makeConfirmWrite(), makeConfirmCommand(), getDiagnostics, makeTodoUpdate(), activeModel, !!message.autoMode, this._abortController.signal, (handler) => { this._injectMessage = handler; }, this._settings.provider, this._settings.apiKey, this._settings.enabledTools, notifyStreamChunk, notifyTelemetry, this._settings.ragEnabled ? this._settings.ragEndpoint : undefined, this._settings.ragEnabled ? this._settings.ragCollection : undefined, notifyLiveTelemetry, openFileInEditor, hybridConfig, notifyHybridActivity, this._historyManager.getActiveId(), !!message.chatMode, this._settings.hybridIntensity, this._settings.projectIntelEnabled, this._settings.ragProvider, this._settings.ragEnabled ? this._settings.ragEmbedHost : undefined, this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined, 
+                // Budget de contexto: setting do usuario, ou default do
+                // provedor quando 0/ausente. Clampado para faixa segura.
+                this._settings.contextTokenBudget && this._settings.contextTokenBudget > 0
+                    ? (0, constants_1.clampContextBudget)(this._settings.contextTokenBudget)
+                    : (0, constants_1.defaultContextBudgetForProvider)(this._settings.provider));
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
