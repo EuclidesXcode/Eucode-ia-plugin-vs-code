@@ -707,11 +707,24 @@ class EucodeViewProvider {
             this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image, mode: userMode });
             const endpoint = (0, settings_1.buildApiEndpoint)(this._settings);
             const authHeaders = (0, settings_1.buildAuthHeader)(this._settings);
-            // MLX: o modelo é fixado no servidor via --model, então um campo
-            // vazio não deve virar o DEFAULT_MODEL do LM Studio (que o servidor
-            // MLX não tem). Envia '' e deixa o mlx_lm.server usar o carregado.
-            const activeModel = this._settings.model
-                || (this._settings.provider === 'mlx' ? '' : constants_1.DEFAULT_MODEL);
+            // Resolução do modelo. MLX: o mlx_lm.server conhece o modelo pelo id
+            // COMPLETO (ex: "mlx-community/Qwen2.5-...4bit"). Se o usuário deixar
+            // vazio OU digitar o nome sem o prefixo "org/", o POST dá 404. Então,
+            // para MLX, consultamos /v1/models e usamos o id REAL do servidor,
+            // exceto quando o usuário digitou exatamente esse id. Para os demais
+            // provedores, mantém o comportamento anterior.
+            let activeModel;
+            if (this._settings.provider === 'mlx') {
+                const serverModel = await (0, api_client_1.fetchFirstModelId)(endpoint, authHeaders);
+                const typed = this._settings.model?.trim() || '';
+                // Usa o que o usuário digitou só se bater com o id do servidor;
+                // senão (vazio ou sem prefixo), usa o id real. Sem servidor no ar,
+                // cai no que foi digitado (o erro de conexão será mostrado depois).
+                activeModel = (typed && typed === serverModel) ? typed : (serverModel || typed);
+            }
+            else {
+                activeModel = this._settings.model || constants_1.DEFAULT_MODEL;
+            }
             let response;
             if (message.image?.base64) {
                 notify('Analisando imagem...');

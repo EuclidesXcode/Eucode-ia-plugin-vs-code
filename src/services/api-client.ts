@@ -267,6 +267,41 @@ export async function checkConnection(endpoint: string, authHeaders: Record<stri
     }
 }
 
+// Consulta GET /v1/models e retorna o id do primeiro modelo servido, ou null.
+// Usado pelo provider MLX: o mlx_lm.server conhece o modelo pelo id COMPLETO
+// (ex: "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"). Se o usuário digitar o
+// nome sem o prefixo (ou deixar vazio), o POST /v1/chat/completions dá 404.
+// Resolver o id real evita esse 404 sem exigir que o usuário acerte o prefixo.
+export async function fetchFirstModelId(endpoint: string, authHeaders: Record<string, string>): Promise<string | null> {
+    const base = endpoint.replace('/v1/chat/completions', '');
+    try {
+        const parsed = new URL(`${base}/v1/models`);
+        const transport = parsed.protocol === 'https:' ? https : http;
+        const raw = await new Promise<string>((resolve, reject) => {
+            const req = transport.request({
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                path: parsed.pathname + parsed.search,
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
+                timeout: 4000,
+            }, (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+            });
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.on('error', reject);
+            req.end();
+        });
+        const json = JSON.parse(raw);
+        const id = json?.data?.[0]?.id;
+        return typeof id === 'string' && id.length > 0 ? id : null;
+    } catch {
+        return null;
+    }
+}
+
 export async function checkAnthropicConnection(apiKey: string): Promise<boolean> {
     if (!apiKey) { return false; }
     try {
