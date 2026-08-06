@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { callAI, callAnthropicAI, ToolCall } from '../services/api-client';
+import { callAI, callAnthropicAI, ToolCall, tryParseJsonChunk } from '../services/api-client';
 import { queryRag, formatRagContext, RagProvider } from '../services/rag-client';
 import { callSupportProvider } from '../services/hybrid-client';
 import { loadSessionMemory, rememberApprovedCommand, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
@@ -436,9 +436,39 @@ function detectsPendingAction(text: string, autoMode = false): boolean {
     return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 
+// Normaliza um objeto ja parseado para ToolCall, cobrindo os varios shapes que
+// modelos pequenos emitem quando o servidor NAO faz o tool-calling nativo:
+//   - { tool_calls: [ { function: { name, arguments } } ] }  (wrapper OpenAI)
+//   - { function: { name, arguments } }                       (wrapper simples)
+//   - { name, arguments }                                     (objeto PLANO — o
+//     formato que mlx_lm.server + Qwen emitem como texto no content)
+//   - { name, parameters } / { tool, args } (variacoes comuns)
+function toolCallFromParsedObject(parsed: any): ToolCall | null {
+    if (!parsed || typeof parsed !== 'object') { return null; }
+    const coerceArgs = (a: any): Record<string, unknown> => {
+        if (typeof a === 'string') { try { return JSON.parse(a); } catch { return {}; } }
+        return (a && typeof a === 'object') ? a : {};
+    };
+    // wrapper OpenAI: tool_calls[0].function
+    const tc = parsed?.tool_calls?.[0];
+    if (tc?.function?.name && TOOL_NAMES.has(tc.function.name)) {
+        return { id: tc.id, function: { name: tc.function.name, arguments: coerceArgs(tc.function.arguments ?? tc.function.args) } };
+    }
+    // wrapper simples: function.name
+    if (parsed?.function?.name && TOOL_NAMES.has(parsed.function.name)) {
+        return { function: { name: parsed.function.name, arguments: coerceArgs(parsed.function.arguments ?? parsed.function.args) } };
+    }
+    // objeto PLANO: { name, arguments } (ou parameters/input; ou tool em vez de name)
+    const flatName = parsed.name ?? parsed.tool ?? parsed.tool_name;
+    if (typeof flatName === 'string' && TOOL_NAMES.has(flatName)) {
+        return { function: { name: flatName, arguments: coerceArgs(parsed.arguments ?? parsed.parameters ?? parsed.args ?? parsed.input) } };
+    }
+    return null;
+}
+
 function detectEscapedToolCall(text: string): ToolCall | null {
     // Fast reject: if there's nothing that looks like a tool call, skip parsing.
-    if (!text.includes('"function"') && !text.includes('tool_call') && !text.includes('{')) {
+    if (!text.includes('"function"') && !text.includes('tool_call') && !text.includes('"name"') && !text.includes('"tool"') && !text.includes('{')) {
         return null;
     }
 
@@ -447,26 +477,33 @@ function detectEscapedToolCall(text: string): ToolCall | null {
         try { return { function: { name: simple[1], arguments: JSON.parse(`{${simple[2]}}`) } }; } catch {}
     }
 
-    const jsonBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonBlock ? jsonBlock[1] : text;
+    // Descasca envelopes que modelos/servidores adicionam ao redor do JSON:
+    //   ```xml ... ```, ```json ... ```, <tools> ... </tools>, <tool_call> ...
+    // O mlx_lm.server + Qwen emitem, por ex., "```xml\n<tools>\n{...}\n</tools>```".
+    let jsonStr = text;
+    const fence = text.match(/```(?:json|xml|tool_call|tool_calls)?\s*([\s\S]*?)```/i);
+    if (fence) { jsonStr = fence[1]; }
+    const tagged = jsonStr.match(/<(?:tools?|tool_calls?)>\s*([\s\S]*?)<\/(?:tools?|tool_calls?)>/i);
+    if (tagged) { jsonStr = tagged[1]; }
+    jsonStr = jsonStr.trim();
+
     // Skip JSON.parse on very long text — almost never valid JSON in full.
-    if (!jsonBlock && jsonStr.length > 4000) { return null; }
-    try {
-        const parsed = JSON.parse(jsonStr.trim());
-        const tc = parsed?.tool_calls?.[0];
-        if (tc?.function?.name && TOOL_NAMES.has(tc.function.name)) {
-            const args = typeof tc.function.arguments === 'string'
-                ? JSON.parse(tc.function.arguments)
-                : (tc.function.args || tc.function.arguments || {});
-            return { id: tc.id, function: { name: tc.function.name, arguments: args } };
+    if (jsonStr.length <= 4000 || fence || tagged) {
+        // Extrai o primeiro objeto JSON balanceado de dentro do envelope (pode
+        // haver texto ao redor). tryParseJsonChunk lida com lixo apos o objeto.
+        const objStart = jsonStr.indexOf('{');
+        const candidate = objStart >= 0 ? jsonStr.slice(objStart) : jsonStr;
+        try {
+            const parsed = JSON.parse(candidate);
+            const fromObj = toolCallFromParsedObject(parsed);
+            if (fromObj) { return fromObj; }
+        } catch {
+            // JSON com lixo no fim (comum em stream): tenta o parser tolerante.
+            const tolerant = tryParseJsonChunk(candidate);
+            const fromObj = tolerant ? toolCallFromParsedObject(tolerant) : null;
+            if (fromObj) { return fromObj; }
         }
-        if (parsed?.function?.name && TOOL_NAMES.has(parsed.function.name)) {
-            const args = typeof parsed.function.arguments === 'string'
-                ? JSON.parse(parsed.function.arguments)
-                : (parsed.function.args || parsed.function.arguments || {});
-            return { function: { name: parsed.function.name, arguments: args } };
-        }
-    } catch {}
+    }
 
     const tagMatch = text.match(/<\|tool_call\|>call:(\w+)\{([^}]*)\}<\|\/tool_call\|>/);
     if (tagMatch && TOOL_NAMES.has(tagMatch[1])) {
@@ -1065,6 +1102,10 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 result.toolCall = escaped;
                 result.responseText = '';
                 toolCallViaEscape = true;
+                // O tool call veio como TEXTO (servidor sem tool-calling nativo,
+                // ex: mlx_lm.server). Esse texto ja foi streamado para a UI —
+                // limpa a bolha para nao exibir o JSON cru da chamada.
+                if (streamedSoFar) { onStreamChunk?.('\x00CLEAR'); }
             }
         }
 
