@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.3
+
+- **Correcao critica (Apple MLX): o agente nao executava as ferramentas** — o `mlx_lm.server` nao faz o parsing de tool-calling nativo: ele deixa o campo `tool_calls` vazio e devolve a intencao do modelo como TEXTO (o Qwen ainda envelopa em ` ```xml <tools>{...}</tools> ``` `). O Eucode exibia esse JSON cru na tela e nada era executado. Agora o parser de recuperacao reconhece esses formatos — o objeto plano `{"name": ..., "arguments": ...}` e os envelopes `xml`/`<tools>`/`<tool_call>` — converte em execucao real da ferramenta e limpa a bolha da UI para nao mostrar o JSON. Verificado de ponta a ponta contra um `mlx_lm.server` real
+
 ## 0.16.2
 
 - **NOVO: janela de contexto configuravel, com default por provedor** — o Eucode agora tem um campo **Janela de contexto (tokens)** nas configuracoes. Antes a calibragem de contexto (quando podar o historico, quanto de cada output de ferramenta manter) era fixa em ~2048 tokens — bom para LM Studio com modelo pequeno, mas desperdicava a janela em servidores modernos. Agora voce ajusta manualmente, e ao trocar de provedor o campo ja sugere um default coerente: **LM Studio 2048, Ollama 4096, Apple MLX 8192, Anthropic 32768**. Toda a calibragem deriva desse valor: a poda so dispara perto de 60% da janela, o numero de leituras/acoes que o modelo retem escala com o tamanho, e os limites de output crescem junto. Deixe vazio para usar o default do provedor
