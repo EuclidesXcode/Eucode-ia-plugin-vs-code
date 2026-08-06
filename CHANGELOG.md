@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.4
+
+- **UI mais limpa com Apple MLX** — dois ruidos que apareciam na conversa foram removidos: (1) o JSON da chamada de ferramenta (`{"name": "...", "arguments": ...}`) nao aparece mais na timeline quando a ferramenta e executada — antes ele era congelado na tela; agora, quando o texto ERA a propria chamada, a bolha e descartada por completo. (2) Special tokens do modelo (`<|im_start|>`, `<|im_end|>`, `<|endoftext|>` e afins) que o `mlx_lm.server` nao filtrava e vazavam como se fossem uma resposta agora sao removidos da saida. Ambos os ajustes sao cosmeticos — nao mudam o que o agente executa
+
 ## 0.16.3
 
 - **Correcao critica (Apple MLX): o agente nao executava as ferramentas** — o `mlx_lm.server` nao faz o parsing de tool-calling nativo: ele deixa o campo `tool_calls` vazio e devolve a intencao do modelo como TEXTO (o Qwen ainda envelopa em ` ```xml <tools>{...}</tools> ``` `). O Eucode exibia esse JSON cru na tela e nada era executado. Agora o parser de recuperacao reconhece esses formatos — o objeto plano `{"name": ..., "arguments": ...}` e os envelopes `xml`/`<tools>`/`<tool_call>` — converte em execucao real da ferramenta e limpa a bolha da UI para nao mostrar o JSON. Verificado de ponta a ponta contra um `mlx_lm.server` real

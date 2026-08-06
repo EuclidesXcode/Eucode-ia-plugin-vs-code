@@ -3963,6 +3963,25 @@
                     }
                 }
             } else if (msg.command === 'stream_chunk') {
+                if (msg.text === '\x00DISCARD') {
+                    // O texto streamado era o proprio JSON de uma tool call
+                    // (servidor sem tool-calling nativo, ex: mlx_lm.server).
+                    // Nao e preambulo util — apaga a bolha por completo em vez
+                    // de congelar o JSON cru na timeline.
+                    const tl = getTimeline();
+                    if (tl) {
+                        const responseItem = tl.querySelector('.tl-item.tl-response');
+                        if (responseItem) { responseItem.remove(); }
+                    }
+                    streamBubble = null;
+                    streamText = '';
+                    streamRafPending = false;
+                    if (liveTelemetryItem) { liveTelemetryItem.remove(); }
+                    liveTelemetryItem = null;
+                    liveTelemetryChips = null;
+                    liveTelemetryPending = null;
+                    return;
+                }
                 if (msg.text === '\x00CLEAR') {
                     // Tool call iniciou — congela o texto ja escrito como markdown fixo,
                     // limpa o estado de streaming mas mantem o conteudo visivel na timeline

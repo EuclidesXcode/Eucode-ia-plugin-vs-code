@@ -58,6 +58,15 @@ export function tryParseJsonChunk(raw: string): unknown {
     return null;
 }
 
+// Remove special tokens do chat template que alguns servidores (ex:
+// mlx_lm.server) nao filtram da saida — eles vazam como texto na resposta
+// (<|im_start|>, <|im_end|>, <|endoftext|>, <|eot_id|>, etc). Puramente
+// cosmetico: nunca fazem parte do conteudo util.
+const SPECIAL_TOKEN_RE = /<\|(?:im_start|im_end|endoftext|eot_id|end_of_text|begin_of_text|start_header_id|end_header_id|assistant|user|system)\|>/gi;
+export function stripSpecialTokens(text: string): string {
+    return text.replace(SPECIAL_TOKEN_RE, '').trim();
+}
+
 // Maps a raw error message from the HTTP layer into a structured reason.
 // Used by both callAI and callAnthropicAI to produce consistent diagnostics.
 export function classifyApiError(rawMessage: string): { reason: AIResponse['errorReason']; userMessage: string } {
@@ -418,7 +427,7 @@ export async function callAI(
                 // Tool args failed to parse — log and degrade to text response
                 console.warn('[API] Tool args JSON malformado, degradando para resposta de texto:', toolArgsRaw.slice(0, 200));
             }
-            return { responseText: textAcc.trim(), usage };
+            return { responseText: stripSpecialTokens(textAcc), usage };
 
         } else {
             // ── Non-streaming path (fallback) ──
@@ -447,7 +456,7 @@ export async function callAI(
         console.error('[API] Falha ao chamar o LLM:', { reason, rawMessage, partialLen: textAcc.length });
         return {
             responseText: '__INFRA_ERROR__',
-            partialText: textAcc.trim(),
+            partialText: stripSpecialTokens(textAcc),
             errorReason: reason,
             errorDetail: userMessage,
         };
@@ -581,7 +590,7 @@ export async function callAnthropicAI(
             }
             console.warn('[API Anthropic] Tool args JSON malformado, degradando para texto:', toolArgsRaw.slice(0, 200));
         }
-        return { responseText: textAcc.trim() };
+        return { responseText: stripSpecialTokens(textAcc) };
 
     } catch (error) {
         if (error instanceof Error && error.message === 'ABORTED') {
@@ -592,7 +601,7 @@ export async function callAnthropicAI(
         console.error('[API Anthropic] Falha:', { reason, rawMessage, partialLen: textAcc.length });
         return {
             responseText: '__INFRA_ERROR__',
-            partialText: textAcc.trim(),
+            partialText: stripSpecialTokens(textAcc),
             errorReason: reason,
             errorDetail: userMessage,
         };

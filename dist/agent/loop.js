@@ -1060,10 +1060,11 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                     result.responseText = '';
                     toolCallViaEscape = true;
                     // O tool call veio como TEXTO (servidor sem tool-calling nativo,
-                    // ex: mlx_lm.server). Esse texto ja foi streamado para a UI —
-                    // limpa a bolha para nao exibir o JSON cru da chamada.
+                    // ex: mlx_lm.server). O texto streamado ERA o proprio JSON da
+                    // chamada — nao e preambulo util. Manda DISCARD (nao CLEAR): a UI
+                    // apaga a bolha por completo em vez de congelar o JSON na tela.
                     if (streamedSoFar) {
-                        onStreamChunk?.('\x00CLEAR');
+                        onStreamChunk?.('\x00DISCARD');
                     }
                 }
             }
