@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.16.1
+
+- **NOVO: suporte a Apple MLX como provedor** — alem de LM Studio, Ollama e Anthropic, o Eucode agora conversa direto com o [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm), o runtime de inferencia da Apple otimizado para Apple Silicon (M1/M2/M3/M4/M5). Selecione **Apple MLX** no dropdown de provedor: o host default `http://localhost:8080` ja vem preenchido e a ajuda mostra o comando para subir o servidor. Como o `mlx_lm.server` e compativel com a API da OpenAI, todo o resto (ferramentas, streaming, telemetria) funciona sem mudanca. Suba o servidor com:
+  ```
+  pip install mlx-lm
+  python3 -m mlx_lm server --model mlx-community/Qwen2.5-Coder-14B-Instruct-4bit --port 8080
+  ```
+- **Orquestracao para modelos pequenos: "observar antes de planejar"** — antes o agente era forcado a montar um plano (`todo_update`) ANTES de olhar o projeto, o que fazia o modelo pequeno alucinar o plano inteiro (listava passos sobre arquivos que nem existiam). Agora o 1o passo e sempre uma acao concreta de observacao: le o arquivo citado no pedido, ou lista a raiz do projeto. O raciocinio passa a ser fundamentado no que existe de verdade, nao em suposicao
+- **Orquestracao: "fact sheet" que sobrevive a poda de contexto** — na janela apertada dos modelos locais, ler poucos arquivos ja enche o contexto e a poda descarta as leituras antigas — o modelo entao esquecia o que tinha lido e re-lia o mesmo arquivo ate esgotar os passos (sintoma real: tarefa trivial de ler 2 arquivos + criar README nao concluia). Agora um bloco compacto de **fatos destilados** (arquivos lidos + seus simbolos, arquivos escritos, ultimo erro) e reinjetado a cada passo. Mesmo que a leitura bruta seja descartada, o fato permanece — o modelo nao re-le. 100% deterministico, sem chamada extra de IA
+- **Correcao: erro do modelo no meio do stream nao e mais confundido com "contexto cheio"** — quando o servidor local (LM Studio/MLX) abre o stream com status 200 e o engine falha no meio (ex: `Compute error` por falta de memoria), o Eucode agora detecta esse erro e mostra uma mensagem acionavel (recarregar o modelo, usar um quant menor, reduzir contexto), em vez do antigo checkpoint enganoso de "a tarefa e longa e o contexto encheu"
+- **Seguranca: blocklist de comandos endurecida** — normaliza o comando antes de checar (pega evasoes triviais como `rm -r -f`), amplia os padroes destrutivos (dd, `sudo`/`doas`, substituicao de comando `$(...)`) e deixa explicito que isto e defesa em profundidade, nao sandbox — o gate real e a confirmacao do usuario
+- **Seguranca: aviso ao ativar o modo AUTO** — na primeira vez que voce liga o AUTO numa sessao, o chat mostra uma nota explicando que o agente vai editar arquivos e rodar comandos sem pedir aprovacao
+- **Modo de voz (JARVIS) pausado temporariamente** — o modo de voz exigia que voce instalasse o `ffmpeg` e subisse um servidor Whisper manualmente, o que contraria a proposta do plugin de funcionar sem setup. Pausamos a feature nesta versao enquanto a reformulamos para funcionar de forma nativa, sem instalacoes. O codigo continua no projeto; a interface de voz apenas fica oculta por enquanto
+
 ## 0.15.1
 
 - **NOVO (BETA): suporte a Qdrant no RAG** — alem do Chroma, o contexto vetorial agora aceita [Qdrant](https://qdrant.tech) como backend. Como o Qdrant self-hosted nao embeda texto, o plugin gera o embedding da pergunta via endpoint OpenAI-compativel `/v1/embeddings` (por padrao o mesmo host do LM Studio) antes de consultar. Seletor de backend Chroma/Qdrant nas configuracoes, com campos dedicados de host + modelo de embedding

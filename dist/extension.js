@@ -212,6 +212,15 @@ class EucodeViewProvider {
         };
         this._injectFromVoice = dispatchVoiceText;
         const startOrUpdateVoiceServer = async () => {
+            // JARVIS pausado: nunca sobe o servidor HTTP de voz (remove a
+            // superfície de rede do caminho padrão). Se já estava rodando de
+            // uma sessão anterior, garante que pare.
+            if (!constants_1.JARVIS_ENABLED) {
+                if (this._voiceServer?.isRunning()) {
+                    await this._voiceServer.stop();
+                }
+                return;
+            }
             if (!this._settings.voiceServerEnabled) {
                 if (this._voiceServer?.isRunning()) {
                     await this._voiceServer.stop();
@@ -259,6 +268,14 @@ class EucodeViewProvider {
             webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
         };
         const startOrUpdateWakeWord = async () => {
+            // JARVIS pausado: nunca inicia a escuta contínua por wake word.
+            if (!constants_1.JARVIS_ENABLED) {
+                if (this._wakeWord?.isRunning()) {
+                    this._wakeWord.stop();
+                }
+                webviewView.webview.postMessage({ command: 'wake_word_state', state: 'idle' });
+                return;
+            }
             const wantOn = this._settings.jarvisEnabled && this._settings.wakeWordEnabled;
             if (!wantOn) {
                 if (this._wakeWord?.isRunning()) {
@@ -316,6 +333,7 @@ class EucodeViewProvider {
                 }
                 webviewView.webview.postMessage({
                     command: 'load_config',
+                    jarvisFeatureEnabled: constants_1.JARVIS_ENABLED,
                     provider: this._settings.provider,
                     apiHost: this._settings.apiHost,
                     apiKey: this._settings.apiKey,
@@ -689,7 +707,11 @@ class EucodeViewProvider {
             this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'user', content: message.text, timestamp: Date.now(), hasImage: !!message.image, mode: userMode });
             const endpoint = (0, settings_1.buildApiEndpoint)(this._settings);
             const authHeaders = (0, settings_1.buildAuthHeader)(this._settings);
-            const activeModel = this._settings.model || constants_1.DEFAULT_MODEL;
+            // MLX: o modelo é fixado no servidor via --model, então um campo
+            // vazio não deve virar o DEFAULT_MODEL do LM Studio (que o servidor
+            // MLX não tem). Envia '' e deixa o mlx_lm.server usar o carregado.
+            const activeModel = this._settings.model
+                || (this._settings.provider === 'mlx' ? '' : constants_1.DEFAULT_MODEL);
             let response;
             if (message.image?.base64) {
                 notify('Analisando imagem...');

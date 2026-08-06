@@ -121,6 +121,9 @@ function classifyApiError(rawMessage) {
     if (/econnrefused|enotfound|network|fetch failed|socket hang up|connection (reset|refused|closed)/.test(m)) {
         return { reason: 'connection', userMessage: 'Nao foi possivel conectar ao provedor. Verifique se o LM Studio esta rodando ou se ha internet.' };
     }
+    if (/compute error|engine protocol|predict stream|out of memory|oom|failed to (load|run) model/.test(m)) {
+        return { reason: 'server_error', userMessage: 'O modelo local falhou ao gerar a resposta (erro de compute no LM Studio). Isso costuma ser falta de memoria (VRAM/RAM) ou o modelo instavel. Tente: recarregar o modelo no LM Studio, usar um quant menor, ou reduzir o contexto.' };
+    }
     if (/\b5\d\d\b|internal server error|bad gateway|service unavailable/.test(m)) {
         return { reason: 'server_error', userMessage: 'Erro no servidor do provedor. Tente novamente em instantes.' };
     }
@@ -330,6 +333,11 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
             let completionTokens = 0;
             let liveTokens = 0;
             const t0 = Date.now();
+            // Erro reportado DENTRO do stream (ver abaixo). Capturado numa
+            // variavel em vez de lancado no callback — o callback tem um
+            // try/catch que engoliria o throw como "chunk malformado". Depois do
+            // stream terminar, re-lancamos para cair no catch externo.
+            let streamError = null;
             await requestStream(endpoint, {
                 model, messages, tools: formattedTools, tool_choice: 'auto', stream: true,
             }, authHeaders, signal, (line) => {
@@ -345,6 +353,18 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
                     // the chunk has trailing junk from a concatenated event.
                     const evt = tryParseJsonChunk(data);
                     if (!evt) {
+                        return;
+                    }
+                    // Erro reportado DENTRO do stream: LM Studio abre o SSE com
+                    // status 200 e, se o engine falha no meio (ex: "Compute
+                    // error"), manda um evento { error: {...} } ou { code: 500,
+                    // message, type } em vez de um delta. Sem tratar isso, o
+                    // stream terminava vazio e o loop interpretava como "contexto
+                    // cheio" — mostrando um checkpoint enganoso.
+                    const streamErr = evt.error || (typeof evt.code === 'number' && evt.code >= 400 ? evt : null);
+                    if (streamErr) {
+                        const detail = streamErr.message || streamErr.error?.message || 'erro reportado pelo modelo no stream';
+                        streamError = new Error(`API stream error ${streamErr.code || ''}: ${detail}`.trim());
                         return;
                     }
                     // Capture usage when present (LM Studio sends it in last chunk)
@@ -381,6 +401,11 @@ async function callAI(endpoint, authHeaders, messages, tools, model, signal, onC
                 }
                 catch { /* malformed chunk */ }
             });
+            // Erro sinalizado dentro do stream — propaga para o catch externo,
+            // que retorna __INFRA_ERROR__ com a mensagem classificada.
+            if (streamError) {
+                throw streamError;
+            }
             const usage = { promptTokens, completionTokens, elapsedMs: Date.now() - t0 };
             if (toolName) {
                 // Tool args are streamed in chunks and accumulated. If the
@@ -490,6 +515,10 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
         let currentBlockType = '';
         let liveTokens = 0;
         const t0 = Date.now();
+        // Erro sinalizado dentro do stream (Anthropic manda { type: 'error' }).
+        // Capturado numa variavel e re-lancado apos o stream — o callback tem
+        // try/catch que engoliria um throw como chunk malformado.
+        let streamError = null;
         await requestStream(`${exports.ANTHROPIC_API_BASE}/v1/messages`, body, headers, signal, (line) => {
             if (!line.startsWith('data: ')) {
                 return;
@@ -503,6 +532,11 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
                     return;
                 }
                 const type = evt?.type ?? '';
+                if (type === 'error') {
+                    const detail = evt.error?.message || evt.error?.type || 'erro reportado pela API no stream';
+                    streamError = new Error(`API stream error: ${detail}`);
+                    return;
+                }
                 if (type === 'content_block_start') {
                     currentBlockType = evt.content_block?.type ?? '';
                     if (currentBlockType === 'tool_use') {
@@ -529,6 +563,9 @@ async function callAnthropicAI(apiKey, messages, tools, model, signal, onChunk, 
             }
             catch { /* malformed chunk */ }
         });
+        if (streamError) {
+            throw streamError;
+        }
         if (toolName) {
             // Tool args are accumulated chunk-by-chunk. Use tolerant parser
             // and fall back to text response if JSON is malformed.

@@ -1,6 +1,6 @@
 # Eucode IA
 
-Agente de inteligencia artificial para engenharia de software, integrado diretamente ao VS Code. Conecta-se a modelos locais via [LM Studio](https://lmstudio.ai) ou Ollama, ou diretamente a API Anthropic (Claude) — sem enviar nenhum dado para servidores externos quando em modo local.
+Agente de inteligencia artificial para engenharia de software, integrado diretamente ao VS Code. Conecta-se a modelos locais via [LM Studio](https://lmstudio.ai), [Apple MLX](https://github.com/ml-explore/mlx-lm) ou Ollama, ou diretamente a API Anthropic (Claude) — sem enviar nenhum dado para servidores externos quando em modo local.
 
 ---
 
@@ -73,9 +73,9 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 
 ---
 
-## 🎙 Modo JARVIS (BETA) — voz local (Whisper) + leitura em voz alta
+## 🎙 Modo JARVIS — voz local (Whisper) + leitura em voz alta
 
-> ⚠ **Feature em BETA.** O fluxo push-to-talk funciona, mas algumas integracoes (servidor de voz, app mobile, ajustes de qualidade) ainda estao em estabilizacao. Reporte bugs no GitHub.
+> ⏸ **Pausado temporariamente (a partir da 0.16.1).** O modo de voz exigia instalar o `ffmpeg` e subir um servidor Whisper manualmente, o que contraria a proposta do plugin de funcionar sem setup. A interface de voz esta oculta enquanto reformulamos a feature para funcionar de forma nativa, sem instalacoes. A documentacao abaixo descreve como a feature funciona e volta a valer quando ela for reativada.
 
 Pressione o botao de microfone no chat e fale com o Eucode IA. O audio e transcrito **localmente** via Whisper rodando no LM Studio (zero custo, sem enviar audio pra cloud). O agente pode responder em voz alta usando o TTS nativo do sistema.
 
@@ -416,15 +416,30 @@ Nas configuracoes → secao **Memoria da sessao**, clique em **Abrir memoria da 
 | Provedor | Como conectar |
 |---|---|
 | **LM Studio** | Servidor local em `http://localhost:1234` (padrao) |
+| **Apple MLX** | Servidor `mlx_lm.server` em `http://localhost:8080` (padrao) — inferencia nativa em Apple Silicon |
 | **Ollama** | Qualquer endpoint OpenAI-compativel |
 | **Anthropic (Claude)** | API key `sk-ant-...` — sem precisar configurar host |
 | **Outro** | Qualquer servidor com `/v1/chat/completions` |
+
+### Apple MLX (Apple Silicon)
+
+O [MLX](https://github.com/ml-explore/mlx-lm) e o runtime de inferencia da Apple, otimizado para os chips M1/M2/M3/M4/M5. Ele expoe um servidor compativel com a API da OpenAI, entao o Eucode conversa com ele nativamente.
+
+```bash
+# 1. Instalar a biblioteca de modelos de linguagem do MLX
+pip install mlx-lm
+
+# 2. Subir um servidor local compativel com OpenAI (exemplo com Qwen 2.5 Coder)
+python3 -m mlx_lm server --model mlx-community/Qwen2.5-Coder-14B-Instruct-4bit --port 8080
+```
+
+No Eucode: engrenagem → **Provedor: Apple MLX**. O host `http://localhost:8080` ja vem preenchido. Deixe o campo **Modelo** vazio (o servidor usa o modelo do `--model`) ou informe o mesmo id.
 
 ---
 
 ## Requisitos
 
-- [LM Studio](https://lmstudio.ai) rodando com um modelo carregado, **ou** [Ollama](https://ollama.com), **ou** uma API key da Anthropic, **ou** qualquer servidor OpenAI-compativel
+- [LM Studio](https://lmstudio.ai) rodando com um modelo carregado, **ou** [Apple MLX](https://github.com/ml-explore/mlx-lm) (Apple Silicon), **ou** [Ollama](https://ollama.com), **ou** uma API key da Anthropic, **ou** qualquer servidor OpenAI-compativel
 - VS Code 1.87 ou superior
 
 ---
@@ -433,7 +448,7 @@ Nas configuracoes → secao **Memoria da sessao**, clique em **Abrir memoria da 
 
 1. Instale a extensao pelo marketplace do VS Code
 2. Configure o provedor: clique na engrenagem no header do chat
-3. Para LM Studio/Ollama: abra o servidor local antes de usar
+3. Para LM Studio/MLX/Ollama: abra o servidor local antes de usar
 4. Para Anthropic: insira sua API key e escolha o modelo Claude
 
 ---

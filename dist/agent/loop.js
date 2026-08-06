@@ -53,6 +53,8 @@ const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
 const context_sanitizer_1 = require("../services/context-sanitizer");
 const execution_guard_1 = require("../services/execution-guard");
+const orchestration_metrics_1 = require("../services/orchestration-metrics");
+const fact_sheet_1 = require("../services/fact-sheet");
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code) {
     const patterns = [
@@ -600,11 +602,27 @@ ragProvider = 'chroma', ragEmbedHost, ragEmbedModel) {
     const priorMessages = effectiveAutoMode
         ? (0, history_service_1.buildMessagesFromHistory)(historySlice.slice(-2)) // last user+assistant pair
         : (0, history_service_1.buildMessagesFromHistory)(historySlice);
+    // systemContent é o conteúdo BASE (imutável). O fact sheet (fatos já
+    // descobertos) é anexado a ele a cada iteração via refreshSystemWithFacts,
+    // porque cresce ao longo da rodada e precisa sobreviver à poda das leituras.
+    const baseSystemContent = systemContent;
     const roundMessages = [
-        { role: 'system', content: systemContent },
+        { role: 'system', content: baseSystemContent },
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
+    // Fact sheet: scratchpad determinístico de fatos destilados (arquivos lidos
+    // + símbolos, arquivos escritos, último erro). Reinjetado no system a cada
+    // passo para que a poda das leituras brutas não faça o modelo esquecer o que
+    // já viu (e re-ler o mesmo arquivo até acabar os passos). Desligado em CHAT.
+    const factSheet = new fact_sheet_1.FactSheet();
+    const refreshSystemWithFacts = () => {
+        const facts = factSheet.build();
+        roundMessages[0] = {
+            role: 'system',
+            content: facts ? `${baseSystemContent}\n\n${facts}` : baseSystemContent,
+        };
+    };
     // Queue (not single slot) so multiple user messages sent during a slow
     // API call are all preserved instead of last-write-wins.
     const injectedMessages = [];
@@ -619,6 +637,10 @@ ragProvider = 'chroma', ragEmbedHost, ragEmbedModel) {
     const dirCache = new Map();
     // Guard único de execução — fonte única dos nudges corretivos do loop.
     const executionGuard = new execution_guard_1.ExecutionGuardService();
+    // Telemetria determinística da orquestração (por rodada). Mede tool vs
+    // texto, alucinação no passo 1 (firstStepWasText), re-leitura de arquivos
+    // (perda de contexto) e acionamento das redes de segurança. Só loga.
+    const orchMetrics = new orchestration_metrics_1.OrchestrationMetrics();
     const counters = {
         filesWritten: 0,
         lastCommandFailed: false,
@@ -638,7 +660,12 @@ ragProvider = 'chroma', ragEmbedHost, ragEmbedModel) {
         'Generating response...',
     ];
     let lastToolName = '';
-    const maxSteps = effectiveAutoMode ? 40 : constants_2.MAX_AGENT_STEPS;
+    // LLMs pagas (cloud) sao mais capazes: nao aplicamos limite artificial.
+    // Provedores locais (lmstudio, ollama, mlx) ficam com o cap para evitar travar a maquina.
+    const isLocalProvider = provider === 'lmstudio' || provider === 'ollama' || provider === 'mlx';
+    const maxSteps = isLocalProvider
+        ? (effectiveAutoMode ? 40 : constants_2.MAX_AGENT_STEPS)
+        : Number.POSITIVE_INFINITY;
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
@@ -718,7 +745,14 @@ ragProvider = 'chroma', ragEmbedHost, ragEmbedModel) {
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
     const sessionStart = Date.now();
+    // Guarda para logar a telemetria de orquestração uma única vez por rodada,
+    // já que emitTelemetry pode ser chamada em vários pontos de saída.
+    let orchLogged = false;
     const emitTelemetry = () => {
+        if (!orchLogged) {
+            orchLogged = true;
+            console.log(orchMetrics.format());
+        }
         if (!onTelemetry) {
             return;
         }
@@ -832,19 +866,28 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             });
         }
     }
-    // ── Âncora de plano local (sem HYBRID) ─────────────────────────────
-    // Modelo pequeno se perde em tarefas multi-passo sem um plano que o
-    // ancore. Quando NÃO há HYBRID gerando o plano e a tarefa parece ter
-    // vários passos, pedimos que ele próprio comece pelo todo_update — isso
-    // cria um scratchpad de estado que guia as rodadas seguintes muito melhor
-    // do que regras abstratas. Mensagem curta, só uma vez, na 1ª rodada.
-    const taskLooksMultiStep = userPrompt.trim().split(/\s+/).length >= 12
-        || /\b(e depois|então|primeiro|em seguida|todos os|cada|refator|implement|migr|criar?\s+\w+.*\be\b)\b/i.test(userPrompt);
-    if (!chatMode && !hybridActive && isFirstRoundOfSession && taskLooksMultiStep) {
-        roundMessages.push({
-            role: 'user',
-            content: 'Antes de agir, chame todo_update com 3 a 5 passos curtos para esta tarefa. Depois execute o primeiro passo.',
-        });
+    // ── Observar ANTES de planejar (sem HYBRID) ────────────────────────
+    // Antes esta âncora forçava o modelo a chamar todo_update ANTES de agir —
+    // ou seja, planejar no vazio. Para um modelo pequeno isso é convite a
+    // alucinar o plano inteiro (lista passos sobre arquivos que nem existem).
+    //
+    // Princípio (o mesmo do Claude Code, adaptado ao contexto pequeno): o
+    // raciocínio tem que ser FUNDAMENTADO em observação, não em suposição. Então
+    // o 1º passo passa a ser uma AÇÃO CONCRETA de leitura. A escolha de qual é
+    // determinística: se o prompt cita um caminho/arquivo, manda ler; senão,
+    // manda listar a raiz. Só depois de ter visto algo real o modelo planeja.
+    const isFirstRound = isFirstRoundOfSession;
+    if (!chatMode && !hybridActive && isFirstRound) {
+        // Detecta um caminho/arquivo citado no prompt (ex: "src/x.ts").
+        const pathMatch = userPrompt.match(/([A-Za-z0-9_\-./]+\.[A-Za-z0-9]{1,8})/);
+        // Se o arquivo citado é ALVO de criação ("crie/gere um README.md"), não
+        // mandamos lê-lo (ele não existe) — mandamos observar o projeto primeiro.
+        const citedFileIsCreationTarget = !!pathMatch
+            && new RegExp(`\\b(cri[ae]r?|ger[ae]r?|escrev[ae]r?|novo|nova)\\b[^.]{0,40}${pathMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(userPrompt);
+        const firstAction = (pathMatch && !citedFileIsCreationTarget)
+            ? `Comece agora chamando read_local_file em "${pathMatch[1]}". Não descreva um plano antes — leia o arquivo primeiro.`
+            : 'Comece agora chamando list_directory na raiz do projeto para ver a estrutura real. Não descreva um plano antes — observe primeiro.';
+        roundMessages.push({ role: 'user', content: firstAction });
     }
     // Loop externo: permite que o limite de passos seja "rearmado" pela
     // auto-continuação em modo AUTO (handleSoftStop reseta step=0). Sem AUTO,
@@ -908,6 +951,12 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                     pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
                 }
             }
+            // Reinjeta os fatos destilados no system ANTES de cada chamada. Mesmo
+            // que a poda acima tenha descartado a leitura bruta de um arquivo, o
+            // fato ("x.ts expõe A, B") continua presente — o modelo não re-lê.
+            if (!chatMode) {
+                refreshSystemWithFacts();
+            }
             // Only stream text to UI when there's a chance this is the final reply.
             // If the model ends up calling a tool instead, onStreamChunk output is
             // discarded — the UI bubble gets cleared before the tool result is shown.
@@ -944,16 +993,24 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 totalCompletionTokens += result.usage.completionTokens;
                 totalElapsedMs += result.usage.elapsedMs;
             }
+            let toolCallViaEscape = false;
             if (!result.toolCall && result.responseText) {
                 const escaped = detectEscapedToolCall(result.responseText);
                 if (escaped) {
                     result.toolCall = escaped;
                     result.responseText = '';
+                    toolCallViaEscape = true;
                 }
             }
             if (result.toolCall) {
                 const { name, arguments: args } = result.toolCall.function;
                 lastToolName = name;
+                // Telemetria: passo que emitiu tool. Registra re-leitura de arquivo
+                // (perda de contexto) quando a tool é read_local_file.
+                orchMetrics.recordToolStep(toolCallViaEscape);
+                if (name === 'read_local_file' && args?.filePath) {
+                    orchMetrics.recordFileRead(path.resolve(defaultCwd, String(args.filePath)));
+                }
                 const toolCallId = result.toolCall.id || `call_${step}`;
                 const handler = toolHandlers[name];
                 // Loop guard: if the model calls the same tool with the same args
@@ -980,6 +1037,24 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 const toolOutput = handler
                     ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
                     : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+                // Alimenta o fact sheet com o essencial ANTES de qualquer poda, para
+                // que o fato sobreviva mesmo que o par tool bruto seja descartado.
+                // Leitura: destila símbolos do conteúdo. Escrita/edição: registra o
+                // path. Erro de comando: registra o resumo (via counters).
+                {
+                    const fp = args?.filePath;
+                    if (name === 'read_local_file' && fp) {
+                        factSheet.recordRead(path.basename(String(fp)), toolOutput, extractSymbols);
+                    }
+                    else if ((name === 'write_local_file' || name === 'edit_file') && fp
+                        && !toolOutput.startsWith('[ERRO') && !toolOutput.startsWith('[ERROR')
+                        && !toolOutput.startsWith('[CANCELLED')) {
+                        factSheet.recordWrite(path.basename(String(fp)));
+                    }
+                    else if (name === 'run_command' && counters.lastCommandFailed && counters.lastErrorSummary) {
+                        factSheet.recordError(counters.lastErrorSummary);
+                    }
+                }
                 // Limpa o output antes de mandar pro LLM: remove lixo (ANSI, barras
                 // de progresso, linhas em branco/spinners repetidos), aplica limpeza
                 // por tool (run_command prioriza erros + cauda, git diff descarta
@@ -1066,6 +1141,10 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                     continue;
                 }
                 emptyResponseStreak = 0;
+                // Telemetria: passo de texto puro (modelo respondeu sem tool). Se
+                // for o 1º passo, firstStepWasText sinaliza "planejou/alucinou antes
+                // de observar o projeto".
+                orchMetrics.recordTextStep();
                 // Detect "code dumped in chat instead of using a tool":
                 // model included a fenced code block of substantial size but
                 // didn't call write_local_file/edit_file. Common failure mode
@@ -1087,6 +1166,7 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
                 if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                     pendingActionStreak++;
+                    orchMetrics.recordPendingNudge();
                     // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
                     // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
                     // com recovery em CADA multiplo de 4 (4, 8, 12) — cada chamada

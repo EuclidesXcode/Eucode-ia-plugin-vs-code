@@ -1,0 +1,4 @@
+.claude/
+.eucode/
+node_modules/
+*.log
