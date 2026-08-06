@@ -16,7 +16,7 @@ import { ensureEucodeWorkspace, revealEucodeDir } from './services/workspace-ini
 import { VoiceServer, generatePairingToken } from './services/voice-server';
 import { AudioCapture } from './services/audio-capture';
 import { WakeWordListener, WakeWordState } from './services/wake-word';
-import { DEFAULT_MODEL, JARVIS_ENABLED } from './utils/constants';
+import { DEFAULT_MODEL, JARVIS_ENABLED, clampContextBudget, defaultContextBudgetForProvider } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'eucode-ia.chatView';
@@ -366,6 +366,13 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     customCommandsScope: this._settings.customCommandsScope,
                     hybridIntensity: this._settings.hybridIntensity,
                     projectIntelEnabled: this._settings.projectIntelEnabled,
+                    contextTokenBudget: this._settings.contextTokenBudget,
+                    providerContextDefaults: {
+                        lmstudio: defaultContextBudgetForProvider('lmstudio'),
+                        mlx: defaultContextBudgetForProvider('mlx'),
+                        ollama: defaultContextBudgetForProvider('ollama'),
+                        anthropic: defaultContextBudgetForProvider('anthropic'),
+                    },
                     jarvisEnabled: this._settings.jarvisEnabled,
                     jarvisAutoSpeak: this._settings.jarvisAutoSpeak,
                     jarvisTtsVoice: this._settings.jarvisTtsVoice,
@@ -441,6 +448,9 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                     hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity) as 25 | 50 | 75 | 100,
                     projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
+                    contextTokenBudget: typeof message.contextTokenBudget === 'number'
+                        ? message.contextTokenBudget
+                        : this._settings.contextTokenBudget,
                     jarvisEnabled: message.jarvisEnabled ?? this._settings.jarvisEnabled,
                     jarvisAutoSpeak: message.jarvisAutoSpeak ?? this._settings.jarvisAutoSpeak,
                     jarvisTtsVoice: message.jarvisTtsVoice ?? this._settings.jarvisTtsVoice,
@@ -862,7 +872,12 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     this._settings.projectIntelEnabled,
                     this._settings.ragProvider,
                     this._settings.ragEnabled ? this._settings.ragEmbedHost : undefined,
-                    this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined
+                    this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined,
+                    // Budget de contexto: setting do usuario, ou default do
+                    // provedor quando 0/ausente. Clampado para faixa segura.
+                    this._settings.contextTokenBudget && this._settings.contextTokenBudget > 0
+                        ? clampContextBudget(this._settings.contextTokenBudget)
+                        : defaultContextBudgetForProvider(this._settings.provider)
                 );
                 this._abortController = null;
                 this._injectMessage = null;

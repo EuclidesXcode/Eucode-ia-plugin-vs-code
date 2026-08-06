@@ -1757,6 +1757,11 @@
             <div id="config-model-hint" class="config-hint">Nome exato do modelo carregado. Vazio usa o padrao do servidor.</div>
             <div id="config-claude-models" style="display:none;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
         </div>
+        <div id="config-context-budget-row">
+            <div class="config-label">Janela de contexto (tokens)</div>
+            <input id="config-context-budget" class="config-input mono" type="number" min="1024" max="200000" step="512" placeholder="8192" spellcheck="false" autocomplete="off">
+            <div id="config-context-budget-hint" class="config-hint">Calibra a poda de contexto e os limites de output. Vazio ou 0 = usa o padrao do provedor. Ajuste para casar com a janela real do modelo (ex: MLX/Qwen suporta ate 32768, mas a RAM limita).</div>
+        </div>
         <div>
             <div class="config-label" id="config-key-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
             <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
@@ -2114,6 +2119,11 @@
         // LM Studio em :1234. Usado para pre-preencher ao trocar de provedor.
         const PROVIDER_DEFAULT_HOST = { mlx: 'http://localhost:8080', lmstudio: 'http://localhost:1234' };
         const KNOWN_DEFAULT_HOSTS = ['http://localhost:8080', 'http://localhost:1234', ''];
+        const configContextBudget = document.getElementById('config-context-budget');
+        const configContextBudgetHint = document.getElementById('config-context-budget-hint');
+        // Defaults de janela de contexto por provedor, vindos do host (constants).
+        // Preenchido no load_config; usado para o placeholder sugerir o default.
+        let providerContextDefaults = { lmstudio: 2048, mlx: 8192, ollama: 4096, anthropic: 32768 };
         const configModelInput = document.getElementById('config-model-input');
         const configKeyInput = document.getElementById('config-key-input');
         const configSaveBtn = document.getElementById('config-save-btn');
@@ -3100,6 +3110,18 @@
                 configHostInput.value = PROVIDER_DEFAULT_HOST.mlx;
             }
             configHostInput.placeholder = isMlx ? PROVIDER_DEFAULT_HOST.mlx : 'http://localhost:1234';
+
+            // Janela de contexto: o placeholder mostra o default do provedor
+            // selecionado. Se o campo estiver vazio (usuario nao sobrescreveu),
+            // deixa vazio para herdar esse default no backend.
+            const ctxDefault = providerContextDefaults[provider] || 8192;
+            if (configContextBudget) {
+                configContextBudget.placeholder = String(ctxDefault);
+                if (configContextBudgetHint) {
+                    configContextBudgetHint.textContent =
+                        `Calibra a poda de contexto e os limites de output. Vazio = usa o padrao deste provedor (${ctxDefault}). Ajuste para casar com a janela real do modelo carregado.`;
+                }
+            }
             configKeyLabel.innerHTML = isAnthropic
                 ? 'API Key'
                 : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
@@ -3166,6 +3188,11 @@
                 configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
                 configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
                 configProjectIntel.checked = savedSettings.projectIntelEnabled !== false;
+                // Campo vazio quando 0 (herda default do provedor); senao o valor salvo.
+                if (configContextBudget) {
+                    configContextBudget.value = (savedSettings.contextTokenBudget && savedSettings.contextTokenBudget > 0)
+                        ? String(savedSettings.contextTokenBudget) : '';
+                }
 
                 configJarvisEnabled.checked = !!savedSettings.jarvisEnabled;
                 configJarvisAutoSpeak.checked = savedSettings.jarvisAutoSpeak !== false;
@@ -3223,6 +3250,7 @@
                 inlineCompletionEnabled: configInlineCompletion.checked,
                 fixWithEucodeEnabled: configFixWithEucode.checked,
                 projectIntelEnabled: configProjectIntel.checked,
+                contextTokenBudget: (function(){ const v = parseInt(configContextBudget && configContextBudget.value, 10); return Number.isFinite(v) && v > 0 ? v : 0; })(),
                 jarvisEnabled: configJarvisEnabled.checked,
                 jarvisAutoSpeak: configJarvisAutoSpeak.checked,
                 jarvisTtsVoice: configTtsVoice.value || '',
@@ -3775,11 +3803,12 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragProvider: msg.ragProvider || 'chroma', ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', ragEmbedHost: msg.ragEmbedHost || 'http://localhost:1234', ragEmbedModel: msg.ragEmbedModel || '', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '', wakeWordEnabled: !!msg.wakeWordEnabled, wakeWord: msg.wakeWord || 'eucode' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragProvider: msg.ragProvider || 'chroma', ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', ragEmbedHost: msg.ragEmbedHost || 'http://localhost:1234', ragEmbedModel: msg.ragEmbedModel || '', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, contextTokenBudget: (typeof msg.contextTokenBudget === 'number' ? msg.contextTokenBudget : 0), jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '', wakeWordEnabled: !!msg.wakeWordEnabled, wakeWord: msg.wakeWord || 'eucode' };
                 customCommandsScope = savedSettings.customCommandsScope;
                 jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
                     '| whisperEndpoint =', savedSettings.whisperEndpoint);
                 jarvisFeatureEnabled = !!msg.jarvisFeatureEnabled;
+                if (msg.providerContextDefaults) { providerContextDefaults = msg.providerContextDefaults; }
                 syncHybridModeWithSettings();
                 applyJarvisFeatureFlag();
             } else if (msg.command === 'load_sessions') {
@@ -3822,6 +3851,7 @@
                 savedSettings.supportModel = configHybridModel.value.trim();
                 savedSettings.hybridIntensity = selectedHybridIntensity;
                 savedSettings.projectIntelEnabled = configProjectIntel.checked;
+                savedSettings.contextTokenBudget = (function(){ const v = parseInt(configContextBudget && configContextBudget.value, 10); return Number.isFinite(v) && v > 0 ? v : 0; })();
                 savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
                 savedSettings.jarvisEnabled = configJarvisEnabled.checked;

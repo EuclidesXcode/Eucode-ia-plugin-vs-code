@@ -15,7 +15,7 @@ import { webSearch } from '../tools/web-tools';
 import { runCommandTool } from './tools-definition';
 import { SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT } from './prompt';
 import { TOOLS, TOOL_NAMES } from './tools-definition';
-import { MAX_AGENT_STEPS } from '../utils/constants';
+import { MAX_AGENT_STEPS, CONTEXT_TOKEN_BUDGET, CHARS_PER_TOKEN, contextPruneTokenThreshold } from '../utils/constants';
 import { resolveFilePath } from '../utils/validation';
 import { contextSanitizer } from '../services/context-sanitizer';
 import { ExecutionGuardService, ExecutionState } from '../services/execution-guard';
@@ -574,7 +574,10 @@ export async function runAgentLoop(
     // embedded server-side, so embed* are ignored).
     ragProvider: RagProvider = 'chroma',
     ragEmbedHost?: string,
-    ragEmbedModel?: string
+    ragEmbedModel?: string,
+    // Orcamento de contexto (tokens) ja resolvido pelo chamador (setting do
+    // usuario ou default do provedor). Calibra poda e limpeza de output.
+    contextTokenBudget: number = CONTEXT_TOKEN_BUDGET
 ): Promise<string> {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
@@ -894,7 +897,7 @@ export async function runAgentLoop(
     // plano de execucao. O plano vira contexto adicional injetado como
     // mensagem do usuario que o local executa passo a passo.
     if (hybridActive) {
-        const planSystem = `You are a senior architect helping a small local LLM (14B, 2048 ctx) execute a coding task. The local model has very limited context space — every token in your plan reduces what it has to work with.
+        const planSystem = `You are a senior architect helping a small local LLM (7-14B, limited context) execute a coding task. The local model has limited context space — every token in your plan reduces what it has to work with.
 
 Output a NUMBERED list of 3-7 short steps. STRICT format rules:
 - Use RELATIVE paths only (e.g. "package.json", "src/extension.ts") — never absolute paths
@@ -986,19 +989,25 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 (t.name !== 'web_search' || webRelevant)
               );
 
-        // Preventive pruning calibrated for a 2048-token context window.
-        // Only prune when significantly over budget, keeping the most recent pairs
-        // so the model retains context of what it just read/did.
+        // Poda preventiva calibrada pelo orçamento de contexto (CONTEXT_TOKEN_
+        // BUDGET). Só poda quando passa do threshold derivado — janelas maiores
+        // podam mais tarde e retêm mais pares, aproveitando o contexto em vez de
+        // desperdiçá-lo. O número de pares mantidos escala com o orçamento.
         {
             const totalChars = roundMessages.reduce((acc, m) => {
                 const content = typeof m.content === 'string' ? m.content : '';
                 const toolArgs = m.tool_calls ? JSON.stringify(m.tool_calls) : '';
                 return acc + content.length + toolArgs.length;
             }, 0);
-            const estimatedTokens = Math.floor(totalChars / 4);
-            if (estimatedTokens > 1200) {
-                // Keep more pairs in auto mode so model doesn't lose what it just read
-                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
+            const estimatedTokens = Math.floor(totalChars / CHARS_PER_TOKEN);
+            if (estimatedTokens > contextPruneTokenThreshold(contextTokenBudget)) {
+                // Pares mantidos escalam com a janela: quanto maior o orçamento,
+                // mais historico de leituras/acoes o modelo conserva. Base ~2048
+                // → 2 pares (3 em AUTO); 8192 → ~8 pares; teto de 12 para nao
+                // explodir a janela nem a latencia.
+                const scale = contextTokenBudget / 2048;
+                const basePairs = Math.min(12, Math.max(2, Math.round(2 * scale)));
+                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? basePairs + 1 : basePairs);
             }
         }
 
@@ -1123,6 +1132,7 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             // agressiva em AUTO (contexto apertado), leve no modo manual.
             const truncatedOutput = contextSanitizer.clean(name, toolOutput, {
                 autoMode: effectiveAutoMode,
+                tokenBudget: contextTokenBudget,
             });
 
             roundMessages.push({

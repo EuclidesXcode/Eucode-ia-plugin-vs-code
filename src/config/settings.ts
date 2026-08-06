@@ -63,6 +63,11 @@ export interface EucodeSettings {
     // ~700-1500 tokens to every prompt. Disable to free context on small
     // models (≤ 4B params) or on huge monorepos where the scan is slow.
     projectIntelEnabled: boolean;
+    // Orcamento de contexto (tokens) que o Eucode assume para o modelo local.
+    // Calibra a poda e os limites de limpeza de output. 0/ausente = usa o
+    // default do provedor (PROVIDER_CONTEXT_DEFAULTS). O usuario pode ajustar
+    // manualmente na UI para casar com a janela real do modelo carregado.
+    contextTokenBudget: number;
     // ── JARVIS (voice mode) ─────────────────────────────────────────────
     jarvisEnabled: boolean;          // master switch for voice features
     jarvisAutoSpeak: boolean;        // TTS reads agent responses out loud
@@ -101,6 +106,7 @@ const DEFAULTS: EucodeSettings = {
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
     projectIntelEnabled: true,
+    contextTokenBudget: 0,  // 0 = usa o default do provedor
     jarvisEnabled: false,
     jarvisAutoSpeak: true,
     jarvisTtsVoice: '',
@@ -138,6 +144,7 @@ const KEYS = {
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
     projectIntelEnabled: 'eucode.projectIntelEnabled',
+    contextTokenBudget: 'eucode.contextTokenBudget',
     jarvisEnabled: 'eucode.jarvisEnabled',
     jarvisAutoSpeak: 'eucode.jarvisAutoSpeak',
     jarvisTtsVoice: 'eucode.jarvisTtsVoice',
@@ -182,6 +189,7 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         customCommandsScope: context.globalState.get<'workspace' | 'global'>(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get<25 | 50 | 75 | 100>(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
         projectIntelEnabled: context.globalState.get<boolean>(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
+        contextTokenBudget: context.globalState.get<number>(KEYS.contextTokenBudget) ?? DEFAULTS.contextTokenBudget,
         jarvisEnabled: context.globalState.get<boolean>(KEYS.jarvisEnabled) ?? DEFAULTS.jarvisEnabled,
         jarvisAutoSpeak: context.globalState.get<boolean>(KEYS.jarvisAutoSpeak) ?? DEFAULTS.jarvisAutoSpeak,
         jarvisTtsVoice: context.globalState.get<string>(KEYS.jarvisTtsVoice) ?? DEFAULTS.jarvisTtsVoice,
@@ -220,6 +228,7 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
     await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
+    await context.globalState.update(KEYS.contextTokenBudget, settings.contextTokenBudget);
     await context.globalState.update(KEYS.jarvisEnabled, settings.jarvisEnabled);
     await context.globalState.update(KEYS.jarvisAutoSpeak, settings.jarvisAutoSpeak);
     await context.globalState.update(KEYS.jarvisTtsVoice, settings.jarvisTtsVoice);
