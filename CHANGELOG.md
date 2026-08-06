@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.5
+
+- **NOVO: leitura de arquivos Office e diagramas (.xlsx, .docx, .pptx, .drawio)** — antes, pedir para o agente ler um desses arquivos despejava o binario cru (um .xlsx e um ZIP) como texto, enchendo o contexto de lixo — e no Apple MLX isso estourava a memoria da GPU e **derrubava o servidor** (Metal Insufficient Memory). Agora o Eucode extrai o **texto real**: celulas por aba (xlsx), paragrafos (docx), texto dos slides (pptx) e rotulos das formas (drawio). Se o conteudo for maior que a janela de contexto configurada, entrega o inicio + um resumo estrutural, sem nunca estourar a memoria. Feito com o `zlib` nativo do Node — **nenhuma dependencia nova**, o tamanho do plugin nao muda
+
 ## 0.16.4
 
 - **UI mais limpa com Apple MLX** — dois ruidos que apareciam na conversa foram removidos: (1) o JSON da chamada de ferramenta (`{"name": "...", "arguments": ...}`) nao aparece mais na timeline quando a ferramenta e executada — antes ele era congelado na tela; agora, quando o texto ERA a propria chamada, a bolha e descartada por completo. (2) Special tokens do modelo (`<|im_start|>`, `<|im_end|>`, `<|endoftext|>` e afins) que o `mlx_lm.server` nao filtrava e vazavam como se fossem uma resposta agora sao removidos da saida. Ambos os ajustes sao cosmeticos — nao mudam o que o agente executa

@@ -21,6 +21,7 @@ import { contextSanitizer } from '../services/context-sanitizer';
 import { ExecutionGuardService, ExecutionState } from '../services/execution-guard';
 import { OrchestrationMetrics } from '../services/orchestration-metrics';
 import { FactSheet } from '../services/fact-sheet';
+import { isExtractable, extractDocument } from '../services/document-extractor';
 
 export type TodoItem = { content: string; status: 'pending' | 'in_progress' | 'completed' };
 
@@ -150,7 +151,8 @@ function buildToolHandlers(
         lastEditedFile: string;
     },
     onFileTouched?: (absolutePath: string) => void,
-    sessionId?: string
+    sessionId?: string,
+    contextTokenBudget: number = CONTEXT_TOKEN_BUDGET
 ): Record<string, (args: Record<string, any>, cwd: string, step: number, max: number) => Promise<string>> {
     return {
         list_directory: async (args, cwd) => {
@@ -171,6 +173,19 @@ function buildToolHandlers(
                 onStatus(`Reading file: ${path.basename(fp)} (cached)`);
                 filesReadThisRound.add(fullPath);
                 return fileCache.get(fullPath)!;
+            }
+            // Arquivos Office (.xlsx/.docx/.pptx) e diagramas (.drawio) NAO sao
+            // texto puro — lidos como utf8 viram lixo binario que estoura o
+            // contexto (e no MLX estoura o KV cache -> crash de Metal OOM).
+            // Extrai o texto real com teto derivado da janela de contexto: um so
+            // arquivo nunca ocupa mais que ~metade da janela.
+            if (isExtractable(fp)) {
+                onStatus(`Extracting text: ${path.basename(fp)}`);
+                const maxChars = Math.floor((contextTokenBudget * CHARS_PER_TOKEN) / 2);
+                const extracted = extractDocument(fullPath, { maxChars });
+                fileCache.set(fullPath, extracted);
+                filesReadThisRound.add(fullPath);
+                return extracted;
             }
             onStatus(`Reading file: ${path.basename(fp)}`);
             const result = await readLocalFile(fp, cwd);
@@ -744,7 +759,7 @@ export async function runAgentLoop(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
         onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands,
-        fileCache, dirCache, counters, onFileTouched, sessionId
+        fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget
     );
 
     const thinkingStatus = [

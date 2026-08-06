@@ -55,6 +55,7 @@ const context_sanitizer_1 = require("../services/context-sanitizer");
 const execution_guard_1 = require("../services/execution-guard");
 const orchestration_metrics_1 = require("../services/orchestration-metrics");
 const fact_sheet_1 = require("../services/fact-sheet");
+const document_extractor_1 = require("../services/document-extractor");
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code) {
     const patterns = [
@@ -128,7 +129,7 @@ function parseErrorLocations(output) {
     }
     return { files, summary };
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -148,6 +149,19 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onStatus(`Reading file: ${path.basename(fp)} (cached)`);
                 filesReadThisRound.add(fullPath);
                 return fileCache.get(fullPath);
+            }
+            // Arquivos Office (.xlsx/.docx/.pptx) e diagramas (.drawio) NAO sao
+            // texto puro — lidos como utf8 viram lixo binario que estoura o
+            // contexto (e no MLX estoura o KV cache -> crash de Metal OOM).
+            // Extrai o texto real com teto derivado da janela de contexto: um so
+            // arquivo nunca ocupa mais que ~metade da janela.
+            if ((0, document_extractor_1.isExtractable)(fp)) {
+                onStatus(`Extracting text: ${path.basename(fp)}`);
+                const maxChars = Math.floor((contextTokenBudget * constants_2.CHARS_PER_TOKEN) / 2);
+                const extracted = (0, document_extractor_1.extractDocument)(fullPath, { maxChars });
+                fileCache.set(fullPath, extracted);
+                filesReadThisRound.add(fullPath);
+                return extracted;
             }
             onStatus(`Reading file: ${path.basename(fp)}`);
             const result = await (0, file_tools_1.readLocalFile)(fp, cwd);
@@ -702,7 +716,7 @@ contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
         lastErrorSummary: '',
         lastEditedFile: '',
     };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',
