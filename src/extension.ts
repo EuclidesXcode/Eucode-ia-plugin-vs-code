@@ -740,7 +740,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
             const endpoint = buildApiEndpoint(this._settings);
             const authHeaders = buildAuthHeader(this._settings);
-            const activeModel = this._settings.model || DEFAULT_MODEL;
+            // MLX: o modelo é fixado no servidor via --model, então um campo
+            // vazio não deve virar o DEFAULT_MODEL do LM Studio (que o servidor
+            // MLX não tem). Envia '' e deixa o mlx_lm.server usar o carregado.
+            const activeModel = this._settings.model
+                || (this._settings.provider === 'mlx' ? '' : DEFAULT_MODEL);
             let response: string;
 
             if (message.image?.base64) {

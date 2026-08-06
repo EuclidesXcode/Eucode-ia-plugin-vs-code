@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { RagProvider } from '../services/rag-client';
 
-export type AIProvider = 'lmstudio' | 'anthropic' | 'ollama';
+export type AIProvider = 'lmstudio' | 'anthropic' | 'ollama' | 'mlx';
 export type SupportProvider = 'anthropic' | 'openai' | 'gemini';
 export type { RagProvider };
 

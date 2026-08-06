@@ -101,6 +101,21 @@
             cursor: not-allowed;
         }
         .header-btn.disabled:hover { border-color: #1e2a3a; background: none; }
+        /* contador de tokens no header (a esquerda do botao Modos) */
+        .header-token {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #c9d1d9;
+            background: #0a0a15;
+            border: 1px solid #1e2a3a;
+            border-radius: 6px;
+            margin-right: 6px;
+        }
+        .header-token.small { padding: 3px 8px; font-size: 10px; }
 
         /* ── Modes dropdown ── */
         .modes-wrapper {
@@ -1679,6 +1694,7 @@
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
+        <div id="token-counter" class="header-token small" title="Contador de tokens">Tokens: 0</div>
         <div id="modes-wrapper" class="modes-wrapper">
             <button id="modes-btn" class="header-btn" title="Modos do agente"><span class="mi" style="font-size:14px">tune</span>Modos<span id="modes-summary" class="modes-summary"></span></button>
             <div id="modes-dropdown" class="modes-dropdown">
@@ -1725,6 +1741,7 @@
             <div class="config-label">Provedor</div>
             <select id="config-provider" class="config-select">
                 <option value="lmstudio">LM Studio</option>
+                <option value="mlx">Apple MLX</option>
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="ollama">Outro (OpenAI-compativel)</option>
             </select>
@@ -1732,7 +1749,7 @@
         <div id="config-host-row">
             <div class="config-label">Host</div>
             <input id="config-host-input" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
-            <div class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
+            <div id="config-host-hint" class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
         </div>
         <div>
             <div class="config-label">Modelo</div>
@@ -2092,6 +2109,11 @@
         const configPanel = document.getElementById('config-panel');
         const configProvider = document.getElementById('config-provider');
         const configHostInput = document.getElementById('config-host-input');
+        const configHostHint = document.getElementById('config-host-hint');
+        // Host default por provedor local. MLX (mlx_lm.server) sobe em :8080;
+        // LM Studio em :1234. Usado para pre-preencher ao trocar de provedor.
+        const PROVIDER_DEFAULT_HOST = { mlx: 'http://localhost:8080', lmstudio: 'http://localhost:1234' };
+        const KNOWN_DEFAULT_HOSTS = ['http://localhost:8080', 'http://localhost:1234', ''];
         const configModelInput = document.getElementById('config-model-input');
         const configKeyInput = document.getElementById('config-key-input');
         const configSaveBtn = document.getElementById('config-save-btn');
@@ -2658,6 +2680,7 @@
         const modesBtn = document.getElementById('modes-btn');
         const modesDropdown = document.getElementById('modes-dropdown');
         const modesSummary = document.getElementById('modes-summary');
+        const tokenCounter = document.getElementById('token-counter');
         const modesChatNotice = document.getElementById('modes-chat-notice');
         const modeDevBtn = document.getElementById('mode-dev');
         const modeChatBtn = document.getElementById('mode-chat');
@@ -3062,7 +3085,21 @@
 
         function updateConfigUI(provider) {
             const isAnthropic = provider === 'anthropic';
+            const isMlx = provider === 'mlx';
             configHostRow.style.display = isAnthropic ? 'none' : '';
+
+            // MLX: pre-preenche o host default :8080 quando o campo esta vazio ou
+            // ainda no default de outro provedor local (nao sobrescreve um host
+            // que o usuario digitou de proposito). Mostra o comando de start.
+            if (configHostHint) {
+                configHostHint.textContent = isMlx
+                    ? 'Servidor mlx_lm. Inicie com: python3 -m mlx_lm server --model mlx-community/Qwen2.5-Coder-14B-Instruct-4bit --port 8080'
+                    : 'Endereco completo com porta. Ex: http://10.100.0.22:11434';
+            }
+            if (isMlx && KNOWN_DEFAULT_HOSTS.includes(configHostInput.value.trim())) {
+                configHostInput.value = PROVIDER_DEFAULT_HOST.mlx;
+            }
+            configHostInput.placeholder = isMlx ? PROVIDER_DEFAULT_HOST.mlx : 'http://localhost:1234';
             configKeyLabel.innerHTML = isAnthropic
                 ? 'API Key'
                 : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
@@ -3071,7 +3108,9 @@
             configModelHint.textContent = isAnthropic
                 ? 'Modelo Claude a usar. Clique num atalho abaixo ou digite o ID.'
                 : 'Nome exato do modelo carregado. Vazio usa o padrao do servidor.';
-            configModelInput.placeholder = isAnthropic ? 'claude-sonnet-4-6' : 'google/gemma-4-e4b';
+            configModelInput.placeholder = isAnthropic
+                ? 'claude-sonnet-4-6'
+                : isMlx ? 'mlx-community/Qwen2.5-Coder-14B-Instruct-4bit' : 'google/gemma-4-e4b';
 
             if (isAnthropic) {
                 configClaudeModels.style.display = 'flex';
@@ -3759,6 +3798,8 @@
                 rows.forEach(r => r.remove());
                 appendMessage('Ola! Como posso ajudar?', 'agent');
                 sendBtn.disabled = false;
+                // Reset token counters for the new session
+                try { sessionTokenTotal = 0; lastLiveCountForCall = null; updateTokenCounter(0); } catch (e) {}
             } else if (msg.command === 'connection_status') {
                 statusDot.classList.toggle('online', msg.online);
             } else if (msg.command === 'config_saved') {
@@ -3844,6 +3885,7 @@
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
             } else if (msg.command === 'live_telemetry') {
+                try { console.debug('[webview] live_telemetry received', msg); } catch(e){}
                 updateLiveTelemetry(msg.tokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'telemetry') {
                 finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
@@ -4251,6 +4293,23 @@
         // Throttle live updates to ~10fps to avoid layout thrashing
         let liveTelemetryRaf = false;
         let liveTelemetryPending = null;
+        // Acumula tokens por sessao (nao zerar a cada chamada streaming)
+        let sessionTokenTotal = 0;
+        // ultimo contador live recebido para a chamada atual (incremental)
+        let lastLiveCountForCall = null;
+
+        function updateTokenCounter(tokens) {
+            try {
+                if (!tokenCounter) { return; }
+                // Sempre exibe o contador; quando nao houver valor, mostra 0
+                const value = (tokens == null) ? 0 : (typeof tokens === 'number' ? tokens : Number(tokens) || 0);
+                tokenCounter.style.display = 'inline-flex';
+                tokenCounter.textContent = `Tokens: ${value}`;
+                try { console.debug('[webview] updateTokenCounter', value); } catch (e) {}
+            } catch (e) {
+                // ignore
+            }
+        }
 
         function getOrCreateLiveTelemetryItem() {
             if (liveTelemetryItem) { return; }
@@ -4302,6 +4361,19 @@
                     tps > 0 ? `<span>${tps} t/s</span>` : null,
                     `<span>${(ms / 1000).toFixed(1)}s</span>`,
                 ]);
+                // Atualiza contador acumulado por sessao usando o delta do stream
+                try {
+                    const numeric = (typeof t === 'number') ? t : Number(t) || 0;
+                    let delta = numeric;
+                    if (lastLiveCountForCall != null) {
+                        delta = numeric - lastLiveCountForCall;
+                    }
+                    if (delta > 0) {
+                        sessionTokenTotal += delta;
+                    }
+                    lastLiveCountForCall = numeric;
+                    updateTokenCounter(sessionTokenTotal);
+                } catch (e) { /* ignore */ }
             });
         }
 
@@ -4322,6 +4394,20 @@
                 tokensPerSec > 0 ? `<span>${tokensPerSec} t/s</span>` : null,
                 `Tempo <span>${elapsedSec}s</span>`,
             ]);
+            // Atualiza acumulador de sessao com o total desta chamada (evita double-counting)
+            try {
+                const callTotal = (promptTokens || 0) + (completionTokens || 0);
+                if (lastLiveCountForCall != null) {
+                    const remaining = callTotal - lastLiveCountForCall;
+                    if (remaining > 0) { sessionTokenTotal += remaining; }
+                } else {
+                    // nao recebemos updates live nesta chamada — soma tudo
+                    sessionTokenTotal += callTotal;
+                }
+                // reset para proxima chamada
+                lastLiveCountForCall = null;
+                updateTokenCounter(sessionTokenTotal);
+            } catch (e) { /* ignore */ }
             liveTelemetryItem = null;
             liveTelemetryChips = null;
 

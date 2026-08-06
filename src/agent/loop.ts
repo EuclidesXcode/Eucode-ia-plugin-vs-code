@@ -719,8 +719,8 @@ export async function runAgentLoop(
 
     let lastToolName = '';
     // LLMs pagas (cloud) sao mais capazes: nao aplicamos limite artificial.
-    // Provedores locais (lmstudio, ollama) ficam com o cap para evitar travar a maquina.
-    const isLocalProvider = provider === 'lmstudio' || provider === 'ollama';
+    // Provedores locais (lmstudio, ollama, mlx) ficam com o cap para evitar travar a maquina.
+    const isLocalProvider = provider === 'lmstudio' || provider === 'ollama' || provider === 'mlx';
     const maxSteps = isLocalProvider
         ? (effectiveAutoMode ? 40 : MAX_AGENT_STEPS)
         : Number.POSITIVE_INFINITY;
