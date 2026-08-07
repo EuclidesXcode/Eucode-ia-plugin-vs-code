@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.6
+
+- **Correcao critica: "Falha ao chamar o LLM" / agente travando com modelos locais lentos** — o stream tinha um timeout de socket curto (5s, default do Node). Em maquinas mais lentas (ex: MacBook Air), um modelo local leva 15-30s so processando um prompt grande ANTES de gerar o primeiro token — e a conexao morria nesse intervalo, gerando falhas intermitentes onde o agente "nao saia do lugar" e dava poucos passos. Agora o stream usa um timeout de INATIVIDADE de 2 minutos, re-armado a cada byte recebido (inclusive os keepalives que o servidor MLX envia durante o processamento). So dispara se o servidor ficar realmente mudo. Verificado com prompt grande levando 29s: antes falhava, agora completa
+- **Mais casos de "descreveu mas nao executou" detectados** — o mecanismo que empurra o modelo a agir (em vez de so narrar "vou fazer X") agora reconhece tambem "vou procurar", "vou buscar", "vou ler", "vou analisar", "vou listar", "vou abrir" — verbos que o modelo usava para narrar sem chamar a ferramenta
+
 ## 0.16.5
 
 - **NOVO: leitura de arquivos Office e diagramas (.xlsx, .docx, .pptx, .drawio)** — antes, pedir para o agente ler um desses arquivos despejava o binario cru (um .xlsx e um ZIP) como texto, enchendo o contexto de lixo — e no Apple MLX isso estourava a memoria da GPU e **derrubava o servidor** (Metal Insufficient Memory). Agora o Eucode extrai o **texto real**: celulas por aba (xlsx), paragrafos (docx), texto dos slides (pptx) e rotulos das formas (drawio). Se o conteudo for maior que a janela de contexto configurada, entrega o inicio + um resumo estrutural, sem nunca estourar a memoria. Feito com o `zlib` nativo do Node — **nenhuma dependencia nova**, o tamanho do plugin nao muda

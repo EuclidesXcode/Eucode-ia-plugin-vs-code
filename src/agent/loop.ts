@@ -426,6 +426,7 @@ const PENDING_ACTION_PATTERNS = [
     /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
     /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
     /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
+    /vou procurar/i, /vou buscar/i, /vou ler/i, /vou analisar/i, /vou listar/i, /vou abrir/i,
     /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
     /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
     /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,

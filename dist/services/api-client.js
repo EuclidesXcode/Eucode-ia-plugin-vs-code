@@ -211,11 +211,42 @@ function requestStream(url, body, headers, signal, onLine) {
             },
         };
         const transport = url.startsWith('https://') ? https : http;
+        // Timeout de INATIVIDADE do stream (nao do request inteiro). Modelos
+        // locais lentos (ex: MLX num MacBook Air) levam 15-30s so processando um
+        // prompt grande ANTES do 1o token. O default de socket do Node e curto
+        // e derrubava a conexao nesse intervalo -> "[API] Falha ao chamar o LLM"
+        // intermitente, sempre em prompts maiores. Aqui o timer e RE-ARMADO a
+        // cada chunk (inclusive keepalives ": keepalive" que o MLX envia durante
+        // o processamento), entao so dispara se o servidor ficar REALMENTE mudo.
+        const IDLE_TIMEOUT_MS = 120000; // 2 min sem NENHUM byte = servidor travado
+        let idleTimer = null;
+        let settled = false;
+        const clearIdle = () => { if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+        } };
+        const armIdle = (req) => {
+            clearIdle();
+            idleTimer = setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                req.destroy();
+                reject(new Error('Timeout: o modelo ficou mais de 120s sem responder (servidor local travado ou sem memoria?).'));
+            }, IDLE_TIMEOUT_MS);
+        };
         const req = transport.request(options, (res) => {
+            armIdle(req);
             if (res.statusCode && res.statusCode >= 400) {
                 const chunks = [];
                 res.on('data', (c) => chunks.push(c));
                 res.on('end', () => {
+                    clearIdle();
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
                     const raw = Buffer.concat(chunks).toString('utf8');
                     try {
                         const parsed = JSON.parse(raw);
@@ -259,6 +290,7 @@ function requestStream(url, body, headers, signal, onLine) {
                 onLine(rawLine);
             };
             res.on('data', (chunk) => {
+                armIdle(req); // atividade recebida (inclui keepalives) → re-arma
                 buf += chunk.toString('utf8');
                 const lines = buf.split('\n');
                 buf = lines.pop() ?? '';
@@ -267,14 +299,34 @@ function requestStream(url, body, headers, signal, onLine) {
                 }
             });
             res.on('end', () => {
+                clearIdle();
+                if (settled) {
+                    return;
+                }
+                settled = true;
                 if (buf) {
                     dispatchLine(buf);
                 }
                 resolve();
             });
+            res.on('error', (e) => {
+                clearIdle();
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                reject(e instanceof Error ? e : new Error(String(e)));
+            });
         });
-        signal?.addEventListener('abort', () => { req.destroy(); reject(new Error('ABORTED')); });
-        req.on('error', reject);
+        signal?.addEventListener('abort', () => { clearIdle(); if (!settled) {
+            settled = true;
+            req.destroy();
+            reject(new Error('ABORTED'));
+        } });
+        req.on('error', (e) => { clearIdle(); if (!settled) {
+            settled = true;
+            reject(e instanceof Error ? e : new Error(String(e)));
+        } });
         req.write(payload);
         req.end();
     });
