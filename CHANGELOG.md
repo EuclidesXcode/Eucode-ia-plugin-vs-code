@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0
+
+- **NOVA FERRAMENTA: controle de navegador (browser_action)** — o agente agora pode abrir um navegador real (Chrome/chromium ou Safari/webkit), navegar em URLs, capturar erros de console e de rede, clicar em elementos, preencher formularios, tirar screenshots, executar JavaScript na pagina e ate gerar testes. Ideal para testar aplicacoes web de ponta a ponta. A ferramenta so aparece quando a tarefa menciona navegador/teste web (para nao poluir tarefas comuns). Depende do [Playwright](https://playwright.dev), que **nao vai empacotado** no plugin (pesa centenas de MB): na primeira vez que voce usar, o agente avisa como instalar (`npx playwright install`). Traz o trabalho do PR #6
+- **Seguranca: classificacao de risco de comandos** — antes de rodar um comando, o Eucode agora o classifica (seguro / perigoso / bloqueado). Comandos que podem causar dano irreversivel sao bloqueados; comandos perigosos pedem confirmacao mesmo no modo AUTO. Complementa a blocklist existente
+- **Busca mais portavel** — `search_in_workspace` ganhou um fallback em JavaScript puro que funciona sem ripgrep nem shell Unix (util no Windows ou em ambientes minimos), alem do caminho rapido com ripgrep/grep quando disponiveis
+
+Esta versao tambem consolida em uma so release todo o trabalho recente das series 0.14–0.16 (suporte a Apple MLX, orquestracao para modelos pequenos, leitura de arquivos Office, correcoes de tool-calling e de timeout). Veja as entradas abaixo para o detalhe de cada item.
+
 ## 0.16.6
 
 - **Correcao critica: "Falha ao chamar o LLM" / agente travando com modelos locais lentos** — o stream tinha um timeout de socket curto (5s, default do Node). Em maquinas mais lentas (ex: MacBook Air), um modelo local leva 15-30s so processando um prompt grande ANTES de gerar o primeiro token — e a conexao morria nesse intervalo, gerando falhas intermitentes onde o agente "nao saia do lugar" e dava poucos passos. Agora o stream usa um timeout de INATIVIDADE de 2 minutos, re-armado a cada byte recebido (inclusive os keepalives que o servidor MLX envia durante o processamento). So dispara se o servidor ficar realmente mudo. Verificado com prompt grande levando 29s: antes falhava, agora completa
