@@ -24,6 +24,7 @@ export const ALL_TOOL_NAMES = [
     'web_search',
     'memory_remember',
     'memory_read',
+    'browser_action',
 ] as const;
 
 export type ToolName = typeof ALL_TOOL_NAMES[number];

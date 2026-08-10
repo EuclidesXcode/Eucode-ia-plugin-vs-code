@@ -1,5 +1,43 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
+
+// Fallback de busca em JS puro (sem shell/ripgrep) — usado quando nem rg nem
+// grep respondem (ex: Windows sem essas ferramentas). Mantem a busca portavel.
+const SEARCH_EXTS = new Set([
+    '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.dart',
+    '.c', '.cpp', '.cs', '.rb', '.php', '.swift', '.kt', '.vue', '.svelte',
+]);
+const SEARCH_IGNORED_DIRS = new Set([
+    'node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.next', '.cache',
+]);
+
+// Varre o diretorio lendo arquivos-fonte e casando a query por substring.
+// Puro Node — nao depende de shell. Teto de 60 resultados como o rg/grep.
+function searchInWorkspaceJs(query: string, dirPath: string): string {
+    const root = path.resolve(dirPath || process.cwd());
+    const results: string[] = [];
+    const visit = (currentPath: string): void => {
+        if (results.length >= 60) { return; }
+        let entries: fs.Dirent[];
+        try { entries = fs.readdirSync(currentPath, { withFileTypes: true }); } catch { return; }
+        for (const entry of entries) {
+            if (results.length >= 60) { return; }
+            if (SEARCH_IGNORED_DIRS.has(entry.name)) { continue; }
+            const fullPath = path.join(currentPath, entry.name);
+            if (entry.isDirectory()) { visit(fullPath); continue; }
+            if (!entry.isFile() || !SEARCH_EXTS.has(path.extname(entry.name).toLowerCase())) { continue; }
+            let content: string;
+            try { content = fs.readFileSync(fullPath, 'utf8'); } catch { continue; }
+            const lines = content.split(/\r?\n/);
+            for (let i = 0; i < lines.length && results.length < 60; i++) {
+                if (lines[i].includes(query)) { results.push(`${fullPath}:${i + 1}:${lines[i].trim()}`); }
+            }
+        }
+    };
+    visit(root);
+    return results.length > 0 ? results.join('\n') : `Nenhum resultado para "${query}" em ${root}`;
+}
 
 // Blocklist de comandos destrutivos. IMPORTANTE: isto é defesa em
 // profundidade, NÃO uma sandbox. Um shell é infinitamente contornável
@@ -91,12 +129,18 @@ export async function searchInWorkspace(query: string, dirPath: string, workspac
         }
     }
 
-    // fallback: grep
+    // fallback 1: grep (Unix shell)
     const cmd = `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.py" --include="*.go" --include="*.rs" --include="*.java" --include="*.dart" -e '${escaped}' ${JSON.stringify(dirPath)} 2>/dev/null | head -60`;
     const result = await runAsync(cmd, '/', 10000);
-    return result === '[OK] Comando executado sem saida.'
-        ? `Nenhum resultado para "${query}" em ${dirPath}`
-        : result;
+    if (!result.startsWith('[ERRO]')
+        && result !== '[OK] Command executed without output.'
+        && result !== '[OK] Comando executado sem saida.') {
+        return result;
+    }
+
+    // fallback 2: JS puro (sem shell). Garante busca portavel quando nem rg nem
+    // grep respondem — ex: Windows, ou ambiente sem essas ferramentas.
+    return searchInWorkspaceJs(query, dirPath);
 }
 
 export function isCommandBlocked(command: string): boolean {

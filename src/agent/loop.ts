@@ -22,6 +22,8 @@ import { ExecutionGuardService, ExecutionState } from '../services/execution-gua
 import { OrchestrationMetrics } from '../services/orchestration-metrics';
 import { FactSheet } from '../services/fact-sheet';
 import { isExtractable, extractDocument } from '../services/document-extractor';
+import { executeBrowserAction } from '../tools/browser-tools';
+import { validateCommandSafety } from '../tools/command-safety';
 
 export type TodoItem = { content: string; status: 'pending' | 'in_progress' | 'completed' };
 
@@ -307,6 +309,27 @@ function buildToolHandlers(
                 return `[BLOCKED] Command refused by security policy: "${cmd}"`;
             }
 
+            // Camada extra do PR #6: classificacao de risco de comando. 'blocked'
+            // recusa direto (complementa isCommandBlocked); 'dangerous' forca
+            // confirmacao mesmo em AUTO — em AUTO pedimos aprovacao so para o que
+            // for classificado como perigoso, preservando o fluxo maos-livres p/
+            // o resto.
+            const safety = validateCommandSafety(cmd);
+            if (safety.risk === 'blocked') {
+                return `[BLOCKED] Comando bloqueado por seguranca: pode afetar arquivos fora do projeto ou causar dano irreversivel. Motivo: ${safety.reason ?? 'risco alto.'}`;
+            }
+            if (autoMode && safety.risk === 'dangerous' && !sessionApprovedCommands.has(cmd)) {
+                onStatus(`Aguardando confirmacao para comando perigoso: ${cmd}`);
+                const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
+                if (decision === 'block') {
+                    return `[BLOCKED] User refused dangerous command: "${cmd}"`;
+                }
+                if (decision === 'session') {
+                    sessionApprovedCommands.add(cmd);
+                    if (sessionId) { rememberApprovedCommand(sessionId, cmd); }
+                }
+            }
+
             if (!autoMode && !sessionApprovedCommands.has(cmd)) {
                 onStatus(`Awaiting approval to run: ${cmd}`);
                 const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
@@ -416,6 +439,35 @@ function buildToolHandlers(
             if (!sessionId) { return '[ERROR] No active session.'; }
             onStatus('Lendo memoria da sessao...');
             return dumpMemoryAsJson(sessionId);
+        },
+        // Controle de navegador real via Playwright (PR #6). Navega, inspeciona
+        // console/rede, clica, digita, tira screenshot, etc. Aditivo — nao afeta
+        // as demais tools nem a orquestracao.
+        browser_action: async (args) => {
+            const { action, url, selector } = args;
+            onStatus(`Navegador: ${action}${url ? ' → ' + url : ''}${selector ? ' (' + selector + ')' : ''}`);
+            return executeBrowserAction(
+                String(action),
+                {
+                    url: args.url,
+                    selector: args.selector,
+                    text: args.text,
+                    script: args.script,
+                    attribute: args.attribute,
+                    value: args.value,
+                    key: args.key,
+                    direction: args.direction,
+                    amount: args.amount,
+                    timeoutMs: args.timeoutMs,
+                    urlContains: args.urlContains,
+                    method: args.method,
+                    statusMin: args.statusMin,
+                    statusMax: args.statusMax,
+                    testName: args.testName,
+                    outputPath: args.outputPath,
+                },
+                (args.browser === 'webkit' ? 'webkit' : 'chromium')
+            );
         },
     };
 }
@@ -1035,11 +1087,17 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             || lastToolName === 'run_git';
         const webRelevant = /\b(http|https|www\.|documenta|pesquis|search|web|api d[eo]|como usar|biblioteca|library|erro desconhecido)\b/i.test(userPrompt)
             || lastToolName === 'web_search';
+        // browser_action (Playwright) so aparece quando a tarefa cita navegador/
+        // teste web — evita empurrar uma tool pesada em toda rodada do modelo
+        // pequeno.
+        const browserRelevant = /\b(navegador|browser|chromium|chrome|safari|webkit|screenshot|clic|click|preench|formul[aá]rio|console do navegador|erro de rede|localhost:\d|test[ae] (a|o|no|na) (p[aá]gina|site|tela|url)|abr[ae] (a|o) (site|url|p[aá]gina))\b/i.test(userPrompt)
+            || lastToolName === 'browser_action';
         const activeTools = chatMode
             ? baseTools.filter(t => t.name === 'web_search')
             : baseTools.filter(t =>
-                (t.name !== 'run_git'    || gitRelevant) &&
-                (t.name !== 'web_search' || webRelevant)
+                (t.name !== 'run_git'      || gitRelevant) &&
+                (t.name !== 'web_search'   || webRelevant) &&
+                (t.name !== 'browser_action' || browserRelevant)
               );
 
         // Poda preventiva calibrada pelo orçamento de contexto (CONTEXT_TOKEN_

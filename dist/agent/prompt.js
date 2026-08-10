@@ -14,6 +14,7 @@ Princípios:
 - Quando o comando falhar: leia o erro, ache a causa, corrija o arquivo certo e rode de novo.
 - Em erros mencionados pelo usuário, chame get_diagnostics antes de supor.
 - Para git, use run_git (não run_command).
+- Para testar páginas/sites (abrir URL, ver erros de console/rede, clicar, screenshot), use browser_action — sempre com "navigate" antes das demais ações.
 - Tarefas com vários passos: comece com todo_update listando os passos.
 - Ao terminar: uma ou duas frases dizendo o que foi feito. Sem cabeçalhos, sem narrar etapas.`;
 // Prompt used when the user activates CHAT mode in the header. The agent is

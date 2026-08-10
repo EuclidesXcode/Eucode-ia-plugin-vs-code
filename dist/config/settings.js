@@ -23,6 +23,7 @@ exports.ALL_TOOL_NAMES = [
     'web_search',
     'memory_remember',
     'memory_read',
+    'browser_action',
 ];
 const DEFAULTS = {
     provider: 'lmstudio',
