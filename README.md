@@ -1,6 +1,6 @@
 # Eucode IA
 
-Agente de inteligencia artificial para engenharia de software, integrado diretamente ao VS Code. Conecta-se a modelos locais via [LM Studio](https://lmstudio.ai) ou Ollama, ou diretamente a API Anthropic (Claude) — sem enviar nenhum dado para servidores externos quando em modo local.
+Agente de inteligencia artificial para engenharia de software, integrado diretamente ao VS Code. Conecta-se a modelos locais via [LM Studio](https://lmstudio.ai), [Apple MLX](https://github.com/ml-explore/mlx-lm) ou Ollama, ou diretamente a API Anthropic (Claude) — sem enviar nenhum dado para servidores externos quando em modo local.
 
 ---
 
@@ -73,9 +73,9 @@ Voce escolhe **um** provedor de suporte. Sua API key fica armazenada localmente 
 
 ---
 
-## 🎙 Modo JARVIS (BETA) — voz local (Whisper) + leitura em voz alta
+## 🎙 Modo JARVIS — voz local (Whisper) + leitura em voz alta
 
-> ⚠ **Feature em BETA.** O fluxo push-to-talk funciona, mas algumas integracoes (servidor de voz, app mobile, ajustes de qualidade) ainda estao em estabilizacao. Reporte bugs no GitHub.
+> ⏸ **Pausado temporariamente (a partir da 0.16.1).** O modo de voz exigia instalar o `ffmpeg` e subir um servidor Whisper manualmente, o que contraria a proposta do plugin de funcionar sem setup. A interface de voz esta oculta enquanto reformulamos a feature para funcionar de forma nativa, sem instalacoes. A documentacao abaixo descreve como a feature funciona e volta a valer quando ela for reativada.
 
 Pressione o botao de microfone no chat e fale com o Eucode IA. O audio e transcrito **localmente** via Whisper rodando no LM Studio (zero custo, sem enviar audio pra cloud). O agente pode responder em voz alta usando o TTS nativo do sistema.
 
@@ -416,15 +416,30 @@ Nas configuracoes → secao **Memoria da sessao**, clique em **Abrir memoria da 
 | Provedor | Como conectar |
 |---|---|
 | **LM Studio** | Servidor local em `http://localhost:1234` (padrao) |
+| **Apple MLX** | Servidor `mlx_lm.server` em `http://localhost:8080` (padrao) — inferencia nativa em Apple Silicon |
 | **Ollama** | Qualquer endpoint OpenAI-compativel |
 | **Anthropic (Claude)** | API key `sk-ant-...` — sem precisar configurar host |
 | **Outro** | Qualquer servidor com `/v1/chat/completions` |
+
+### Apple MLX (Apple Silicon)
+
+O [MLX](https://github.com/ml-explore/mlx-lm) e o runtime de inferencia da Apple, otimizado para os chips M1/M2/M3/M4/M5. Ele expoe um servidor compativel com a API da OpenAI, entao o Eucode conversa com ele nativamente.
+
+```bash
+# 1. Instalar a biblioteca de modelos de linguagem do MLX
+pip install mlx-lm
+
+# 2. Subir um servidor local compativel com OpenAI (exemplo com Qwen 2.5 Coder)
+python3 -m mlx_lm server --model mlx-community/Qwen2.5-Coder-14B-Instruct-4bit --port 8080
+```
+
+No Eucode: engrenagem → **Provedor: Apple MLX**. O host `http://localhost:8080` ja vem preenchido. Deixe o campo **Modelo** vazio (o servidor usa o modelo do `--model`) ou informe o mesmo id.
 
 ---
 
 ## Requisitos
 
-- [LM Studio](https://lmstudio.ai) rodando com um modelo carregado, **ou** [Ollama](https://ollama.com), **ou** uma API key da Anthropic, **ou** qualquer servidor OpenAI-compativel
+- [LM Studio](https://lmstudio.ai) rodando com um modelo carregado, **ou** [Apple MLX](https://github.com/ml-explore/mlx-lm) (Apple Silicon), **ou** [Ollama](https://ollama.com), **ou** uma API key da Anthropic, **ou** qualquer servidor OpenAI-compativel
 - VS Code 1.87 ou superior
 
 ---
@@ -433,7 +448,7 @@ Nas configuracoes → secao **Memoria da sessao**, clique em **Abrir memoria da 
 
 1. Instale a extensao pelo marketplace do VS Code
 2. Configure o provedor: clique na engrenagem no header do chat
-3. Para LM Studio/Ollama: abra o servidor local antes de usar
+3. Para LM Studio/MLX/Ollama: abra o servidor local antes de usar
 4. Para Anthropic: insira sua API key e escolha o modelo Claude
 
 ---
@@ -667,7 +682,14 @@ O Eucode IA suporta consulta a um banco vetorial local antes de cada resposta. Q
 
 **Quando usar:** projetos grandes onde o agente precisa conhecer convencoes especificas, APIs internas, arquitetura ou documentacao que nao esta no workspace aberto.
 
-**Suporte atual:** [Chroma](https://www.trychroma.com) via API v1 (`/api/v1/collections/{name}/query`).
+**Backends suportados:**
+
+| Backend | Como funciona | Embedding |
+|---|---|---|
+| [Chroma](https://www.trychroma.com) | API v1 (`/api/v1/collections/{name}/query`) | Chroma embeda o texto da query no servidor |
+| [Qdrant](https://qdrant.tech) **(BETA)** | API REST (`/collections/{name}/points/query`) | O plugin gera o embedding antes de consultar (ver abaixo) |
+
+> **Diferenca importante (Qdrant):** o Qdrant self-hosted (imagem oficial `qdrant/qdrant`) **nao embeda texto** — ele e um vector store puro e espera receber um vetor ja calculado. Por isso, no modo Qdrant o Eucode IA primeiro gera o embedding da sua pergunta chamando um endpoint OpenAI-compativel `/v1/embeddings` (por padrao o mesmo host do LM Studio) e so entao consulta o Qdrant. O **modelo de embedding usado na indexacao tem que ser o mesmo** configurado no plugin — dimensoes diferentes quebram a busca.
 
 ### Como configurar
 
@@ -725,9 +747,84 @@ O plugin passa a consultar automaticamente o Chroma a cada nova mensagem, recupe
 
 > **Dica:** se voce tem multiplos projetos, crie uma collection separada para cada um e altere o nome no config conforme troca de projeto.
 
+### Como configurar (Qdrant) — BETA
+
+> ⚠ **Feature em BETA.** O caminho Qdrant (embedding local + busca vetorial) funciona, mas ainda esta em estabilizacao. Reporte bugs no GitHub.
+
+#### 1. Suba o Qdrant via Docker
+
+```bash
+docker pull qdrant/qdrant
+docker run -p 6333:6333 -v $(pwd)/qdrant_storage:/qdrant/storage qdrant/qdrant
+```
+
+O dashboard fica em `http://localhost:6333/dashboard`.
+
+#### 2. Carregue um modelo de embedding no LM Studio
+
+O Qdrant local nao embeda texto, entao o plugin precisa de um modelo de embedding. No LM Studio, baixe e carregue um modelo de embedding (ex: `nomic-embed-text`, `text-embedding-bge-small`) junto com o modelo de chat — o LM Studio expoe `/v1/embeddings` automaticamente.
+
+#### 3. Indexe seu projeto (gerando os embeddings)
+
+Diferente do Chroma, voce precisa calcular os embeddings na indexacao usando **o mesmo modelo** que o plugin vai usar na query:
+
+```python
+import os, requests
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance, PointStruct
+
+EMBED_HOST = "http://localhost:1234"   # mesmo host do LM Studio
+EMBED_MODEL = "nomic-embed-text"        # mesmo modelo configurado no plugin
+
+def embed(text: str) -> list[float]:
+    r = requests.post(f"{EMBED_HOST}/v1/embeddings",
+                      json={"model": EMBED_MODEL, "input": text})
+    return r.json()["data"][0]["embedding"]
+
+client = QdrantClient(url="http://localhost:6333")
+dim = len(embed("probe"))  # descobre a dimensao do modelo
+client.recreate_collection("eucode",
+    vectors_config=VectorParams(size=dim, distance=Distance.COSINE))
+
+points, pid = [], 0
+for root, _, files in os.walk("./src"):
+    for f in files:
+        if f.endswith((".ts", ".py", ".md", ".json")):
+            path = os.path.join(root, f)
+            with open(path, encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()[:2000]
+            if content.strip():
+                points.append(PointStruct(id=pid, vector=embed(content),
+                    payload={"content": content, "source": path}))
+                pid += 1
+
+client.upsert("eucode", points)
+print(f"{len(points)} arquivos indexados.")
+```
+
+Instale as deps com `pip install qdrant-client requests` e rode `python index_qdrant.py`. Re-execute quando o codigo mudar.
+
+> O `payload` precisa ter as chaves `content` e `source` — e o que o plugin le da resposta da busca.
+
+#### 4. Ative nas configuracoes do plugin
+
+- Ative o toggle **RAG (Contexto Vetorial)**
+- No seletor de backend, escolha **Qdrant**
+- **Endpoint**: `http://localhost:6333`
+- **Collection**: `eucode` (ou o nome que voce criou)
+- **Host de embeddings**: `http://localhost:1234` (mesmo do LM Studio)
+- **Modelo de embedding**: o mesmo usado na indexacao (ex: `nomic-embed-text`)
+- Salve
+
+A cada mensagem o plugin embeda sua pergunta via `/v1/embeddings`, consulta o Qdrant e injeta os trechos mais relevantes no contexto. Mesmo timeout de 5s e degradacao silenciosa se o servidor estiver fora.
+
 ---
 
 ## Ultimas versoes
+
+### 0.15.1
+- **NOVO (BETA): suporte a Qdrant no RAG** — backend alternativo ao Chroma. O Qdrant self-hosted nao embeda texto, entao o plugin gera o embedding da pergunta via `/v1/embeddings` (mesmo host do LM Studio por padrao) antes de consultar. Seletor de backend + campos de host/modelo de embedding nas configuracoes
+- **Config de RAG com labels** — cada campo passou a ter rotulo visivel; antes eram inputs sem label, faceis de confundir
 
 ### 0.10.2
 - **JARVIS marcado como BETA** com selo visual no painel de configuracoes e tooltip do microfone

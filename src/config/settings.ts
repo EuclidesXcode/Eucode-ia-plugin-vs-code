@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
+import { RagProvider } from '../services/rag-client';
 
-export type AIProvider = 'lmstudio' | 'anthropic' | 'ollama';
+export type AIProvider = 'lmstudio' | 'anthropic' | 'ollama' | 'mlx';
 export type SupportProvider = 'anthropic' | 'openai' | 'gemini';
+export type { RagProvider };
 
 export const DEFAULT_SUPPORT_MODELS: Record<SupportProvider, string> = {
     anthropic: 'claude-sonnet-4-6',
@@ -22,6 +24,7 @@ export const ALL_TOOL_NAMES = [
     'web_search',
     'memory_remember',
     'memory_read',
+    'browser_action',
 ] as const;
 
 export type ToolName = typeof ALL_TOOL_NAMES[number];
@@ -33,8 +36,15 @@ export interface EucodeSettings {
     model: string;
     enabledTools: ToolName[];
     ragEnabled: boolean;
+    // Which vector DB backend. 'chroma' embeds text server-side; 'qdrant' is a
+    // pure vector store, so the plugin embeds the query first (see ragEmbed*).
+    ragProvider: RagProvider;
     ragEndpoint: string;
     ragCollection: string;
+    // Qdrant only: OpenAI-compatible /v1/embeddings host + model used to turn
+    // the query into a vector before searching. Defaults to the LM Studio host.
+    ragEmbedHost: string;
+    ragEmbedModel: string;
     hybridEnabled: boolean;
     supportProvider: SupportProvider;
     supportApiKey: string;
@@ -54,6 +64,11 @@ export interface EucodeSettings {
     // ~700-1500 tokens to every prompt. Disable to free context on small
     // models (≤ 4B params) or on huge monorepos where the scan is slow.
     projectIntelEnabled: boolean;
+    // Orcamento de contexto (tokens) que o Eucode assume para o modelo local.
+    // Calibra a poda e os limites de limpeza de output. 0/ausente = usa o
+    // default do provedor (PROVIDER_CONTEXT_DEFAULTS). O usuario pode ajustar
+    // manualmente na UI para casar com a janela real do modelo carregado.
+    contextTokenBudget: number;
     // ── JARVIS (voice mode) ─────────────────────────────────────────────
     jarvisEnabled: boolean;          // master switch for voice features
     jarvisAutoSpeak: boolean;        // TTS reads agent responses out loud
@@ -67,6 +82,8 @@ export interface EucodeSettings {
     whisperModel: string;            // e.g. "whisper-1" or your local model id
     whisperLanguage: string;         // ISO code like "pt", "en"; empty = auto-detect
     micDeviceIndex: string;          // avfoundation audio device index for capture; '' = default (:0)
+    wakeWordEnabled: boolean;        // continuous listen for the wake word
+    wakeWord: string;                // the wake word to trigger recording (default "eucode")
 }
 
 const DEFAULTS: EucodeSettings = {
@@ -76,8 +93,11 @@ const DEFAULTS: EucodeSettings = {
     model: '',
     enabledTools: [...ALL_TOOL_NAMES],
     ragEnabled: false,
+    ragProvider: 'chroma',
     ragEndpoint: 'http://localhost:8000',
     ragCollection: 'eucode',
+    ragEmbedHost: 'http://localhost:1234',
+    ragEmbedModel: '',
     hybridEnabled: false,
     supportProvider: 'anthropic',
     supportApiKey: '',
@@ -87,6 +107,7 @@ const DEFAULTS: EucodeSettings = {
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
     projectIntelEnabled: true,
+    contextTokenBudget: 0,  // 0 = usa o default do provedor
     jarvisEnabled: false,
     jarvisAutoSpeak: true,
     jarvisTtsVoice: '',
@@ -99,6 +120,8 @@ const DEFAULTS: EucodeSettings = {
     whisperModel: 'whisper-1',
     whisperLanguage: 'pt',
     micDeviceIndex: '',
+    wakeWordEnabled: false,
+    wakeWord: 'eucode',
 };
 
 const KEYS = {
@@ -108,8 +131,11 @@ const KEYS = {
     model: 'eucode.model',
     enabledTools: 'eucode.enabledTools',
     ragEnabled: 'eucode.ragEnabled',
+    ragProvider: 'eucode.ragProvider',
     ragEndpoint: 'eucode.ragEndpoint',
     ragCollection: 'eucode.ragCollection',
+    ragEmbedHost: 'eucode.ragEmbedHost',
+    ragEmbedModel: 'eucode.ragEmbedModel',
     hybridEnabled: 'eucode.hybridEnabled',
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
@@ -119,6 +145,7 @@ const KEYS = {
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
     projectIntelEnabled: 'eucode.projectIntelEnabled',
+    contextTokenBudget: 'eucode.contextTokenBudget',
     jarvisEnabled: 'eucode.jarvisEnabled',
     jarvisAutoSpeak: 'eucode.jarvisAutoSpeak',
     jarvisTtsVoice: 'eucode.jarvisTtsVoice',
@@ -131,6 +158,8 @@ const KEYS = {
     whisperModel: 'eucode.whisperModel',
     whisperLanguage: 'eucode.whisperLanguage',
     micDeviceIndex: 'eucode.micDeviceIndex',
+    wakeWordEnabled: 'eucode.wakeWordEnabled',
+    wakeWord: 'eucode.wakeWord',
 };
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -147,8 +176,11 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         model: context.globalState.get<string>(KEYS.model) ?? DEFAULTS.model,
         enabledTools,
         ragEnabled: context.globalState.get<boolean>(KEYS.ragEnabled) ?? DEFAULTS.ragEnabled,
+        ragProvider: context.globalState.get<RagProvider>(KEYS.ragProvider) ?? DEFAULTS.ragProvider,
         ragEndpoint: context.globalState.get<string>(KEYS.ragEndpoint) ?? DEFAULTS.ragEndpoint,
         ragCollection: context.globalState.get<string>(KEYS.ragCollection) ?? DEFAULTS.ragCollection,
+        ragEmbedHost: context.globalState.get<string>(KEYS.ragEmbedHost) ?? DEFAULTS.ragEmbedHost,
+        ragEmbedModel: context.globalState.get<string>(KEYS.ragEmbedModel) ?? DEFAULTS.ragEmbedModel,
         hybridEnabled: context.globalState.get<boolean>(KEYS.hybridEnabled) ?? DEFAULTS.hybridEnabled,
         supportProvider: context.globalState.get<SupportProvider>(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get<string>(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
@@ -158,6 +190,7 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         customCommandsScope: context.globalState.get<'workspace' | 'global'>(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get<25 | 50 | 75 | 100>(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
         projectIntelEnabled: context.globalState.get<boolean>(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
+        contextTokenBudget: context.globalState.get<number>(KEYS.contextTokenBudget) ?? DEFAULTS.contextTokenBudget,
         jarvisEnabled: context.globalState.get<boolean>(KEYS.jarvisEnabled) ?? DEFAULTS.jarvisEnabled,
         jarvisAutoSpeak: context.globalState.get<boolean>(KEYS.jarvisAutoSpeak) ?? DEFAULTS.jarvisAutoSpeak,
         jarvisTtsVoice: context.globalState.get<string>(KEYS.jarvisTtsVoice) ?? DEFAULTS.jarvisTtsVoice,
@@ -170,6 +203,8 @@ export function loadSettings(context: vscode.ExtensionContext): EucodeSettings {
         whisperModel: context.globalState.get<string>(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
         whisperLanguage: context.globalState.get<string>(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
         micDeviceIndex: context.globalState.get<string>(KEYS.micDeviceIndex) ?? DEFAULTS.micDeviceIndex,
+        wakeWordEnabled: context.globalState.get<boolean>(KEYS.wakeWordEnabled) ?? DEFAULTS.wakeWordEnabled,
+        wakeWord: context.globalState.get<string>(KEYS.wakeWord) ?? DEFAULTS.wakeWord,
     };
 }
 
@@ -180,8 +215,11 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.model, settings.model.trim());
     await context.globalState.update(KEYS.enabledTools, settings.enabledTools);
     await context.globalState.update(KEYS.ragEnabled, settings.ragEnabled);
+    await context.globalState.update(KEYS.ragProvider, settings.ragProvider);
     await context.globalState.update(KEYS.ragEndpoint, settings.ragEndpoint.replace(/\/+$/, ''));
     await context.globalState.update(KEYS.ragCollection, settings.ragCollection.trim());
+    await context.globalState.update(KEYS.ragEmbedHost, settings.ragEmbedHost.replace(/\/+$/, ''));
+    await context.globalState.update(KEYS.ragEmbedModel, settings.ragEmbedModel.trim());
     await context.globalState.update(KEYS.hybridEnabled, settings.hybridEnabled);
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);
@@ -191,6 +229,7 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
     await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
+    await context.globalState.update(KEYS.contextTokenBudget, settings.contextTokenBudget);
     await context.globalState.update(KEYS.jarvisEnabled, settings.jarvisEnabled);
     await context.globalState.update(KEYS.jarvisAutoSpeak, settings.jarvisAutoSpeak);
     await context.globalState.update(KEYS.jarvisTtsVoice, settings.jarvisTtsVoice);
@@ -203,6 +242,8 @@ export async function saveSettings(context: vscode.ExtensionContext, settings: E
     await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
     await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
     await context.globalState.update(KEYS.micDeviceIndex, settings.micDeviceIndex);
+    await context.globalState.update(KEYS.wakeWordEnabled, settings.wakeWordEnabled);
+    await context.globalState.update(KEYS.wakeWord, settings.wakeWord);
 }
 
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts

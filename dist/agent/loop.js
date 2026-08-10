@@ -51,6 +51,13 @@ const prompt_1 = require("./prompt");
 const tools_definition_2 = require("./tools-definition");
 const constants_2 = require("../utils/constants");
 const validation_1 = require("../utils/validation");
+const context_sanitizer_1 = require("../services/context-sanitizer");
+const execution_guard_1 = require("../services/execution-guard");
+const orchestration_metrics_1 = require("../services/orchestration-metrics");
+const fact_sheet_1 = require("../services/fact-sheet");
+const document_extractor_1 = require("../services/document-extractor");
+const browser_tools_1 = require("../tools/browser-tools");
+const command_safety_1 = require("../tools/command-safety");
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code) {
     const patterns = [
@@ -124,7 +131,7 @@ function parseErrorLocations(output) {
     }
     return { files, summary };
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -144,6 +151,19 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onStatus(`Reading file: ${path.basename(fp)} (cached)`);
                 filesReadThisRound.add(fullPath);
                 return fileCache.get(fullPath);
+            }
+            // Arquivos Office (.xlsx/.docx/.pptx) e diagramas (.drawio) NAO sao
+            // texto puro — lidos como utf8 viram lixo binario que estoura o
+            // contexto (e no MLX estoura o KV cache -> crash de Metal OOM).
+            // Extrai o texto real com teto derivado da janela de contexto: um so
+            // arquivo nunca ocupa mais que ~metade da janela.
+            if ((0, document_extractor_1.isExtractable)(fp)) {
+                onStatus(`Extracting text: ${path.basename(fp)}`);
+                const maxChars = Math.floor((contextTokenBudget * constants_2.CHARS_PER_TOKEN) / 2);
+                const extracted = (0, document_extractor_1.extractDocument)(fullPath, { maxChars });
+                fileCache.set(fullPath, extracted);
+                filesReadThisRound.add(fullPath);
+                return extracted;
             }
             onStatus(`Reading file: ${path.basename(fp)}`);
             const result = await (0, file_tools_1.readLocalFile)(fp, cwd);
@@ -261,6 +281,28 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             const workDir = args.cwd || cwd;
             if ((0, shell_tools_1.isCommandBlocked)(cmd)) {
                 return `[BLOCKED] Command refused by security policy: "${cmd}"`;
+            }
+            // Camada extra do PR #6: classificacao de risco de comando. 'blocked'
+            // recusa direto (complementa isCommandBlocked); 'dangerous' forca
+            // confirmacao mesmo em AUTO — em AUTO pedimos aprovacao so para o que
+            // for classificado como perigoso, preservando o fluxo maos-livres p/
+            // o resto.
+            const safety = (0, command_safety_1.validateCommandSafety)(cmd);
+            if (safety.risk === 'blocked') {
+                return `[BLOCKED] Comando bloqueado por seguranca: pode afetar arquivos fora do projeto ou causar dano irreversivel. Motivo: ${safety.reason ?? 'risco alto.'}`;
+            }
+            if (autoMode && safety.risk === 'dangerous' && !sessionApprovedCommands.has(cmd)) {
+                onStatus(`Aguardando confirmacao para comando perigoso: ${cmd}`);
+                const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
+                if (decision === 'block') {
+                    return `[BLOCKED] User refused dangerous command: "${cmd}"`;
+                }
+                if (decision === 'session') {
+                    sessionApprovedCommands.add(cmd);
+                    if (sessionId) {
+                        (0, memory_service_1.rememberApprovedCommand)(sessionId, cmd);
+                    }
+                }
             }
             if (!autoMode && !sessionApprovedCommands.has(cmd)) {
                 onStatus(`Awaiting approval to run: ${cmd}`);
@@ -389,6 +431,31 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             onStatus('Lendo memoria da sessao...');
             return (0, memory_service_1.dumpMemoryAsJson)(sessionId);
         },
+        // Controle de navegador real via Playwright (PR #6). Navega, inspeciona
+        // console/rede, clica, digita, tira screenshot, etc. Aditivo — nao afeta
+        // as demais tools nem a orquestracao.
+        browser_action: async (args) => {
+            const { action, url, selector } = args;
+            onStatus(`Navegador: ${action}${url ? ' → ' + url : ''}${selector ? ' (' + selector + ')' : ''}`);
+            return (0, browser_tools_1.executeBrowserAction)(String(action), {
+                url: args.url,
+                selector: args.selector,
+                text: args.text,
+                script: args.script,
+                attribute: args.attribute,
+                value: args.value,
+                key: args.key,
+                direction: args.direction,
+                amount: args.amount,
+                timeoutMs: args.timeoutMs,
+                urlContains: args.urlContains,
+                method: args.method,
+                statusMin: args.statusMin,
+                statusMax: args.statusMax,
+                testName: args.testName,
+                outputPath: args.outputPath,
+            }, (args.browser === 'webkit' ? 'webkit' : 'chromium'));
+        },
     };
 }
 const PENDING_ACTION_PATTERNS = [
@@ -397,6 +464,7 @@ const PENDING_ACTION_PATTERNS = [
     /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
     /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
     /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
+    /vou procurar/i, /vou buscar/i, /vou ler/i, /vou analisar/i, /vou listar/i, /vou abrir/i,
     /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
     /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
     /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
@@ -420,9 +488,47 @@ function detectsPendingAction(text, autoMode = false) {
         : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
     return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
+// Normaliza um objeto ja parseado para ToolCall, cobrindo os varios shapes que
+// modelos pequenos emitem quando o servidor NAO faz o tool-calling nativo:
+//   - { tool_calls: [ { function: { name, arguments } } ] }  (wrapper OpenAI)
+//   - { function: { name, arguments } }                       (wrapper simples)
+//   - { name, arguments }                                     (objeto PLANO — o
+//     formato que mlx_lm.server + Qwen emitem como texto no content)
+//   - { name, parameters } / { tool, args } (variacoes comuns)
+function toolCallFromParsedObject(parsed) {
+    if (!parsed || typeof parsed !== 'object') {
+        return null;
+    }
+    const coerceArgs = (a) => {
+        if (typeof a === 'string') {
+            try {
+                return JSON.parse(a);
+            }
+            catch {
+                return {};
+            }
+        }
+        return (a && typeof a === 'object') ? a : {};
+    };
+    // wrapper OpenAI: tool_calls[0].function
+    const tc = parsed?.tool_calls?.[0];
+    if (tc?.function?.name && tools_definition_2.TOOL_NAMES.has(tc.function.name)) {
+        return { id: tc.id, function: { name: tc.function.name, arguments: coerceArgs(tc.function.arguments ?? tc.function.args) } };
+    }
+    // wrapper simples: function.name
+    if (parsed?.function?.name && tools_definition_2.TOOL_NAMES.has(parsed.function.name)) {
+        return { function: { name: parsed.function.name, arguments: coerceArgs(parsed.function.arguments ?? parsed.function.args) } };
+    }
+    // objeto PLANO: { name, arguments } (ou parameters/input; ou tool em vez de name)
+    const flatName = parsed.name ?? parsed.tool ?? parsed.tool_name;
+    if (typeof flatName === 'string' && tools_definition_2.TOOL_NAMES.has(flatName)) {
+        return { function: { name: flatName, arguments: coerceArgs(parsed.arguments ?? parsed.parameters ?? parsed.args ?? parsed.input) } };
+    }
+    return null;
+}
 function detectEscapedToolCall(text) {
     // Fast reject: if there's nothing that looks like a tool call, skip parsing.
-    if (!text.includes('"function"') && !text.includes('tool_call') && !text.includes('{')) {
+    if (!text.includes('"function"') && !text.includes('tool_call') && !text.includes('"name"') && !text.includes('"tool"') && !text.includes('{')) {
         return null;
     }
     const simple = text.match(/(\w+)\s*\(\s*\{([^}]+)\}\s*\)/);
@@ -432,29 +538,41 @@ function detectEscapedToolCall(text) {
         }
         catch { }
     }
-    const jsonBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonBlock ? jsonBlock[1] : text;
+    // Descasca envelopes que modelos/servidores adicionam ao redor do JSON:
+    //   ```xml ... ```, ```json ... ```, <tools> ... </tools>, <tool_call> ...
+    // O mlx_lm.server + Qwen emitem, por ex., "```xml\n<tools>\n{...}\n</tools>```".
+    let jsonStr = text;
+    const fence = text.match(/```(?:json|xml|tool_call|tool_calls)?\s*([\s\S]*?)```/i);
+    if (fence) {
+        jsonStr = fence[1];
+    }
+    const tagged = jsonStr.match(/<(?:tools?|tool_calls?)>\s*([\s\S]*?)<\/(?:tools?|tool_calls?)>/i);
+    if (tagged) {
+        jsonStr = tagged[1];
+    }
+    jsonStr = jsonStr.trim();
     // Skip JSON.parse on very long text — almost never valid JSON in full.
-    if (!jsonBlock && jsonStr.length > 4000) {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(jsonStr.trim());
-        const tc = parsed?.tool_calls?.[0];
-        if (tc?.function?.name && tools_definition_2.TOOL_NAMES.has(tc.function.name)) {
-            const args = typeof tc.function.arguments === 'string'
-                ? JSON.parse(tc.function.arguments)
-                : (tc.function.args || tc.function.arguments || {});
-            return { id: tc.id, function: { name: tc.function.name, arguments: args } };
+    if (jsonStr.length <= 4000 || fence || tagged) {
+        // Extrai o primeiro objeto JSON balanceado de dentro do envelope (pode
+        // haver texto ao redor). tryParseJsonChunk lida com lixo apos o objeto.
+        const objStart = jsonStr.indexOf('{');
+        const candidate = objStart >= 0 ? jsonStr.slice(objStart) : jsonStr;
+        try {
+            const parsed = JSON.parse(candidate);
+            const fromObj = toolCallFromParsedObject(parsed);
+            if (fromObj) {
+                return fromObj;
+            }
         }
-        if (parsed?.function?.name && tools_definition_2.TOOL_NAMES.has(parsed.function.name)) {
-            const args = typeof parsed.function.arguments === 'string'
-                ? JSON.parse(parsed.function.arguments)
-                : (parsed.function.args || parsed.function.arguments || {});
-            return { function: { name: parsed.function.name, arguments: args } };
+        catch {
+            // JSON com lixo no fim (comum em stream): tenta o parser tolerante.
+            const tolerant = (0, api_client_1.tryParseJsonChunk)(candidate);
+            const fromObj = tolerant ? toolCallFromParsedObject(tolerant) : null;
+            if (fromObj) {
+                return fromObj;
+            }
         }
     }
-    catch { }
     const tagMatch = text.match(/<\|tool_call\|>call:(\w+)\{([^}]*)\}<\|\/tool_call\|>/);
     if (tagMatch && tools_definition_2.TOOL_NAMES.has(tagMatch[1])) {
         try {
@@ -527,36 +645,49 @@ function pruneRoundToolMessages(messages, maxPairs) {
     const dropUntilIdx = pairStarts[toDrop - 1] + 2; // +2 to include the tool message
     messages.splice(lastUserIdx + 1, dropUntilIdx - (lastUserIdx + 1));
 }
-async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50, projectIntelEnabled = true) {
+async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, authHeaders, sessionHistory, onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, model = constants_1.DEFAULT_MODEL, autoMode = false, signal, onInjectMessage, provider, anthropicApiKey, enabledTools, onStreamChunk, onTelemetry, ragEndpoint, ragCollection, onLiveTelemetry, onFileTouched, hybridConfig, onHybridActivity, sessionId, chatMode = false, hybridIntensity = 50, projectIntelEnabled = true, 
+// RAG backend + embedding config. Defaults keep Chroma behavior (text is
+// embedded server-side, so embed* are ignored).
+ragProvider = 'chroma', ragEmbedHost, ragEmbedModel, 
+// Orcamento de contexto (tokens) ja resolvido pelo chamador (setting do
+// usuario ou default do provedor). Calibra poda e limpeza de output.
+contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
     // The system prompt is just the conversational instructions.
     const effectiveAutoMode = chatMode ? false : autoMode;
     const effectiveHybridConfig = chatMode ? undefined : hybridConfig;
+    // Bloco do modo AUTO: conciso e em PT-BR. Modelo pequeno segue melhor 4
+    // princípios curtos do que 25 linhas com MAIÚSCULAS e "NEVER/ALWAYS"
+    // repetidos. O detalhe da sequência de build é tratado em runtime pelos
+    // guards (ExecutionGuardService), não empurrado preventivamente aqui.
     const autoBlock = effectiveAutoMode
-        ? `\nAUTO MODE ACTIVE — strict rules:
-- Execute the task end-to-end without asking the user anything.
-- After writing files, ALWAYS run a build/test command to verify (npm run build, npm test, tsc, etc.).
-- If a command fails (exit code != 0), READ the error output, diagnose the root cause, fix it with edit_file/write_local_file, and RE-RUN the command. Do NOT stop or describe — fix and retry.
-- Never end with phrases like "I'll try", "let me try", "vou tentar", "vou ajustar" — execute the action immediately instead.
-- Only finish when: (a) a build/test command exited with code 0, OR (b) the task explicitly does not require a build.
-- When truly done, respond with a one-line summary.
-
-# CRITICAL — BUILD/PACKAGE TASKS
-When the user task mentions ANY of: build, compile, package, deploy, release, .vsix, npm run, gerar versao, marketplace — you MUST follow this exact sequence and NOT stop until it completes:
-1. read_local_file("package.json") to see current scripts and version
-2. edit_file if version bump is needed
-3. run_command for the appropriate build (npm run build, vsce package, npm run package, etc.)
-4. After the command finishes, use list_directory or read_local_file to VERIFY the output artifact (.vsix, dist/, etc.) actually exists on disk
-5. Only then declare done
-
-NEVER do multiple consecutive file edits without running the build between them. After ANY edit of package.json (or similar config), the NEXT tool call MUST be run_command.
-NEVER assume a file was created without verifying with list_directory or read_local_file.`
+        ? `\nModo AUTO ativo:
+- Execute a tarefa de ponta a ponta sem perguntar nada ao usuário.
+- Depois de escrever arquivos, rode o build/teste para verificar (npm run build, npm test, tsc...).
+- Comando falhou? Leia o erro, corrija o arquivo certo e rode de novo. Não descreva — corrija.
+- Só conclua quando o build/teste sair com código 0 (ou quando a tarefa não exigir build). Encerre com uma frase.`
         : '';
+    // ── Contexto LAZY ─────────────────────────────────────────────────
+    // ProjectIntel e RAG são caros em tokens (~700+) e na maioria das rodadas
+    // de continuação o modelo já tem o contexto na própria conversa. Em vez de
+    // empurrá-los em TODO turno, só injetamos quando agregam: na 1ª rodada da
+    // sessão (modelo ainda não conhece o projeto) ou quando o pedido sugere
+    // navegar/encontrar código. Libera a janela do modelo pequeno para a tarefa.
+    const isFirstRoundOfSession = sessionHistory.filter(h => h.role === 'assistant').length === 0;
+    const promptNeedsCodebaseContext = /\b(onde|qual arquivo|encontr|busc|procur|refator|implement|adicion|cri[ae]|corrig|fix|where|find|search|implement|add|create|refactor)\b/i.test(userPrompt);
+    const injectHeavyContext = isFirstRoundOfSession || promptNeedsCodebaseContext;
     // Optional RAG: query vector DB and prepend relevant context (skipped in CHAT)
     let ragContext = '';
-    if (!chatMode && ragEndpoint && ragCollection) {
-        const ragResults = await (0, rag_client_1.queryRag)(ragEndpoint, ragCollection, userPrompt);
+    if (!chatMode && ragEndpoint && ragCollection && injectHeavyContext) {
+        const ragResults = await (0, rag_client_1.queryRag)({
+            provider: ragProvider,
+            endpoint: ragEndpoint,
+            collection: ragCollection,
+            query: userPrompt,
+            embedHost: ragEmbedHost,
+            embedModel: ragEmbedModel,
+        });
         ragContext = (0, rag_client_1.formatRagContext)(ragResults);
     }
     // Session memory: detect stack + inject summary (skipped in CHAT — chat mode
@@ -571,7 +702,7 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     // Cap reduzido de 40 para 20 arquivos (libera ~700 tokens em todo prompt).
     // Pode ser desligado nas configuracoes para modelos < 4B ou monorepos.
     let projectIntelSummary = '';
-    if (!chatMode && projectIntelEnabled && defaultCwd) {
+    if (!chatMode && projectIntelEnabled && defaultCwd && injectHeavyContext) {
         try {
             const intel = new project_intel_1.ProjectIntelService(defaultCwd);
             projectIntelSummary = intel.summarizeForPrompt(20, 120);
@@ -588,11 +719,27 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     const priorMessages = effectiveAutoMode
         ? (0, history_service_1.buildMessagesFromHistory)(historySlice.slice(-2)) // last user+assistant pair
         : (0, history_service_1.buildMessagesFromHistory)(historySlice);
+    // systemContent é o conteúdo BASE (imutável). O fact sheet (fatos já
+    // descobertos) é anexado a ele a cada iteração via refreshSystemWithFacts,
+    // porque cresce ao longo da rodada e precisa sobreviver à poda das leituras.
+    const baseSystemContent = systemContent;
     const roundMessages = [
-        { role: 'system', content: systemContent },
+        { role: 'system', content: baseSystemContent },
         ...priorMessages,
         { role: 'user', content: userPrompt },
     ];
+    // Fact sheet: scratchpad determinístico de fatos destilados (arquivos lidos
+    // + símbolos, arquivos escritos, último erro). Reinjetado no system a cada
+    // passo para que a poda das leituras brutas não faça o modelo esquecer o que
+    // já viu (e re-ler o mesmo arquivo até acabar os passos). Desligado em CHAT.
+    const factSheet = new fact_sheet_1.FactSheet();
+    const refreshSystemWithFacts = () => {
+        const facts = factSheet.build();
+        roundMessages[0] = {
+            role: 'system',
+            content: facts ? `${baseSystemContent}\n\n${facts}` : baseSystemContent,
+        };
+    };
     // Queue (not single slot) so multiple user messages sent during a slow
     // API call are all preserved instead of last-write-wins.
     const injectedMessages = [];
@@ -605,6 +752,12 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     const sessionApprovedCommands = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedCommands : []);
     const fileCache = new Map();
     const dirCache = new Map();
+    // Guard único de execução — fonte única dos nudges corretivos do loop.
+    const executionGuard = new execution_guard_1.ExecutionGuardService();
+    // Telemetria determinística da orquestração (por rodada). Mede tool vs
+    // texto, alucinação no passo 1 (firstStepWasText), re-leitura de arquivos
+    // (perda de contexto) e acionamento das redes de segurança. Só loga.
+    const orchMetrics = new orchestration_metrics_1.OrchestrationMetrics();
     const counters = {
         filesWritten: 0,
         lastCommandFailed: false,
@@ -613,7 +766,7 @@ NEVER assume a file was created without verifying with list_directory or read_lo
         lastErrorSummary: '',
         lastEditedFile: '',
     };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',
@@ -624,10 +777,84 @@ NEVER assume a file was created without verifying with list_directory or read_lo
         'Generating response...',
     ];
     let lastToolName = '';
-    const maxSteps = effectiveAutoMode ? 40 : constants_2.MAX_AGENT_STEPS;
+    // LLMs pagas (cloud) sao mais capazes: nao aplicamos limite artificial.
+    // Provedores locais (lmstudio, ollama, mlx) ficam com o cap para evitar travar a maquina.
+    const isLocalProvider = provider === 'lmstudio' || provider === 'ollama' || provider === 'mlx';
+    const maxSteps = isLocalProvider
+        ? (effectiveAutoMode ? 40 : constants_2.MAX_AGENT_STEPS)
+        : Number.POSITIVE_INFINITY;
     let step = 0;
     let emptyResponseStreak = 0;
     let pendingActionStreak = 0;
+    // Auto-continuação: em modo AUTO o usuário não quer clicar "continuar" a
+    // cada parada branda (contexto cheio / limite de passos). O loop retoma
+    // sozinho do checkpoint até MAX_AUTO_CONTINUES vezes; só então devolve o
+    // botão para clique manual — teto que evita loop infinito queimando recursos.
+    const MAX_AUTO_CONTINUES = 3;
+    let autoContinueCount = 0;
+    // Quando o agente atinge um limite (passos ou respostas vazias) sem concluir,
+    // salva um resumo do progresso na memoria da sessao. Assim, ao continuar, o
+    // proximo turno recebe esse contexto (via buildMemorySummary) e retoma de
+    // onde parou em vez de zerar. Retorna a frase de status para o usuario.
+    const persistProgressCheckpoint = (reason) => {
+        if (!sessionId) {
+            return;
+        }
+        const readList = Array.from(filesReadThisRound)
+            .map(p => path.basename(p)).slice(0, 12);
+        const parts = [];
+        parts.push(`[CHECKPOINT passo ${step}/${maxSteps}] Tarefa em andamento, nao concluida (${reason}).`);
+        parts.push(`Pedido original: ${userPrompt.slice(0, 200)}`);
+        if (readList.length) {
+            parts.push(`Arquivos ja analisados: ${readList.join(', ')}.`);
+        }
+        if (counters.filesWritten > 0) {
+            parts.push(`Arquivos escritos/editados: ${counters.filesWritten}${counters.lastEditedFile ? ' (ultimo: ' + path.basename(counters.lastEditedFile) + ')' : ''}.`);
+        }
+        if (counters.lastCommandFailed && counters.lastErrorSummary) {
+            parts.push(`Ultimo erro: ${counters.lastErrorSummary.slice(0, 150)}.`);
+        }
+        parts.push('Ao continuar, retome deste ponto sem refazer o que ja foi feito.');
+        const note = parts.join(' ').slice(0, 480);
+        try {
+            (0, memory_service_1.rememberDecision)(sessionId, note, 'agent');
+        }
+        catch { /* noop */ }
+        onStatus('Progresso salvo na memoria — posso continuar de onde parei.');
+    };
+    // Trata uma parada BRANDA (contexto cheio ou limite de passos). Em modo
+    // AUTO, retoma a tarefa sozinho do checkpoint enquanto houver orçamento de
+    // auto-continuação. Retorna:
+    //   - null  → a execução deve CONTINUAR (o while segue); o estado foi
+    //             resetado e uma mensagem de continuação foi injetada.
+    //   - string→ texto final a ser retornado ao usuário (com [CONTINUE_BUTTON]
+    //             em AUTO já sem orçamento, ou texto puro fora do AUTO).
+    const handleSoftStop = (reason, manualText) => {
+        persistProgressCheckpoint(reason);
+        if (effectiveAutoMode && autoContinueCount < MAX_AUTO_CONTINUES) {
+            autoContinueCount++;
+            onStatus(`AUTO: retomando sozinho do checkpoint (${autoContinueCount}/${MAX_AUTO_CONTINUES})...`);
+            // Reseta os contadores de parada e poda o contexto para liberar a
+            // janela, igual ao que o clique manual provocaria — mas sem clique.
+            emptyResponseStreak = 0;
+            pendingActionStreak = 0;
+            step = 0;
+            pruneRoundToolMessages(roundMessages, 1);
+            roundMessages.push({
+                role: 'user',
+                content: 'Continue a tarefa de onde parou. Voce nao terminou — execute as proximas etapas ate o build passar com sucesso. Nao refaca o que ja foi feito.',
+            });
+            lastToolName = '';
+            return null;
+        }
+        emitTelemetry();
+        if (effectiveAutoMode) {
+            // Esgotou o teto de auto-continuação — devolve o botão para o usuário.
+            return `${manualText}\n\n[CONTINUE_BUTTON]`;
+        }
+        // Fora do AUTO o comportamento original: oferece o botão de continuar.
+        return `${manualText}\n\n[CONTINUE_BUTTON]`;
+    };
     // Tracks repeated identical tool calls (tool name + args). If the model
     // keeps calling the same thing, we nudge it to do something else.
     const toolCallSignatures = new Map();
@@ -635,7 +862,14 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     let totalCompletionTokens = 0;
     let totalElapsedMs = 0;
     const sessionStart = Date.now();
+    // Guarda para logar a telemetria de orquestração uma única vez por rodada,
+    // já que emitTelemetry pode ser chamada em vários pontos de saída.
+    let orchLogged = false;
     const emitTelemetry = () => {
+        if (!orchLogged) {
+            orchLogged = true;
+            console.log(orchMetrics.format());
+        }
         if (!onTelemetry) {
             return;
         }
@@ -732,7 +966,7 @@ NEVER assume a file was created without verifying with list_directory or read_lo
     // plano de execucao. O plano vira contexto adicional injetado como
     // mensagem do usuario que o local executa passo a passo.
     if (hybridActive) {
-        const planSystem = `You are a senior architect helping a small local LLM (14B, 2048 ctx) execute a coding task. The local model has very limited context space — every token in your plan reduces what it has to work with.
+        const planSystem = `You are a senior architect helping a small local LLM (7-14B, limited context) execute a coding task. The local model has limited context space — every token in your plan reduces what it has to work with.
 
 Output a NUMBERED list of 3-7 short steps. STRICT format rules:
 - Use RELATIVE paths only (e.g. "package.json", "src/extension.ts") — never absolute paths
@@ -749,343 +983,451 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             });
         }
     }
-    while (++step <= maxSteps) {
-        if (signal?.aborted) {
-            emitTelemetry();
-            return '[INTERRUPTED] Execution cancelled by user.';
-        }
-        if (injectedMessages.length > 0) {
-            const combined = injectedMessages.splice(0).join('\n');
-            roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${combined}` });
-            lastToolName = '';
-        }
-        const statusAfterTool = {
-            list_directory: 'Analyzing project structure...',
-            read_local_file: 'Processing file contents...',
-            edit_file: 'Working out next action...',
-            search_in_workspace: 'Analyzing search results...',
-            get_diagnostics: 'Analyzing editor diagnostics...',
-            write_local_file: 'Working out next action...',
-            run_command: 'Analyzing command output...',
-            run_git: 'Analyzing git result...',
-            web_search: 'Analyzing web results...',
-            todo_update: 'Updating task list...',
-        };
-        const thinking = lastToolName && statusAfterTool[lastToolName]
-            ? statusAfterTool[lastToolName]
-            : thinkingStatus[step % thinkingStatus.length];
-        onStatus(thinking);
-        // In CHAT mode, only expose web_search (and only if the user
-        // explicitly enabled it). All code-editing tools are hidden.
-        const baseTools = enabledTools?.length
-            ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
-            : tools_definition_2.TOOLS;
-        const activeTools = chatMode
-            ? baseTools.filter(t => t.name === 'web_search')
-            : baseTools;
-        // Preventive pruning calibrated for a 2048-token context window.
-        // Only prune when significantly over budget, keeping the most recent pairs
-        // so the model retains context of what it just read/did.
-        {
-            const totalChars = roundMessages.reduce((acc, m) => {
-                const content = typeof m.content === 'string' ? m.content : '';
-                const toolArgs = m.tool_calls ? JSON.stringify(m.tool_calls) : '';
-                return acc + content.length + toolArgs.length;
-            }, 0);
-            const estimatedTokens = Math.floor(totalChars / 4);
-            if (estimatedTokens > 1200) {
-                // Keep more pairs in auto mode so model doesn't lose what it just read
-                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 2);
+    // ── Observar ANTES de planejar (sem HYBRID) ────────────────────────
+    // Antes esta âncora forçava o modelo a chamar todo_update ANTES de agir —
+    // ou seja, planejar no vazio. Para um modelo pequeno isso é convite a
+    // alucinar o plano inteiro (lista passos sobre arquivos que nem existem).
+    //
+    // Princípio (o mesmo do Claude Code, adaptado ao contexto pequeno): o
+    // raciocínio tem que ser FUNDAMENTADO em observação, não em suposição. Então
+    // o 1º passo passa a ser uma AÇÃO CONCRETA de leitura. A escolha de qual é
+    // determinística: se o prompt cita um caminho/arquivo, manda ler; senão,
+    // manda listar a raiz. Só depois de ter visto algo real o modelo planeja.
+    const isFirstRound = isFirstRoundOfSession;
+    if (!chatMode && !hybridActive && isFirstRound) {
+        // Detecta um caminho/arquivo citado no prompt (ex: "src/x.ts").
+        const pathMatch = userPrompt.match(/([A-Za-z0-9_\-./]+\.[A-Za-z0-9]{1,8})/);
+        // Se o arquivo citado é ALVO de criação ("crie/gere um README.md"), não
+        // mandamos lê-lo (ele não existe) — mandamos observar o projeto primeiro.
+        const citedFileIsCreationTarget = !!pathMatch
+            && new RegExp(`\\b(cri[ae]r?|ger[ae]r?|escrev[ae]r?|novo|nova)\\b[^.]{0,40}${pathMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(userPrompt);
+        const firstAction = (pathMatch && !citedFileIsCreationTarget)
+            ? `Comece agora chamando read_local_file em "${pathMatch[1]}". Não descreva um plano antes — leia o arquivo primeiro.`
+            : 'Comece agora chamando list_directory na raiz do projeto para ver a estrutura real. Não descreva um plano antes — observe primeiro.';
+        roundMessages.push({ role: 'user', content: firstAction });
+    }
+    // Loop externo: permite que o limite de passos seja "rearmado" pela
+    // auto-continuação em modo AUTO (handleSoftStop reseta step=0). Sem AUTO,
+    // ou esgotado o teto, sai com o texto final.
+    autoContinueLoop: while (true) {
+        while (++step <= maxSteps) {
+            if (signal?.aborted) {
+                emitTelemetry();
+                return '[INTERRUPTED] Execution cancelled by user.';
             }
-        }
-        // Only stream text to UI when there's a chance this is the final reply.
-        // If the model ends up calling a tool instead, onStreamChunk output is
-        // discarded — the UI bubble gets cleared before the tool result is shown.
-        let streamedSoFar = '';
-        const onChunk = onStreamChunk
-            ? (text) => { streamedSoFar += text; onStreamChunk(text); }
-            : undefined;
-        const result = provider === 'anthropic' && anthropicApiKey
-            ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
-            : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
-        // If the model called a tool, the streamed text was reasoning/preamble —
-        // tell the UI to discard it so the bubble doesn't show stale content.
-        if (result.toolCall && streamedSoFar) {
-            onStreamChunk?.('\x00CLEAR');
-        }
-        if (result.responseText === '__ABORTED__') {
-            emitTelemetry();
-            return '[INTERRUPTED] Execution cancelled by user.';
-        }
-        if (result.responseText === '__INFRA_ERROR__') {
-            emitTelemetry();
-            // Se o stream ja tinha gerado texto antes de cair, preserva o que
-            // veio em vez de descartar — o usuario pode aproveitar a resposta
-            // parcial mesmo com erro. A mensagem de diagnostico vai junto.
-            const detail = result.errorDetail || 'Erro ao chamar o modelo.';
-            if (result.partialText && result.partialText.length > 20) {
-                return `${result.partialText}\n\n---\n\n⚠ ${detail}\n(resposta interrompida apos ${result.partialText.length} chars)`;
+            if (injectedMessages.length > 0) {
+                const combined = injectedMessages.splice(0).join('\n');
+                roundMessages.push({ role: 'user', content: `[USER INTERRUPTED]: ${combined}` });
+                lastToolName = '';
             }
-            return `⚠ ${detail}`;
-        }
-        // Accumulate telemetry
-        if (result.usage) {
-            totalPromptTokens += result.usage.promptTokens;
-            totalCompletionTokens += result.usage.completionTokens;
-            totalElapsedMs += result.usage.elapsedMs;
-        }
-        if (!result.toolCall && result.responseText) {
-            const escaped = detectEscapedToolCall(result.responseText);
-            if (escaped) {
-                result.toolCall = escaped;
-                result.responseText = '';
+            const statusAfterTool = {
+                list_directory: 'Analyzing project structure...',
+                read_local_file: 'Processing file contents...',
+                edit_file: 'Working out next action...',
+                search_in_workspace: 'Analyzing search results...',
+                get_diagnostics: 'Analyzing editor diagnostics...',
+                write_local_file: 'Working out next action...',
+                run_command: 'Analyzing command output...',
+                run_git: 'Analyzing git result...',
+                web_search: 'Analyzing web results...',
+                todo_update: 'Updating task list...',
+            };
+            const thinking = lastToolName && statusAfterTool[lastToolName]
+                ? statusAfterTool[lastToolName]
+                : thinkingStatus[step % thinkingStatus.length];
+            onStatus(thinking);
+            // In CHAT mode, only expose web_search (and only if the user
+            // explicitly enabled it). All code-editing tools are hidden.
+            const baseTools = enabledTools?.length
+                ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
+                : tools_definition_2.TOOLS;
+            // Gating de ferramentas por fase: para modelo pequeno, menos opções =
+            // decisão mais fácil. Escondemos run_git e web_search a menos que a
+            // tarefa os peça (palavra-chave no prompt) ou o modelo já os tenha usado
+            // nesta rodada. As ferramentas de edição/leitura ficam sempre visíveis.
+            const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag)\b/i.test(userPrompt)
+                || lastToolName === 'run_git';
+            const webRelevant = /\b(http|https|www\.|documenta|pesquis|search|web|api d[eo]|como usar|biblioteca|library|erro desconhecido)\b/i.test(userPrompt)
+                || lastToolName === 'web_search';
+            // browser_action (Playwright) so aparece quando a tarefa cita navegador/
+            // teste web — evita empurrar uma tool pesada em toda rodada do modelo
+            // pequeno.
+            const browserRelevant = /\b(navegador|browser|chromium|chrome|safari|webkit|screenshot|clic|click|preench|formul[aá]rio|console do navegador|erro de rede|localhost:\d|test[ae] (a|o|no|na) (p[aá]gina|site|tela|url)|abr[ae] (a|o) (site|url|p[aá]gina))\b/i.test(userPrompt)
+                || lastToolName === 'browser_action';
+            const activeTools = chatMode
+                ? baseTools.filter(t => t.name === 'web_search')
+                : baseTools.filter(t => (t.name !== 'run_git' || gitRelevant) &&
+                    (t.name !== 'web_search' || webRelevant) &&
+                    (t.name !== 'browser_action' || browserRelevant));
+            // Poda preventiva calibrada pelo orçamento de contexto (CONTEXT_TOKEN_
+            // BUDGET). Só poda quando passa do threshold derivado — janelas maiores
+            // podam mais tarde e retêm mais pares, aproveitando o contexto em vez de
+            // desperdiçá-lo. O número de pares mantidos escala com o orçamento.
+            {
+                const totalChars = roundMessages.reduce((acc, m) => {
+                    const content = typeof m.content === 'string' ? m.content : '';
+                    const toolArgs = m.tool_calls ? JSON.stringify(m.tool_calls) : '';
+                    return acc + content.length + toolArgs.length;
+                }, 0);
+                const estimatedTokens = Math.floor(totalChars / constants_2.CHARS_PER_TOKEN);
+                if (estimatedTokens > (0, constants_2.contextPruneTokenThreshold)(contextTokenBudget)) {
+                    // Pares mantidos escalam com a janela: quanto maior o orçamento,
+                    // mais historico de leituras/acoes o modelo conserva. Base ~2048
+                    // → 2 pares (3 em AUTO); 8192 → ~8 pares; teto de 12 para nao
+                    // explodir a janela nem a latencia.
+                    const scale = contextTokenBudget / 2048;
+                    const basePairs = Math.min(12, Math.max(2, Math.round(2 * scale)));
+                    pruneRoundToolMessages(roundMessages, effectiveAutoMode ? basePairs + 1 : basePairs);
+                }
             }
-        }
-        if (result.toolCall) {
-            const { name, arguments: args } = result.toolCall.function;
-            lastToolName = name;
-            const toolCallId = result.toolCall.id || `call_${step}`;
-            const handler = toolHandlers[name];
-            // Loop guard: if the model calls the same tool with the same args
-            // 3+ times in a row, inject a corrective message instead of running
-            // it again. Skips for run_command (legitimately retried) and
-            // todo_update (whole list is the arg, changes per call).
-            const sig = `${name}:${JSON.stringify(args)}`;
-            const sigCount = (toolCallSignatures.get(sig) || 0) + 1;
-            toolCallSignatures.set(sig, sigCount);
-            if (sigCount >= 3 && name !== 'run_command' && name !== 'todo_update') {
+            // Reinjeta os fatos destilados no system ANTES de cada chamada. Mesmo
+            // que a poda acima tenha descartado a leitura bruta de um arquivo, o
+            // fato ("x.ts expõe A, B") continua presente — o modelo não re-lê.
+            if (!chatMode) {
+                refreshSystemWithFacts();
+            }
+            // Only stream text to UI when there's a chance this is the final reply.
+            // If the model ends up calling a tool instead, onStreamChunk output is
+            // discarded — the UI bubble gets cleared before the tool result is shown.
+            let streamedSoFar = '';
+            const onChunk = onStreamChunk
+                ? (text) => { streamedSoFar += text; onStreamChunk(text); }
+                : undefined;
+            const result = provider === 'anthropic' && anthropicApiKey
+                ? await (0, api_client_1.callAnthropicAI)(anthropicApiKey, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry)
+                : await (0, api_client_1.callAI)(endpoint, authHeaders, roundMessages, activeTools, model, signal, onChunk, onLiveTelemetry);
+            // If the model called a tool, the streamed text was reasoning/preamble —
+            // tell the UI to discard it so the bubble doesn't show stale content.
+            if (result.toolCall && streamedSoFar) {
+                onStreamChunk?.('\x00CLEAR');
+            }
+            if (result.responseText === '__ABORTED__') {
+                emitTelemetry();
+                return '[INTERRUPTED] Execution cancelled by user.';
+            }
+            if (result.responseText === '__INFRA_ERROR__') {
+                emitTelemetry();
+                // Se o stream ja tinha gerado texto antes de cair, preserva o que
+                // veio em vez de descartar — o usuario pode aproveitar a resposta
+                // parcial mesmo com erro. A mensagem de diagnostico vai junto.
+                const detail = result.errorDetail || 'Erro ao chamar o modelo.';
+                if (result.partialText && result.partialText.length > 20) {
+                    return `${result.partialText}\n\n---\n\n⚠ ${detail}\n(resposta interrompida apos ${result.partialText.length} chars)`;
+                }
+                return `⚠ ${detail}`;
+            }
+            // Accumulate telemetry
+            if (result.usage) {
+                totalPromptTokens += result.usage.promptTokens;
+                totalCompletionTokens += result.usage.completionTokens;
+                totalElapsedMs += result.usage.elapsedMs;
+            }
+            let toolCallViaEscape = false;
+            if (!result.toolCall && result.responseText) {
+                const escaped = detectEscapedToolCall(result.responseText);
+                if (escaped) {
+                    result.toolCall = escaped;
+                    result.responseText = '';
+                    toolCallViaEscape = true;
+                    // O tool call veio como TEXTO (servidor sem tool-calling nativo,
+                    // ex: mlx_lm.server). O texto streamado ERA o proprio JSON da
+                    // chamada — nao e preambulo util. Manda DISCARD (nao CLEAR): a UI
+                    // apaga a bolha por completo em vez de congelar o JSON na tela.
+                    if (streamedSoFar) {
+                        onStreamChunk?.('\x00DISCARD');
+                    }
+                }
+            }
+            if (result.toolCall) {
+                const { name, arguments: args } = result.toolCall.function;
+                lastToolName = name;
+                // Telemetria: passo que emitiu tool. Registra re-leitura de arquivo
+                // (perda de contexto) quando a tool é read_local_file.
+                orchMetrics.recordToolStep(toolCallViaEscape);
+                if (name === 'read_local_file' && args?.filePath) {
+                    orchMetrics.recordFileRead(path.resolve(defaultCwd, String(args.filePath)));
+                }
+                const toolCallId = result.toolCall.id || `call_${step}`;
+                const handler = toolHandlers[name];
+                // Loop guard: if the model calls the same tool with the same args
+                // 3+ times in a row, inject a corrective message instead of running
+                // it again. Skips for run_command (legitimately retried) and
+                // todo_update (whole list is the arg, changes per call).
+                const sig = `${name}:${JSON.stringify(args)}`;
+                const sigCount = (toolCallSignatures.get(sig) || 0) + 1;
+                toolCallSignatures.set(sig, sigCount);
+                if (sigCount >= 3 && name !== 'run_command' && name !== 'todo_update') {
+                    roundMessages.push({
+                        role: 'assistant',
+                        content: null,
+                        tool_calls: [{ id: toolCallId, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+                    });
+                    roundMessages.push({
+                        role: 'tool',
+                        content: `[LOOP DETECTED] You have called ${name} with the same arguments ${sigCount} times. The result has not changed. Stop repeating this call. Either: (a) use a different tool, (b) use different arguments, or (c) act on the information you already have.`,
+                        tool_call_id: toolCallId,
+                    });
+                    lastToolName = name;
+                    continue;
+                }
+                const toolOutput = handler
+                    ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
+                    : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+                // Alimenta o fact sheet com o essencial ANTES de qualquer poda, para
+                // que o fato sobreviva mesmo que o par tool bruto seja descartado.
+                // Leitura: destila símbolos do conteúdo. Escrita/edição: registra o
+                // path. Erro de comando: registra o resumo (via counters).
+                {
+                    const fp = args?.filePath;
+                    if (name === 'read_local_file' && fp) {
+                        factSheet.recordRead(path.basename(String(fp)), toolOutput, extractSymbols);
+                    }
+                    else if ((name === 'write_local_file' || name === 'edit_file') && fp
+                        && !toolOutput.startsWith('[ERRO') && !toolOutput.startsWith('[ERROR')
+                        && !toolOutput.startsWith('[CANCELLED')) {
+                        factSheet.recordWrite(path.basename(String(fp)));
+                    }
+                    else if (name === 'run_command' && counters.lastCommandFailed && counters.lastErrorSummary) {
+                        factSheet.recordError(counters.lastErrorSummary);
+                    }
+                }
+                // Limpa o output antes de mandar pro LLM: remove lixo (ANSI, barras
+                // de progresso, linhas em branco/spinners repetidos), aplica limpeza
+                // por tool (run_command prioriza erros + cauda, git diff descarta
+                // contexto, search deduplica) e so entao trunca de forma inteligente
+                // (head+tail em limites de linha) se ainda passar do limite.
+                // Substitui o slice cego antigo. Limpeza adaptativa por modo:
+                // agressiva em AUTO (contexto apertado), leve no modo manual.
+                const truncatedOutput = context_sanitizer_1.contextSanitizer.clean(name, toolOutput, {
+                    autoMode: effectiveAutoMode,
+                    tokenBudget: contextTokenBudget,
+                });
                 roundMessages.push({
                     role: 'assistant',
                     content: null,
-                    tool_calls: [{ id: toolCallId, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+                    tool_calls: [{
+                            id: toolCallId,
+                            type: 'function',
+                            function: { name, arguments: JSON.stringify(args) },
+                        }],
                 });
                 roundMessages.push({
                     role: 'tool',
-                    content: `[LOOP DETECTED] You have called ${name} with the same arguments ${sigCount} times. The result has not changed. Stop repeating this call. Either: (a) use a different tool, (b) use different arguments, or (c) act on the information you already have.`,
+                    content: truncatedOutput,
                     tool_call_id: toolCallId,
                 });
-                lastToolName = name;
-                continue;
-            }
-            const toolOutput = handler
-                ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
-                : `ERRO: Ferramenta "${name}" nao reconhecida.`;
-            // Truncate large tool outputs to avoid filling the context window.
-            // In auto mode limits are tighter — no history budget and test/build
-            // output (jest, coverage tables) can be thousands of chars.
-            // Calibrated for 2048-token context: system (~250t) + prompt + response (1024t).
-            // Leaves ~750 tokens (~3000 chars) for tool output + conversation.
-            const TOOL_OUTPUT_LIMITS = {
-                list_directory: 600,
-                search_in_workspace: 800,
-                read_local_file: 1200,
-                run_command: 800,
-                run_git: 600,
-                web_search: 1000,
-            };
-            const limit = TOOL_OUTPUT_LIMITS[name] ?? 800;
-            const truncatedOutput = toolOutput.length > limit
-                ? toolOutput.slice(0, limit) + `\n...[truncated — ${toolOutput.length - limit} chars omitted]`
-                : toolOutput;
-            roundMessages.push({
-                role: 'assistant',
-                content: null,
-                tool_calls: [{
-                        id: toolCallId,
-                        type: 'function',
-                        function: { name, arguments: JSON.stringify(args) },
-                    }],
-            });
-            roundMessages.push({
-                role: 'tool',
-                content: truncatedOutput,
-                tool_call_id: toolCallId,
-            });
-            // ── GATILHO 2: verificacao apos escrita / build ────────────
-            // V1 (deterministica) roda sempre que houve escrita/edicao.
-            // V2 (semantica via pago) so roda em milestones: build verde
-            // ou escrita que tenha "implementado" algo nao-trivial.
-            if (hybridActive) {
-                if ((name === 'write_local_file' || name === 'edit_file') && !toolOutput.startsWith('[ERROR') && !toolOutput.startsWith('[ERRO')) {
-                    const fp = args.filePath || '';
-                    if (fp) {
-                        const absPath = (0, validation_1.resolveFilePath)(fp, defaultCwd);
-                        const v1 = v1VerifyWrite(absPath, toolOutput);
-                        roundMessages.push({
-                            role: 'user',
-                            content: `[VERIFICATION] ${v1}`,
-                        });
+                // ── GATILHO 2: verificacao apos escrita / build ────────────
+                // V1 (deterministica) roda sempre que houve escrita/edicao.
+                // V2 (semantica via pago) so roda em milestones: build verde
+                // ou escrita que tenha "implementado" algo nao-trivial.
+                if (hybridActive) {
+                    if ((name === 'write_local_file' || name === 'edit_file') && !toolOutput.startsWith('[ERROR') && !toolOutput.startsWith('[ERRO')) {
+                        const fp = args.filePath || '';
+                        if (fp) {
+                            const absPath = (0, validation_1.resolveFilePath)(fp, defaultCwd);
+                            const v1 = v1VerifyWrite(absPath, toolOutput);
+                            roundMessages.push({
+                                role: 'user',
+                                content: `[VERIFICATION] ${v1}`,
+                            });
+                        }
+                    }
+                    else if (name === 'run_command' && counters.lastBuildPassed && !counters.lastCommandFailed) {
+                        // V2: build acabou de passar — pago confirma se de fato esta tudo certo
+                        const verifySystem = 'You are a code reviewer. The local agent just ran a build/test command successfully. Look at the command output and decide: is the build truly OK, or are there warnings/skipped tests/incomplete work the local agent might be ignoring? Reply in ONE LINE: either "BUILD OK" or "BUILD CONCERN: <one sentence>".';
+                        const verifyUser = `Command: ${args.command || ''}\nOutput:\n${toolOutput.slice(0, 1500)}`;
+                        const verdict = await askSupport('verify_build', verifySystem, verifyUser, 150);
+                        if (verdict && verdict.toUpperCase().includes('CONCERN')) {
+                            roundMessages.push({
+                                role: 'user',
+                                content: `[BUILD REVIEW from support model] ${verdict}\n\nAddress this concern before declaring done.`,
+                            });
+                        }
                     }
                 }
-                else if (name === 'run_command' && counters.lastBuildPassed && !counters.lastCommandFailed) {
-                    // V2: build acabou de passar — pago confirma se de fato esta tudo certo
-                    const verifySystem = 'You are a code reviewer. The local agent just ran a build/test command successfully. Look at the command output and decide: is the build truly OK, or are there warnings/skipped tests/incomplete work the local agent might be ignoring? Reply in ONE LINE: either "BUILD OK" or "BUILD CONCERN: <one sentence>".';
-                    const verifyUser = `Command: ${args.command || ''}\nOutput:\n${toolOutput.slice(0, 1500)}`;
-                    const verdict = await askSupport('verify_build', verifySystem, verifyUser, 150);
-                    if (verdict && verdict.toUpperCase().includes('CONCERN')) {
-                        roundMessages.push({
-                            role: 'user',
-                            content: `[BUILD REVIEW from support model] ${verdict}\n\nAddress this concern before declaring done.`,
-                        });
+                // In auto mode keep fewer pairs since there's no history budget to spare.
+                pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 6);
+            }
+            else if (result.responseText !== undefined) {
+                const text = result.responseText || '';
+                // Only treat completely empty response as recoverable overflow.
+                // Short responses are legitimate (model may say "Ok." then call a tool).
+                if (!text) {
+                    emptyResponseStreak++;
+                    onStatus(`Modelo retornou vazio — recarregando contexto (tentativa ${emptyResponseStreak}/3)`);
+                    if (emptyResponseStreak >= 3) {
+                        // Parada branda: contexto do modelo encheu. Em AUTO o loop
+                        // retoma sozinho do checkpoint (handleSoftStop); só devolve o
+                        // botão quando esgota o teto de auto-continuação ou fora do AUTO.
+                        const outcome = handleSoftStop('o modelo ficou sem contexto', 'A tarefa e longa e o contexto do modelo encheu. Salvei o progresso ate aqui na memoria. Clique para continuar de onde parei.');
+                        if (outcome === null) {
+                            continue;
+                        }
+                        return outcome;
                     }
+                    // Progressive pruning: each retry removes more pairs
+                    const keepPairs = Math.max(1, 3 - emptyResponseStreak);
+                    pruneRoundToolMessages(roundMessages, keepPairs);
+                    roundMessages.push({
+                        role: 'user',
+                        content: step <= 1
+                            ? userPrompt
+                            : 'Continue a tarefa de onde parou.',
+                    });
+                    lastToolName = '';
+                    continue;
                 }
-            }
-            // In auto mode keep fewer pairs since there's no history budget to spare.
-            pruneRoundToolMessages(roundMessages, effectiveAutoMode ? 3 : 6);
-        }
-        else if (result.responseText !== undefined) {
-            const text = result.responseText || '';
-            // Only treat completely empty response as recoverable overflow.
-            // Short responses are legitimate (model may say "Ok." then call a tool).
-            if (!text) {
-                emptyResponseStreak++;
-                onStatus(`Modelo retornou vazio — recarregando contexto (tentativa ${emptyResponseStreak}/3)`);
-                if (emptyResponseStreak >= 3) {
-                    emitTelemetry();
-                    return 'Nao foi possivel concluir a tarefa. Tente novamente ou simplifique o pedido.';
-                }
-                // Progressive pruning: each retry removes more pairs
-                const keepPairs = Math.max(1, 3 - emptyResponseStreak);
-                pruneRoundToolMessages(roundMessages, keepPairs);
-                roundMessages.push({
-                    role: 'user',
-                    content: step <= 1
-                        ? userPrompt
-                        : 'Continue a tarefa de onde parou.',
-                });
-                lastToolName = '';
-                continue;
-            }
-            emptyResponseStreak = 0;
-            // Detect "code dumped in chat instead of using a tool":
-            // model included a fenced code block of substantial size but
-            // didn't call write_local_file/edit_file. Common failure mode
-            // when the model gives up on a tool error.
-            const codeBlockMatch = text.match(/```[a-z]*\n([\s\S]+?)\n```/i);
-            const dumpedCodeInChat = !!codeBlockMatch && codeBlockMatch[1].length > 200;
-            // ── Auto mode: force continuation rules ────────────────────────
-            // The user activated AUTO expecting the agent NOT to stop until
-            // the build passes. Any of these conditions mean "not done yet":
-            //   - model described an action but didn't call a tool
-            //   - planning text without ever writing a file
-            //   - last command failed (build/test/install error)
-            //   - never ran a successful build
-            //   - dumped code in chat instead of using write_local_file
-            // In all cases: push the model to act, don't return to the user.
-            const modelIsPlanning = effectiveAutoMode && counters.filesWritten === 0 && !lastToolName;
-            const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
-            const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
-            const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
-            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
-                pendingActionStreak++;
-                // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
-                // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
-                // com recovery em CADA multiplo de 4 (4, 8, 12) — cada chamada
-                // tenta dar um plano novo se o anterior nao destravou.
-                const RECOVERY_INTERVAL = 4;
-                const HARD_CAP_AUTO = 15;
-                if (hybridActive && pendingActionStreak > 0 && pendingActionStreak % RECOVERY_INTERVAL === 0) {
-                    const reason = lastCommandFailed
-                        ? 'recover_command'
-                        : buildNotYetPassed
-                            ? 'recover_syntax'
-                            : 'recover_stop';
-                    const sys = 'You are a senior engineer helping a stuck local agent. The local agent failed multiple attempts. Diagnose and produce a SHORT, SPECIFIC corrective plan in 3-5 bullets. Name exact files and exact actions. Be concrete.';
-                    const errCtx = counters.lastErrorFiles.length > 0
-                        ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
+                emptyResponseStreak = 0;
+                // Telemetria: passo de texto puro (modelo respondeu sem tool). Se
+                // for o 1º passo, firstStepWasText sinaliza "planejou/alucinou antes
+                // de observar o projeto".
+                orchMetrics.recordTextStep();
+                // Detect "code dumped in chat instead of using a tool":
+                // model included a fenced code block of substantial size but
+                // didn't call write_local_file/edit_file. Common failure mode
+                // when the model gives up on a tool error.
+                const codeBlockMatch = text.match(/```[a-z]*\n([\s\S]+?)\n```/i);
+                const dumpedCodeInChat = !!codeBlockMatch && codeBlockMatch[1].length > 200;
+                // ── Auto mode: force continuation rules ────────────────────────
+                // The user activated AUTO expecting the agent NOT to stop until
+                // the build passes. Any of these conditions mean "not done yet":
+                //   - model described an action but didn't call a tool
+                //   - planning text without ever writing a file
+                //   - last command failed (build/test/install error)
+                //   - never ran a successful build
+                //   - dumped code in chat instead of using write_local_file
+                // In all cases: push the model to act, don't return to the user.
+                const modelIsPlanning = effectiveAutoMode && counters.filesWritten === 0 && !lastToolName;
+                const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
+                const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
+                const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
+                if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+                    pendingActionStreak++;
+                    orchMetrics.recordPendingNudge();
+                    // ── GATILHOS 3/4/5: recuperacao via pago ───────────────
+                    // Cap antigo era 5 com recovery no strike 4. Agora vai ate 15
+                    // com recovery em CADA multiplo de 4 (4, 8, 12) — cada chamada
+                    // tenta dar um plano novo se o anterior nao destravou.
+                    const RECOVERY_INTERVAL = 4;
+                    const HARD_CAP_AUTO = 15;
+                    if (hybridActive && pendingActionStreak > 0 && pendingActionStreak % RECOVERY_INTERVAL === 0) {
+                        const reason = lastCommandFailed
+                            ? 'recover_command'
+                            : buildNotYetPassed
+                                ? 'recover_syntax'
+                                : 'recover_stop';
+                        const sys = 'You are a senior engineer helping a stuck local agent. The local agent failed multiple attempts. Diagnose and produce a SHORT, SPECIFIC corrective plan in 3-5 bullets. Name exact files and exact actions. Be concrete.';
+                        const errCtx = counters.lastErrorFiles.length > 0
+                            ? `\nError files: ${counters.lastErrorFiles.join(', ')}\nError summary: ${counters.lastErrorSummary}`
+                            : '';
+                        const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nAttempt: ${pendingActionStreak}/${HARD_CAP_AUTO}\n\nWhat should the local agent do next?`;
+                        const recovery = await askSupport(reason, sys, usr, 500);
+                        if (recovery) {
+                            roundMessages.push({ role: 'assistant', content: text });
+                            roundMessages.push({
+                                role: 'user',
+                                content: `[HYBRID RECOVERY from support model] Tentativa ${pendingActionStreak}/${HARD_CAP_AUTO}. Follow this exactly:\n\n${recovery}`,
+                            });
+                            lastToolName = '';
+                            continue;
+                        }
+                    }
+                    if (pendingActionStreak >= HARD_CAP_AUTO) {
+                        // Hard cap to avoid eternal loop. Surface what happened
+                        // so the user knows the agent gave up and why.
+                        pendingActionStreak = 0;
+                        emitTelemetry();
+                        const reason = dumpedInsteadOfWriting
+                            ? 'O modelo escreveu codigo no chat em vez de salvar via tool — possivelmente o modelo local nao esta seguindo o protocolo de tool calling.'
+                            : lastCommandFailed
+                                ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
+                                : !counters.lastBuildPassed && counters.filesWritten > 0
+                                    ? 'O build ainda nao passou apos varias tentativas.'
+                                    : 'O modelo descreveu acoes mas nao executou.';
+                        return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}\n\n[CONTINUE_BUTTON]`;
+                    }
+                    // Fonte ÚNICA de nudge: o ExecutionGuardService decide qual
+                    // correção injetar (PT-BR, curta, colaborativa). Antes havia um
+                    // bloco de ternários aqui que duplicava — e divergia — da mesma
+                    // lógica do guard. Montamos o estado a partir dos counters do loop.
+                    // O loop não mantém o ToolCallRecord completo. O guard só lê
+                    // toolCalls em dois detectores: buildPendingNoCommand (algum
+                    // run_command de build já rodou?) e modelPlanning (toolCalls
+                    // vazio). Reconstruímos só esses dois sinais honestamente:
+                    // marcador de build se ele ocorreu, marcador genérico se houve
+                    // qualquer tool nesta rodada (lastToolName), senão vazio.
+                    const buildWasAttempted = lastBuildAttempted(roundMessages);
+                    const syntheticToolCalls = buildWasAttempted
+                        ? [{ name: 'run_command', args: { command: 'npm run build' }, output: '', success: true, timestamp: Date.now() }]
+                        : lastToolName
+                            ? [{ name: lastToolName, args: {}, output: '', success: true, timestamp: Date.now() }]
+                            : [];
+                    const guardState = {
+                        userPrompt,
+                        autoMode: effectiveAutoMode,
+                        hybridActive,
+                        toolCalls: syntheticToolCalls,
+                        filesWritten: counters.filesWritten,
+                        filesRead: filesReadThisRound.size,
+                        lastBuildPassed: counters.lastBuildPassed,
+                        lastCommandFailed: counters.lastCommandFailed,
+                        lastErrorFiles: counters.lastErrorFiles,
+                        lastEditedFile: counters.lastEditedFile,
+                        lastModelText: text,
+                        pendingActionStreak,
+                        emptyResponseStreak,
+                    };
+                    const guardResult = executionGuard.evaluate(guardState);
+                    // Anexa a localização do erro quando há arquivos apontados — dá
+                    // ao modelo o alvo concreto sem inflar o nudge base.
+                    const errorContext = (lastCommandFailed && counters.lastErrorFiles.length > 0)
+                        ? `\nArquivos do erro: ${counters.lastErrorFiles.join(', ')}${counters.lastErrorSummary ? ' — ' + counters.lastErrorSummary : ''}`
                         : '';
-                    const usr = `Original task: ${userPrompt}\n\nLast agent response: ${text.slice(0, 800)}\n\nLast edited file: ${counters.lastEditedFile || 'none'}${errCtx}\n\nAttempt: ${pendingActionStreak}/${HARD_CAP_AUTO}\n\nWhat should the local agent do next?`;
-                    const recovery = await askSupport(reason, sys, usr, 500);
-                    if (recovery) {
+                    const nudge = guardResult
+                        ? guardResult.message + (guardResult.reason === 'command_failed' ? '' : errorContext)
+                        : 'Continue a tarefa.';
+                    roundMessages.push({ role: 'assistant', content: text });
+                    roundMessages.push({ role: 'user', content: nudge });
+                    lastToolName = '';
+                    continue;
+                }
+                pendingActionStreak = 0;
+                // In auto mode: before returning, check editor diagnostics.
+                // Only relevant if the model actually wrote/edited files this round.
+                // Wait 2s for the TypeScript language server to process the new files.
+                if (effectiveAutoMode && counters.filesWritten > 0) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    const diag = onGetDiagnostics();
+                    // Only block on actual errors — warnings are ignored in auto mode
+                    const hasErrors = diag && /\[ERROR\]/.test(diag);
+                    if (hasErrors) {
+                        onStatus('Erros detectados — corrigindo...');
                         roundMessages.push({ role: 'assistant', content: text });
                         roundMessages.push({
                             role: 'user',
-                            content: `[HYBRID RECOVERY from support model] Tentativa ${pendingActionStreak}/${HARD_CAP_AUTO}. Follow this exactly:\n\n${recovery}`,
+                            content: `The editor found TypeScript/build errors in the files you wrote. Fix all [ERROR] items now using edit_file. Ignore any [WARNING] lines.\n\n${diag}`,
                         });
                         lastToolName = '';
                         continue;
                     }
                 }
-                if (pendingActionStreak >= HARD_CAP_AUTO) {
-                    // Hard cap to avoid eternal loop. Surface what happened
-                    // so the user knows the agent gave up and why.
-                    pendingActionStreak = 0;
-                    emitTelemetry();
-                    const reason = dumpedInsteadOfWriting
-                        ? 'O modelo escreveu codigo no chat em vez de salvar via tool — possivelmente o modelo local nao esta seguindo o protocolo de tool calling.'
-                        : lastCommandFailed
-                            ? 'O ultimo comando falhou e o agente nao conseguiu corrigir apos varias tentativas.'
-                            : !counters.lastBuildPassed && counters.filesWritten > 0
-                                ? 'O build ainda nao passou apos varias tentativas.'
-                                : 'O modelo descreveu acoes mas nao executou.';
-                    return `[AUTO PAUSADO] ${reason}\n\nUltima resposta do modelo:\n${text}\n\n[CONTINUE_BUTTON]`;
-                }
-                // Detector: model is editing the wrong file.
-                // If the error points to a file but the model just edited a
-                // different file, alert it explicitly with both paths.
-                const wrongFileEdit = lastCommandFailed
-                    && counters.lastErrorFiles.length > 0
-                    && counters.lastEditedFile
-                    && !counters.lastErrorFiles.some(f => counters.lastEditedFile.endsWith(f) || f.endsWith(path.basename(counters.lastEditedFile)));
-                const errorContext = (lastCommandFailed && counters.lastErrorFiles.length > 0)
-                    ? `\n\nERROR LOCATION (focus here):\n  Files: ${counters.lastErrorFiles.join(', ')}\n  Message: ${counters.lastErrorSummary || '(see command output)'}`
-                    : '';
-                // Detector "build task without any run_command": when the user
-                // prompt mentions build/package/compile/deploy/vsix/release but
-                // the model edited files without ever running a build command.
-                // Common failure: model bumps version in package.json and stops.
-                const taskRequiresBuild = effectiveAutoMode
-                    && /\b(build|compile|package|deploy|vsix|release|gerar versao|marketplace)\b/i.test(userPrompt);
-                const noCommandRunYet = counters.filesWritten > 0 && !lastBuildAttempted(roundMessages);
-                const buildPendingNoCommand = taskRequiresBuild && noCommandRunYet;
-                const nudge = dumpedInsteadOfWriting
-                    ? 'You wrote code in the chat instead of saving it to a file. The user cannot use code in the chat. Use write_local_file (for new/full-rewrite) or edit_file (for partial edits) NOW to save that code to disk. Do not paste code in your reply — call the tool.'
-                    : wrongFileEdit
-                        ? `WRONG FILE. You edited "${counters.lastEditedFile}" but the error is in "${counters.lastErrorFiles[0]}". Read "${counters.lastErrorFiles[0]}" now and fix THAT file. The bug is not where you were looking.${errorContext}`
-                        : buildPendingNoCommand
-                            ? `You edited files but have NOT yet run the build/package command that the user task requires. Call run_command now with the appropriate build command (e.g. "npm run build", "vsce package", "npm run package"). After it finishes, use list_directory to verify the output artifact exists. Do NOT keep editing without running the build.`
-                            : lastCommandFailed
-                                ? `The last command failed. Read the error output, identify the root cause, fix the SPECIFIC file mentioned in the error, then re-run.${errorContext}`
-                                : buildNotYetPassed
-                                    ? 'You have written files but have not yet run a successful build. Run the build command now (e.g. npm run build) to verify. If it fails, fix the errors and retry.'
-                                    : effectiveAutoMode
-                                        ? 'Stop planning. Use write_local_file, edit_file, or run_command now to execute the task. Do not describe — act immediately.'
-                                        : 'continue';
-                roundMessages.push({ role: 'assistant', content: text });
-                roundMessages.push({ role: 'user', content: nudge });
-                lastToolName = '';
-                continue;
+                emitTelemetry();
+                return text;
             }
-            pendingActionStreak = 0;
-            // In auto mode: before returning, check editor diagnostics.
-            // Only relevant if the model actually wrote/edited files this round.
-            // Wait 2s for the TypeScript language server to process the new files.
-            if (effectiveAutoMode && counters.filesWritten > 0) {
-                await new Promise(r => setTimeout(r, 2000));
-                const diag = onGetDiagnostics();
-                // Only block on actual errors — warnings are ignored in auto mode
-                const hasErrors = diag && /\[ERROR\]/.test(diag);
-                if (hasErrors) {
-                    onStatus('Erros detectados — corrigindo...');
-                    roundMessages.push({ role: 'assistant', content: text });
-                    roundMessages.push({
-                        role: 'user',
-                        content: `The editor found TypeScript/build errors in the files you wrote. Fix all [ERROR] items now using edit_file. Ignore any [WARNING] lines.\n\n${diag}`,
-                    });
-                    lastToolName = '';
-                    continue;
-                }
+            else {
+                // result.responseText is undefined and no toolCall — API returned
+                // an unexpected shape. Treat as infra issue, don't loop silently.
+                emitTelemetry();
+                return 'Resposta inesperada do modelo. Tente novamente.';
             }
-            emitTelemetry();
-            return text;
         }
-        else {
-            // result.responseText is undefined and no toolCall — API returned
-            // an unexpected shape. Treat as infra issue, don't loop silently.
-            emitTelemetry();
-            return 'Resposta inesperada do modelo. Tente novamente.';
+        // Atingiu o limite de passos sem concluir. Parada branda: em AUTO o loop
+        // se rearma sozinho (handleSoftStop reseta step=0 e re-injeta continuação),
+        // voltando ao topo do loop externo. Fora do AUTO ou esgotado o teto, retorna.
+        const outcome = handleSoftStop('limite de passos atingido', 'Cheguei ao limite de passos desta rodada, mas salvei o progresso na memoria. Clique para continuar a tarefa de onde parei.');
+        if (outcome === null) {
+            continue autoContinueLoop;
         }
-    }
-    emitTelemetry();
-    return 'Limite de passos atingido. A tarefa pode estar muito grande — tente dividir em pedidos menores.';
+        return outcome;
+    } // fim do autoContinueLoop
 }

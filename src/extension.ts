@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { callAIWithVision, checkConnection, checkAnthropicConnection } from './services/api-client';
+import { callAIWithVision, checkConnection, checkAnthropicConnection, fetchFirstModelId } from './services/api-client';
 import { buildHistorySummary, HistoryEntry } from './services/history-service';
 import { HistoryManagerService } from './services/HistoryManagerService';
 import { collectWorkspaceContext, collectDiagnostics, getDefaultCwd } from './workspace/context';
@@ -15,7 +15,8 @@ import { deleteSessionMemory, getSessionMemoryPath, rememberDecision } from './s
 import { ensureEucodeWorkspace, revealEucodeDir } from './services/workspace-init';
 import { VoiceServer, generatePairingToken } from './services/voice-server';
 import { AudioCapture } from './services/audio-capture';
-import { DEFAULT_MODEL } from './utils/constants';
+import { WakeWordListener, WakeWordState } from './services/wake-word';
+import { DEFAULT_MODEL, JARVIS_ENABLED, clampContextBudget, defaultContextBudgetForProvider } from './utils/constants';
 
 class EucodeViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'eucode-ia.chatView';
@@ -32,6 +33,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
     private _voiceServer: VoiceServer | null = null;
     private _injectFromVoice: ((text: string, source: 'mobile' | 'webview') => void) | null = null;
     private _audioCapture: AudioCapture | null = null;
+    private _wakeWord: WakeWordListener | null = null;
 
     constructor(private readonly _context: vscode.ExtensionContext) {
         this._historyManager = new HistoryManagerService(_context);
@@ -74,12 +76,50 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
             }
         };
 
+        // Quando a wake word esta ativa, tenta resolver a aprovacao por voz em
+        // paralelo ao card visual. `onYes`/`onNo` so disparam se o pending ainda
+        // existir (ou seja, o usuario nao clicou antes). Mantem mãos-livres.
+        const tryVoiceApproval = (
+            pendingId: string,
+            stillPending: () => boolean,
+            onYes: () => void,
+            onNo: () => void,
+        ) => {
+            if (!this._wakeWord?.isRunning()) { return; }
+            // Espera a pergunta falada ("Posso editar X? Diga sim ou não")
+            // terminar antes de abrir o microfone, senao captura a propria voz.
+            const APPROVAL_SPEAK_DELAY_MS = 2800;
+            setTimeout(() => {
+                if (!stillPending() || !this._wakeWord?.isRunning()) { return; }
+                webviewView.webview.postMessage({ command: 'voice_approval_listening', id: pendingId });
+                this._wakeWord.captureYesNo().then(verdict => {
+                if (!stillPending()) { return; } // usuario ja decidiu no clique
+                if (verdict === 'yes') {
+                    webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'yes' });
+                    onYes();
+                } else if (verdict === 'no') {
+                    webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'no' });
+                    onNo();
+                } else {
+                    // 'unclear' apos as tentativas — deixa o card para clique manual.
+                    webviewView.webview.postMessage({ command: 'voice_approval_result', id: pendingId, verdict: 'unclear' });
+                }
+                }).catch(() => { /* falha de captura — card permanece para clique */ });
+            }, APPROVAL_SPEAK_DELAY_MS);
+        };
+
         const makeConfirmWrite = (): (req: ConfirmWriteRequest) => Promise<boolean> =>
             (req) => new Promise<boolean>((resolve) => {
                 const id = `confirm_${Date.now()}`;
                 this._pendingConfirms.set(id, resolve);
                 webviewView.webview.postMessage({ command: 'confirm_write', id, filePath: req.filePath, before: req.before, after: req.after });
                 notifyUser(`Aguardando aprovacao para editar "${path.basename(req.filePath)}"`, ['Abrir chat']);
+                tryVoiceApproval(
+                    id,
+                    () => this._pendingConfirms.has(id),
+                    () => { this._pendingConfirms.delete(id); resolve(true); },
+                    () => { this._pendingConfirms.delete(id); resolve(false); },
+                );
             });
 
         const makeConfirmCommand = (): (req: ConfirmCommandRequest) => Promise<ConfirmCommandDecision> =>
@@ -88,6 +128,13 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 this._pendingCommandConfirms.set(id, resolve);
                 webviewView.webview.postMessage({ command: 'confirm_command', id, cmd: req.command, cwd: req.cwd });
                 notifyUser(`Aguardando aprovacao para executar comando`, ['Abrir chat']);
+                tryVoiceApproval(
+                    id,
+                    () => this._pendingCommandConfirms.has(id),
+                    // "sim" por voz aprova so esta vez (mais seguro que 'session').
+                    () => { this._pendingCommandConfirms.delete(id); resolve('once'); },
+                    () => { this._pendingCommandConfirms.delete(id); resolve('block'); },
+                );
             });
 
         const getDiagnostics = (): string => collectDiagnostics();
@@ -171,6 +218,13 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
         this._injectFromVoice = dispatchVoiceText;
 
         const startOrUpdateVoiceServer = async () => {
+            // JARVIS pausado: nunca sobe o servidor HTTP de voz (remove a
+            // superfície de rede do caminho padrão). Se já estava rodando de
+            // uma sessão anterior, garante que pare.
+            if (!JARVIS_ENABLED) {
+                if (this._voiceServer?.isRunning()) { await this._voiceServer.stop(); }
+                return;
+            }
             if (!this._settings.voiceServerEnabled) {
                 if (this._voiceServer?.isRunning()) { await this._voiceServer.stop(); }
                 return;
@@ -210,6 +264,61 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
         });
         startOrUpdateVoiceServer();
 
+        // ── Wake word (escuta continua "Eucode" → grava ate pausa → envia) ──
+        const wwLog = (m: string) => {
+            console.log(m);
+            webviewView.webview.postMessage({ command: 'jarvis_log', text: m });
+        };
+        const startOrUpdateWakeWord = async () => {
+            // JARVIS pausado: nunca inicia a escuta contínua por wake word.
+            if (!JARVIS_ENABLED) {
+                if (this._wakeWord?.isRunning()) { this._wakeWord.stop(); }
+                webviewView.webview.postMessage({ command: 'wake_word_state', state: 'idle' });
+                return;
+            }
+            const wantOn = this._settings.jarvisEnabled && this._settings.wakeWordEnabled;
+            if (!wantOn) {
+                if (this._wakeWord?.isRunning()) { this._wakeWord.stop(); }
+                webviewView.webview.postMessage({ command: 'wake_word_state', state: 'idle' });
+                return;
+            }
+            const bin = await AudioCapture.checkFfmpeg();
+            if (!bin) {
+                webviewView.webview.postMessage({
+                    command: 'wake_word_state', state: 'idle',
+                    error: 'ffmpeg nao encontrado (brew install ffmpeg)',
+                });
+                return;
+            }
+            const cfg = {
+                ffmpegPath: bin,
+                deviceIndex: this._settings.micDeviceIndex,
+                wakeWord: (this._settings.wakeWord || 'eucode').toLowerCase(),
+                silenceSeconds: 5,
+                maxCommandSeconds: 30,
+                listenWindowSeconds: 3,
+                transcribe: (wav: Buffer) => transcribeViaWhisper(
+                    this._settings.whisperEndpoint,
+                    this._settings.whisperModel,
+                    this._settings.whisperLanguage,
+                    wav,
+                    'audio/wav'
+                ),
+                onCommand: (text: string) => dispatchVoiceText(text, 'webview'),
+                onState: (state: WakeWordState) =>
+                    webviewView.webview.postMessage({ command: 'wake_word_state', state }),
+                log: wwLog,
+            };
+            if (this._wakeWord?.isRunning()) {
+                this._wakeWord.updateConfig(cfg);
+            } else {
+                this._wakeWord = new WakeWordListener(cfg);
+                this._wakeWord.start();
+            }
+        };
+        this._context.subscriptions.push({ dispose: () => { this._wakeWord?.stop(); } });
+        startOrUpdateWakeWord();
+
         this._context.subscriptions.push(
             vscode.window.onDidChangeActiveTextEditor(() => sendOpenFiles()),
             vscode.window.tabGroups.onDidChangeTabs(() => sendOpenFiles())
@@ -236,14 +345,18 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
                 webviewView.webview.postMessage({
                     command: 'load_config',
+                    jarvisFeatureEnabled: JARVIS_ENABLED,
                     provider: this._settings.provider,
                     apiHost: this._settings.apiHost,
                     apiKey: this._settings.apiKey,
                     model: this._settings.model,
                     enabledTools: this._settings.enabledTools,
                     ragEnabled: this._settings.ragEnabled,
+                    ragProvider: this._settings.ragProvider,
                     ragEndpoint: this._settings.ragEndpoint,
                     ragCollection: this._settings.ragCollection,
+                    ragEmbedHost: this._settings.ragEmbedHost,
+                    ragEmbedModel: this._settings.ragEmbedModel,
                     hybridEnabled: this._settings.hybridEnabled,
                     supportProvider: this._settings.supportProvider,
                     supportApiKey: this._settings.supportApiKey,
@@ -253,6 +366,13 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     customCommandsScope: this._settings.customCommandsScope,
                     hybridIntensity: this._settings.hybridIntensity,
                     projectIntelEnabled: this._settings.projectIntelEnabled,
+                    contextTokenBudget: this._settings.contextTokenBudget,
+                    providerContextDefaults: {
+                        lmstudio: defaultContextBudgetForProvider('lmstudio'),
+                        mlx: defaultContextBudgetForProvider('mlx'),
+                        ollama: defaultContextBudgetForProvider('ollama'),
+                        anthropic: defaultContextBudgetForProvider('anthropic'),
+                    },
                     jarvisEnabled: this._settings.jarvisEnabled,
                     jarvisAutoSpeak: this._settings.jarvisAutoSpeak,
                     jarvisTtsVoice: this._settings.jarvisTtsVoice,
@@ -264,6 +384,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     voiceServerPort: this._settings.voiceServerPort,
                     voiceServerExposeNetwork: this._settings.voiceServerExposeNetwork,
                     micDeviceIndex: this._settings.micDeviceIndex,
+                    wakeWordEnabled: this._settings.wakeWordEnabled,
+                    wakeWord: this._settings.wakeWord,
                 });
                 const history = this._sessionHistory.filter(e => !e.content.startsWith('ERRO DE CONEXAO'));
                 webviewView.webview.postMessage({ command: 'load_history', entries: history });
@@ -309,8 +431,11 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     model: message.model ?? '',
                     enabledTools: message.enabledTools ?? this._settings.enabledTools,
                     ragEnabled: message.ragEnabled ?? this._settings.ragEnabled,
+                    ragProvider: message.ragProvider ?? this._settings.ragProvider,
                     ragEndpoint: message.ragEndpoint ?? this._settings.ragEndpoint,
                     ragCollection: message.ragCollection ?? this._settings.ragCollection,
+                    ragEmbedHost: message.ragEmbedHost ?? this._settings.ragEmbedHost,
+                    ragEmbedModel: message.ragEmbedModel ?? this._settings.ragEmbedModel,
                     hybridEnabled: message.hybridEnabled ?? this._settings.hybridEnabled,
                     supportProvider: message.supportProvider ?? this._settings.supportProvider,
                     // Empty string from UI means "don't change" — preserve stored key
@@ -323,6 +448,9 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     customCommandsScope: message.customCommandsScope ?? this._settings.customCommandsScope,
                     hybridIntensity: (message.hybridIntensity ?? this._settings.hybridIntensity) as 25 | 50 | 75 | 100,
                     projectIntelEnabled: message.projectIntelEnabled ?? this._settings.projectIntelEnabled,
+                    contextTokenBudget: typeof message.contextTokenBudget === 'number'
+                        ? message.contextTokenBudget
+                        : this._settings.contextTokenBudget,
                     jarvisEnabled: message.jarvisEnabled ?? this._settings.jarvisEnabled,
                     jarvisAutoSpeak: message.jarvisAutoSpeak ?? this._settings.jarvisAutoSpeak,
                     jarvisTtsVoice: message.jarvisTtsVoice ?? this._settings.jarvisTtsVoice,
@@ -335,6 +463,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     whisperModel: message.whisperModel ?? this._settings.whisperModel,
                     whisperLanguage: message.whisperLanguage ?? this._settings.whisperLanguage,
                     micDeviceIndex: message.micDeviceIndex ?? this._settings.micDeviceIndex,
+                    wakeWordEnabled: message.wakeWordEnabled ?? this._settings.wakeWordEnabled,
+                    wakeWord: message.wakeWord ?? this._settings.wakeWord,
                 };
                 await saveSettings(this._context, this._settings);
                 vscode.commands.executeCommand('setContext', 'eucodeFixEnabled', this._settings.fixWithEucodeEnabled);
@@ -342,6 +472,7 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                 pingAndNotify(this._settings);
                 // React to JARVIS / voice server settings changes
                 await startOrUpdateVoiceServer();
+                await startOrUpdateWakeWord();
                 return;
             }
 
@@ -619,7 +750,23 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
 
             const endpoint = buildApiEndpoint(this._settings);
             const authHeaders = buildAuthHeader(this._settings);
-            const activeModel = this._settings.model || DEFAULT_MODEL;
+            // Resolução do modelo. MLX: o mlx_lm.server conhece o modelo pelo id
+            // COMPLETO (ex: "mlx-community/Qwen2.5-...4bit"). Se o usuário deixar
+            // vazio OU digitar o nome sem o prefixo "org/", o POST dá 404. Então,
+            // para MLX, consultamos /v1/models e usamos o id REAL do servidor,
+            // exceto quando o usuário digitou exatamente esse id. Para os demais
+            // provedores, mantém o comportamento anterior.
+            let activeModel: string;
+            if (this._settings.provider === 'mlx') {
+                const serverModel = await fetchFirstModelId(endpoint, authHeaders);
+                const typed = this._settings.model?.trim() || '';
+                // Usa o que o usuário digitou só se bater com o id do servidor;
+                // senão (vazio ou sem prefixo), usa o id real. Sem servidor no ar,
+                // cai no que foi digitado (o erro de conexão será mostrado depois).
+                activeModel = (typed && typed === serverModel) ? typed : (serverModel || typed);
+            } else {
+                activeModel = this._settings.model || DEFAULT_MODEL;
+            }
             let response: string;
 
             if (message.image?.base64) {
@@ -722,7 +869,15 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     this._historyManager.getActiveId(),
                     !!message.chatMode,
                     this._settings.hybridIntensity,
-                    this._settings.projectIntelEnabled
+                    this._settings.projectIntelEnabled,
+                    this._settings.ragProvider,
+                    this._settings.ragEnabled ? this._settings.ragEmbedHost : undefined,
+                    this._settings.ragEnabled ? this._settings.ragEmbedModel : undefined,
+                    // Budget de contexto: setting do usuario, ou default do
+                    // provedor quando 0/ausente. Clampado para faixa segura.
+                    this._settings.contextTokenBudget && this._settings.contextTokenBudget > 0
+                        ? clampContextBudget(this._settings.contextTokenBudget)
+                        : defaultContextBudgetForProvider(this._settings.provider)
                 );
                 this._abortController = null;
                 this._injectMessage = null;

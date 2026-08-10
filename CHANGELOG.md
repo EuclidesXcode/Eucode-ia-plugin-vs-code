@@ -1,5 +1,103 @@
 # Changelog
 
+## 0.16.6
+
+- **Correcao critica: "Falha ao chamar o LLM" / agente travando com modelos locais lentos** — o stream tinha um timeout de socket curto (5s, default do Node). Em maquinas mais lentas (ex: MacBook Air), um modelo local leva 15-30s so processando um prompt grande ANTES de gerar o primeiro token — e a conexao morria nesse intervalo, gerando falhas intermitentes onde o agente "nao saia do lugar" e dava poucos passos. Agora o stream usa um timeout de INATIVIDADE de 2 minutos, re-armado a cada byte recebido (inclusive os keepalives que o servidor MLX envia durante o processamento). So dispara se o servidor ficar realmente mudo. Verificado com prompt grande levando 29s: antes falhava, agora completa
+- **Mais casos de "descreveu mas nao executou" detectados** — o mecanismo que empurra o modelo a agir (em vez de so narrar "vou fazer X") agora reconhece tambem "vou procurar", "vou buscar", "vou ler", "vou analisar", "vou listar", "vou abrir" — verbos que o modelo usava para narrar sem chamar a ferramenta
+
+## 0.16.5
+
+- **NOVO: leitura de arquivos Office e diagramas (.xlsx, .docx, .pptx, .drawio)** — antes, pedir para o agente ler um desses arquivos despejava o binario cru (um .xlsx e um ZIP) como texto, enchendo o contexto de lixo — e no Apple MLX isso estourava a memoria da GPU e **derrubava o servidor** (Metal Insufficient Memory). Agora o Eucode extrai o **texto real**: celulas por aba (xlsx), paragrafos (docx), texto dos slides (pptx) e rotulos das formas (drawio). Se o conteudo for maior que a janela de contexto configurada, entrega o inicio + um resumo estrutural, sem nunca estourar a memoria. Feito com o `zlib` nativo do Node — **nenhuma dependencia nova**, o tamanho do plugin nao muda
+
+## 0.16.4
+
+- **UI mais limpa com Apple MLX** — dois ruidos que apareciam na conversa foram removidos: (1) o JSON da chamada de ferramenta (`{"name": "...", "arguments": ...}`) nao aparece mais na timeline quando a ferramenta e executada — antes ele era congelado na tela; agora, quando o texto ERA a propria chamada, a bolha e descartada por completo. (2) Special tokens do modelo (`<|im_start|>`, `<|im_end|>`, `<|endoftext|>` e afins) que o `mlx_lm.server` nao filtrava e vazavam como se fossem uma resposta agora sao removidos da saida. Ambos os ajustes sao cosmeticos — nao mudam o que o agente executa
+
+## 0.16.3
+
+- **Correcao critica (Apple MLX): o agente nao executava as ferramentas** — o `mlx_lm.server` nao faz o parsing de tool-calling nativo: ele deixa o campo `tool_calls` vazio e devolve a intencao do modelo como TEXTO (o Qwen ainda envelopa em ` ```xml <tools>{...}</tools> ``` `). O Eucode exibia esse JSON cru na tela e nada era executado. Agora o parser de recuperacao reconhece esses formatos — o objeto plano `{"name": ..., "arguments": ...}` e os envelopes `xml`/`<tools>`/`<tool_call>` — converte em execucao real da ferramenta e limpa a bolha da UI para nao mostrar o JSON. Verificado de ponta a ponta contra um `mlx_lm.server` real
+
+## 0.16.2
+
+- **NOVO: janela de contexto configuravel, com default por provedor** — o Eucode agora tem um campo **Janela de contexto (tokens)** nas configuracoes. Antes a calibragem de contexto (quando podar o historico, quanto de cada output de ferramenta manter) era fixa em ~2048 tokens — bom para LM Studio com modelo pequeno, mas desperdicava a janela em servidores modernos. Agora voce ajusta manualmente, e ao trocar de provedor o campo ja sugere um default coerente: **LM Studio 2048, Ollama 4096, Apple MLX 8192, Anthropic 32768**. Toda a calibragem deriva desse valor: a poda so dispara perto de 60% da janela, o numero de leituras/acoes que o modelo retem escala com o tamanho, e os limites de output crescem junto. Deixe vazio para usar o default do provedor
+- **Correcao: 404 ao chamar modelo via Apple MLX** — o `mlx_lm.server` conhece o modelo pelo id completo (ex: `mlx-community/Qwen2.5-Coder-14B-Instruct-4bit`). Se voce digitasse o nome sem o prefixo `org/` (ou deixasse errado), a conexao aparecia OK mas a primeira mensagem falhava com 404. Agora, para MLX, o Eucode consulta `/v1/models` e usa o id real do servidor automaticamente — o campo Modelo virou opcional de verdade
+
+## 0.16.1
+
+- **NOVO: suporte a Apple MLX como provedor** — alem de LM Studio, Ollama e Anthropic, o Eucode agora conversa direto com o [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm), o runtime de inferencia da Apple otimizado para Apple Silicon (M1/M2/M3/M4/M5). Selecione **Apple MLX** no dropdown de provedor: o host default `http://localhost:8080` ja vem preenchido e a ajuda mostra o comando para subir o servidor. Como o `mlx_lm.server` e compativel com a API da OpenAI, todo o resto (ferramentas, streaming, telemetria) funciona sem mudanca. Suba o servidor com:
+  ```
+  pip install mlx-lm
+  python3 -m mlx_lm server --model mlx-community/Qwen2.5-Coder-14B-Instruct-4bit --port 8080
+  ```
+- **Orquestracao para modelos pequenos: "observar antes de planejar"** — antes o agente era forcado a montar um plano (`todo_update`) ANTES de olhar o projeto, o que fazia o modelo pequeno alucinar o plano inteiro (listava passos sobre arquivos que nem existiam). Agora o 1o passo e sempre uma acao concreta de observacao: le o arquivo citado no pedido, ou lista a raiz do projeto. O raciocinio passa a ser fundamentado no que existe de verdade, nao em suposicao
+- **Orquestracao: "fact sheet" que sobrevive a poda de contexto** — na janela apertada dos modelos locais, ler poucos arquivos ja enche o contexto e a poda descarta as leituras antigas — o modelo entao esquecia o que tinha lido e re-lia o mesmo arquivo ate esgotar os passos (sintoma real: tarefa trivial de ler 2 arquivos + criar README nao concluia). Agora um bloco compacto de **fatos destilados** (arquivos lidos + seus simbolos, arquivos escritos, ultimo erro) e reinjetado a cada passo. Mesmo que a leitura bruta seja descartada, o fato permanece — o modelo nao re-le. 100% deterministico, sem chamada extra de IA
+- **Correcao: erro do modelo no meio do stream nao e mais confundido com "contexto cheio"** — quando o servidor local (LM Studio/MLX) abre o stream com status 200 e o engine falha no meio (ex: `Compute error` por falta de memoria), o Eucode agora detecta esse erro e mostra uma mensagem acionavel (recarregar o modelo, usar um quant menor, reduzir contexto), em vez do antigo checkpoint enganoso de "a tarefa e longa e o contexto encheu"
+- **Seguranca: blocklist de comandos endurecida** — normaliza o comando antes de checar (pega evasoes triviais como `rm -r -f`), amplia os padroes destrutivos (dd, `sudo`/`doas`, substituicao de comando `$(...)`) e deixa explicito que isto e defesa em profundidade, nao sandbox — o gate real e a confirmacao do usuario
+- **Seguranca: aviso ao ativar o modo AUTO** — na primeira vez que voce liga o AUTO numa sessao, o chat mostra uma nota explicando que o agente vai editar arquivos e rodar comandos sem pedir aprovacao
+- **Modo de voz (JARVIS) pausado temporariamente** — o modo de voz exigia que voce instalasse o `ffmpeg` e subisse um servidor Whisper manualmente, o que contraria a proposta do plugin de funcionar sem setup. Pausamos a feature nesta versao enquanto a reformulamos para funcionar de forma nativa, sem instalacoes. O codigo continua no projeto; a interface de voz apenas fica oculta por enquanto
+
+## 0.15.1
+
+- **NOVO (BETA): suporte a Qdrant no RAG** — alem do Chroma, o contexto vetorial agora aceita [Qdrant](https://qdrant.tech) como backend. Como o Qdrant self-hosted nao embeda texto, o plugin gera o embedding da pergunta via endpoint OpenAI-compativel `/v1/embeddings` (por padrao o mesmo host do LM Studio) antes de consultar. Seletor de backend Chroma/Qdrant nas configuracoes, com campos dedicados de host + modelo de embedding
+- **Config de RAG mais clara** — cada campo agora tem label visivel (Endpoint, Collection, Host de embeddings, Modelo de embedding); antes eram inputs sem rotulo, faceis de confundir. Placeholder e ajuda mudam conforme o backend escolhido
+
+## 0.15.0
+
+- **Modo AUTO se auto-continua sozinho** — quando o agente trava por parada branda (contexto do modelo enche ou atinge o limite de passos), em AUTO ele agora retoma sozinho do checkpoint, sem voce precisar clicar "Continuar". Faz isso ate 3 vezes; so depois mostra o botao para clique manual. STOP corta na hora. O `[AUTO PAUSADO]` real (apos 15 tentativas + recovery HYBRID) continua pedindo clique, pois indica que o modelo nao da conta
+- **Economia de tokens: nova camada `ContextSanitizer`** — todo output de ferramenta (run_command, git, read, search...) passa por uma limpeza unica antes de ir ao modelo: remove ruido (codigos ANSI, barras de progresso, spinners, linhas repetidas), aplica limpeza por ferramenta (run_command prioriza erros + fim do output, git diff descarta contexto inalterado, search deduplica) e, quando ainda for grande, trunca de forma inteligente preservando inicio + fim (antes cortava cego no meio, descartando o erro). Adaptativo por modo: leve no manual, agressivo no AUTO
+- **Regras de negocio otimizadas para modelos pequenos (9-13B)** — system prompt enxugado (~40 regras → principios essenciais, sem duplicar o que ja vai no schema das ferramentas); nudges corretivos unificados em uma fonte unica (`ExecutionGuardService`), traduzidos para portugues, curtos e com tom de "proximo passo" em vez de punitivo
+- **Contexto pesado sob demanda** — ProjectIntel e RAG so sao injetados na 1a rodada da sessao ou quando o pedido sugere navegar/buscar codigo, liberando ~700 tokens nas rodadas de continuacao
+- **Ancora de plano local** — em tarefas multi-passo sem HYBRID, o agente comeca pedindo um `todo_update` curto, criando um scratchpad que guia melhor o modelo pequeno
+- **Ferramentas por fase** — `run_git` e `web_search` ficam ocultas ate a tarefa pedir, reduzindo o espaco de decisao do modelo
+
+## 0.14.3
+
+- **Tarefas longas: checkpoint na memoria em vez de zerar** — quando o agente atinge o limite de passos ou o contexto do modelo enche (respostas vazias), em vez de desistir com "nao foi possivel concluir", ele salva um resumo do progresso na memoria da sessao (passo atingido, arquivos analisados/editados, ultimo erro, pedido original) e oferece um botao para continuar. Ao continuar, esse checkpoint e injetado no contexto (via memoria da sessao), retomando de onde parou sem refazer o que ja foi feito
+
+## 0.14.2
+
+- **Fix: aprovacao por voz nao fechava o card** — ao responder "sim"/"nao" por voz, o agente recebia a decisao mas o card de confirmacao continuava na tela (so o clique manual o removia). Agora o card e fechado quando a voz decide (casado pelo id)
+- **Fix: cards de aprovacao concorrentes** — duas aprovacoes seguidas faziam dois ffmpeg competirem pelo microfone. Agora a captura de sim/nao e serializada: responde um card de cada vez, reabrindo o "ouvindo" para o proximo
+
+## 0.14.1
+
+- **TTS fala tambem os preambulos** — frases que o modelo escreve antes de chamar uma ferramenta (ex.: "Vou analisar a estrutura do projeto e gerar um resumo conciso.") aparecem na timeline mas nao passavam pelo agent_response, entao nao eram faladas. Agora sao faladas no momento em que o texto e congelado (antes da tool call), enfileiradas sem cortar a fala em curso e sem repetir o mesmo preambulo
+
+## 0.14.0
+
+- **TTS de respostas longas: fala em pedacos** — respostas grandes (comuns no modo AUTO) eram truncadas em 1500 caracteres e o speechSynthesis travava com texto gigante, fazendo o JARVIS nao falar. Agora a resposta e quebrada em pedacos por frase (~240 chars) e falada audio por audio, sequencialmente, sem truncar. Tabelas markdown e linhas decorativas sao filtradas da fala
+- **Borda verde tambem durante a fala** — o painel pulsa em verde enquanto o JARVIS le a resposta, nao so quando ouve
+- **Perguntas de aprovacao faladas + escuta automatica** — quando o agente pede aprovacao (editar arquivo / rodar comando) e a wake word esta ativa, o JARVIS fala a pergunta ("Posso editar X? Diga sim ou não.") e abre o microfone para sua resposta apos a pergunta terminar (evitando captar a propria voz)
+
+## 0.13.3
+
+- **Wake word: mais variacoes de pronuncia aceitas** — "eu cold", "eu coge", "eu coach", "eu coja", "eu coque" (alem das anteriores). A terminacao do regex foi ampliada (g/ge/j/ja/je/jo/ch/che/sh/que/k). Continua rejeitando falsos positivos como "eu quero", "o coach foi fã" e "eu cuido da casa"
+
+## 0.13.2
+
+- **Borda de escuta estilo Apple Intelligence** — quando o Eucode reconhece a wake word e vai gravar seu comando (ou ouve sua resposta de aprovacao), uma borda verde pulsa suavemente em volta de todo o painel. Apaga ao voltar para a escuta passiva
+- **Confirmacao falada "Estou ouvindo"** — ao detectar "Eucode", o JARVIS responde em voz alta "Estou ouvindo" antes de gravar. O host aguarda ~1.7s (a fala terminar) antes de iniciar a captura, evitando que o microfone grave a propria voz
+
+## 0.13.1
+
+- **Deteccao da wake word ainda mais tolerante** — inclui variacoes com "u" que o Whisper produz ("eu cuide", "eu cuíde", "eu cude"). Continua rejeitando falsos positivos como "eu quero" e "eu cuido da casa" (so dispara quando a 2a parte termina em d/t, como em "cuide")
+
+## 0.13.0
+
+- **Aprovacao por voz** — quando o modo de escuta ("Eucode") esta ativo e o agente pede aprovacao (editar arquivo ou rodar comando), o JARVIS grava a sua resposta e identifica "sim"/"nao" (PT-BR + EN), aprovando ou recusando sem clique. Se a resposta for ambigua, re-escuta ate 3 vezes; se continuar incerta, o card fica para decisao manual. Resposta afirmativa em comando aprova so aquela vez ('once'). Banner visual indica "Diga sim ou nao". Clique manual no card sempre tem prioridade
+
+## 0.12.1
+
+- **Deteccao da wake word "Eucode" mais tolerante** — o Whisper transcreve a palavra de varias formas ("eu coude", "eu code", "eu, colde", "you code"…). A deteccao agora usa um regex que aceita "eu/you/é/ei/hey" + algo parecido com "code", tolerando pontuacao, e rejeita falsos positivos como "eu quero". O mesmo se aplica a remocao da wake word do inicio do comando
+
+## 0.12.0
+
+- **Modo de escuta por palavra de ativacao ("Eucode")** — opcional, ligado por switch na config do JARVIS. O host ouve o microfone continuamente em janelas curtas (~3s), transcreve via Whisper e procura a palavra de ativacao. Ao detectar, grava o comando e **para automaticamente apos ~5s de pausa** (via `silencedetect` do ffmpeg, sem lib nova), transcreve e envia direto ao agente. Indicador de estado na config (ouvindo / gravando / transcrevendo). Palavra configuravel. Consome CPU/bateria enquanto ativo
+
+## 0.11.2
+
+- **Pronuncia de termos tecnicos em ingles na fala (TTS)** — a voz PT-BR lia palavras como "deploy", "commit", "build", "file" com pronuncia portuguesa errada. Agora um dicionario aportuguesa a grafia so na fala (deploy→déploi, commit→câmit, build→bíld, file→fáiou, release→rilíss, etc.). Aplicado apenas quando a voz e PT-BR; o texto exibido no chat nao muda
+
 ## 0.11.1
 
 - **TTS fala apenas a resposta final do LLM** — a narracao passo-a-passo da timeline (Analisando, Lendo arquivo, etc.) foi removida. Agora o JARVIS le em voz alta somente o texto que o modelo retorna (blocos de codigo continuam omitidos pelo `cleanForSpeech`)

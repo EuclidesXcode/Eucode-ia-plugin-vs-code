@@ -101,6 +101,21 @@
             cursor: not-allowed;
         }
         .header-btn.disabled:hover { border-color: #1e2a3a; background: none; }
+        /* contador de tokens no header (a esquerda do botao Modos) */
+        .header-token {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #c9d1d9;
+            background: #0a0a15;
+            border: 1px solid #1e2a3a;
+            border-radius: 6px;
+            margin-right: 6px;
+        }
+        .header-token.small { padding: 3px 8px; font-size: 10px; }
 
         /* ── Modes dropdown ── */
         .modes-wrapper {
@@ -313,6 +328,13 @@
         .config-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
 
         .config-hint { font-size: 11px; color: #2a3a4a; margin-top: 5px; }
+        .config-sublabel {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #5a6a8a;
+            margin: 2px 0 -2px 2px;
+        }
         .claude-model-chip {
             font-size: 10px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
             background: #0d1a2e; border: 1px solid #1e2a3a; border-radius: 4px;
@@ -536,6 +558,46 @@
             gap: 20px;
             scrollbar-width: thin;
             scrollbar-color: #1a1a2e transparent;
+        }
+
+        /* ── Borda de escuta do JARVIS (estilo Apple Intelligence) ──
+           Overlay fixo por cima de todo o painel; pulsa suavemente em verde
+           quando o Eucode esta ouvindo/gravando. Nao intercepta cliques. */
+        #listen-glow {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 99998;
+            border-radius: 10px;
+            opacity: 0;
+            transition: opacity .45s ease;
+            /* dupla sombra interna = borda luminosa suave */
+            box-shadow:
+                inset 0 0 0 2px rgba(34, 197, 94, .55),
+                inset 0 0 22px 4px rgba(34, 197, 94, .35),
+                inset 0 0 60px 10px rgba(34, 197, 94, .12);
+        }
+        #listen-glow.active {
+            opacity: 1;
+            animation: listenPulse 2.6s ease-in-out infinite;
+        }
+        /* Estado "gravando o comando": pulso um pouco mais vivo/rapido. */
+        #listen-glow.recording {
+            animation-duration: 1.5s;
+        }
+        @keyframes listenPulse {
+            0%, 100% {
+                box-shadow:
+                    inset 0 0 0 2px rgba(34, 197, 94, .35),
+                    inset 0 0 18px 3px rgba(34, 197, 94, .22),
+                    inset 0 0 48px 8px rgba(34, 197, 94, .08);
+            }
+            50% {
+                box-shadow:
+                    inset 0 0 0 3px rgba(34, 197, 94, .85),
+                    inset 0 0 30px 6px rgba(34, 197, 94, .5),
+                    inset 0 0 80px 16px rgba(34, 197, 94, .2);
+            }
         }
         #chat-container::-webkit-scrollbar { width: 4px; }
         #chat-container::-webkit-scrollbar-thumb { background: #1a1a2e; border-radius: 2px; }
@@ -1626,10 +1688,13 @@
 </head>
 <body>
 
+    <div id="listen-glow"></div>
+
     <div id="header">
         <div id="status-dot"></div>
         <span class="title">Eucode IA</span>
         <button id="history-btn" class="hidden"></button>
+        <div id="token-counter" class="header-token small" title="Contador de tokens">Tokens: 0</div>
         <div id="modes-wrapper" class="modes-wrapper">
             <button id="modes-btn" class="header-btn" title="Modos do agente"><span class="mi" style="font-size:14px">tune</span>Modos<span id="modes-summary" class="modes-summary"></span></button>
             <div id="modes-dropdown" class="modes-dropdown">
@@ -1676,6 +1741,7 @@
             <div class="config-label">Provedor</div>
             <select id="config-provider" class="config-select">
                 <option value="lmstudio">LM Studio</option>
+                <option value="mlx">Apple MLX</option>
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="ollama">Outro (OpenAI-compativel)</option>
             </select>
@@ -1683,13 +1749,18 @@
         <div id="config-host-row">
             <div class="config-label">Host</div>
             <input id="config-host-input" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
-            <div class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
+            <div id="config-host-hint" class="config-hint">Endereco completo com porta. Ex: http://10.100.0.22:11434</div>
         </div>
         <div>
             <div class="config-label">Modelo</div>
             <input id="config-model-input" class="config-input mono" type="text" placeholder="google/gemma-4-e4b" spellcheck="false" autocomplete="off">
             <div id="config-model-hint" class="config-hint">Nome exato do modelo carregado. Vazio usa o padrao do servidor.</div>
             <div id="config-claude-models" style="display:none;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
+        </div>
+        <div id="config-context-budget-row">
+            <div class="config-label">Janela de contexto (tokens)</div>
+            <input id="config-context-budget" class="config-input mono" type="number" min="1024" max="200000" step="512" placeholder="8192" spellcheck="false" autocomplete="off">
+            <div id="config-context-budget-hint" class="config-hint">Calibra a poda de contexto e os limites de output. Vazio ou 0 = usa o padrao do provedor. Ajuste para casar com a janela real do modelo (ex: MLX/Qwen suporta ate 32768, mas a RAM limita).</div>
         </div>
         <div>
             <div class="config-label" id="config-key-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
@@ -1777,7 +1848,7 @@
                 </button>
             </div>
         </details>
-        <div style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
+        <div id="config-jarvis-section" style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
             <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#ff4757;">
                 <span>🎙 JARVIS — Modo de voz <span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:2px 6px;border-radius:3px;letter-spacing:0.06em;margin-left:6px;vertical-align:middle;">BETA</span></span>
                 <label class="switch" style="margin-left:auto">
@@ -1833,6 +1904,21 @@
                 </div>
                 <div class="editor-feature-row" style="border-color:#3a2030;">
                     <div class="editor-feature-info">
+                        <span class="editor-feature-name">Escutar palavra de ativação <span id="wake-word-status" style="font-size:9px;color:#888;"></span></span>
+                        <span class="editor-feature-desc">Ouve o microfone continuamente; ao dizer a palavra, grava seu comando e envia após ~5s de pausa. Consome CPU/bateria.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="config-wake-word-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="config-wake-word-rows" style="display:none;">
+                    <label class="config-label" style="font-size:10px;">Palavra de ativação</label>
+                    <input id="config-wake-word" class="config-input mono" type="text" placeholder="eucode" spellcheck="false" value="eucode">
+                    <span class="editor-feature-desc" style="font-size:9px;">Dita antes do comando. Use uma palavra que o Whisper reconheça bem.</span>
+                </div>
+                <div class="editor-feature-row" style="border-color:#3a2030;">
+                    <div class="editor-feature-info">
                         <span class="editor-feature-name">Servidor de voz (para app mobile)</span>
                         <span class="editor-feature-desc">Sobe um servidor HTTP local que aceita comandos do app mobile.</span>
                     </div>
@@ -1872,9 +1958,22 @@
                 </label>
             </div>
             <div id="config-rag-rows" style="display:none;margin-top:8px;gap:6px;flex-direction:column;">
+                <label class="config-sublabel">Backend</label>
+                <select id="config-rag-provider" class="config-select">
+                    <option value="chroma">Chroma</option>
+                    <option value="qdrant">Qdrant (BETA)</option>
+                </select>
+                <label class="config-sublabel" id="config-rag-endpoint-label">Endpoint do Chroma</label>
                 <input id="config-rag-endpoint" class="config-input mono" type="text" placeholder="http://localhost:8000" spellcheck="false">
+                <label class="config-sublabel">Collection</label>
                 <input id="config-rag-collection" class="config-input mono" type="text" placeholder="eucode" spellcheck="false">
-                <div class="config-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
+                <div id="config-rag-qdrant-rows" style="display:none;gap:6px;flex-direction:column;">
+                    <label class="config-sublabel">Host de embeddings (LM Studio)</label>
+                    <input id="config-rag-embed-host" class="config-input mono" type="text" placeholder="http://localhost:1234" spellcheck="false">
+                    <label class="config-sublabel">Modelo de embedding</label>
+                    <input id="config-rag-embed-model" class="config-input mono" type="text" placeholder="ex: text-embedding-nomic-embed-text-v1.5" spellcheck="false">
+                </div>
+                <div class="config-hint" id="config-rag-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
             </div>
         </div>
         <div style="border: 1px solid #00d4ff44; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #001a2611 0%, transparent 100%);">
@@ -2015,6 +2114,16 @@
         const configPanel = document.getElementById('config-panel');
         const configProvider = document.getElementById('config-provider');
         const configHostInput = document.getElementById('config-host-input');
+        const configHostHint = document.getElementById('config-host-hint');
+        // Host default por provedor local. MLX (mlx_lm.server) sobe em :8080;
+        // LM Studio em :1234. Usado para pre-preencher ao trocar de provedor.
+        const PROVIDER_DEFAULT_HOST = { mlx: 'http://localhost:8080', lmstudio: 'http://localhost:1234' };
+        const KNOWN_DEFAULT_HOSTS = ['http://localhost:8080', 'http://localhost:1234', ''];
+        const configContextBudget = document.getElementById('config-context-budget');
+        const configContextBudgetHint = document.getElementById('config-context-budget-hint');
+        // Defaults de janela de contexto por provedor, vindos do host (constants).
+        // Preenchido no load_config; usado para o placeholder sugerir o default.
+        let providerContextDefaults = { lmstudio: 2048, mlx: 8192, ollama: 4096, anthropic: 32768 };
         const configModelInput = document.getElementById('config-model-input');
         const configKeyInput = document.getElementById('config-key-input');
         const configSaveBtn = document.getElementById('config-save-btn');
@@ -2104,9 +2213,115 @@
             } catch (_) { /* noop */ }
         }
 
+        // Flag vinda do host (constants.ts JARVIS_ENABLED). Enquanto o JARVIS
+        // está pausado, a UI de voz fica oculta e o mic nunca aparece — mesmo
+        // que settings antigos tenham jarvisEnabled=true persistido.
+        let jarvisFeatureEnabled = false;
+
         function updateMicButtonVisibility() {
-            const on = !!(savedSettings && savedSettings.jarvisEnabled);
+            const on = jarvisFeatureEnabled && !!(savedSettings && savedSettings.jarvisEnabled);
             micBtn.style.display = on ? '' : 'none';
+        }
+
+        // Mostra ou esconde toda a seção de configuração do JARVIS conforme a
+        // feature flag do host.
+        function applyJarvisFeatureFlag() {
+            const section = document.getElementById('config-jarvis-section');
+            if (section) { section.style.display = jarvisFeatureEnabled ? '' : 'none'; }
+            updateMicButtonVisibility();
+        }
+
+        // ── Borda pulsante de escuta (estilo Apple Intelligence) ───────────
+        // A borda acende quando o Eucode comeca a gravar o comando ('recording')
+        // e segue ate transcrever; apaga em 'listening' (escuta passiva) e 'idle'.
+        let _lastWakeState = 'idle';
+        function applyListenGlow(state) {
+            const glow = document.getElementById('listen-glow');
+            if (!glow) { return; }
+            const lit = (state === 'acknowledging' || state === 'recording' || state === 'transcribing');
+            glow.classList.toggle('active', lit);
+            glow.classList.toggle('recording', state === 'recording');
+
+            // Fala fixa "Estou ouvindo" assim que a wake word e reconhecida.
+            // O host espera ~1.7s antes de gravar, dando tempo da fala terminar
+            // sem que o microfone capture a propria voz.
+            if (state === 'acknowledging' && _lastWakeState !== 'acknowledging') {
+                speakFixed('Estou ouvindo');
+            }
+            _lastWakeState = state;
+        }
+
+        // Acende/apaga a borda enquanto o JARVIS FALA (pulso suave, sem ser o
+        // estado "recording" que e mais vivo). Coexiste com applyListenGlow:
+        // a borda fica visivel se estiver falando OU ouvindo.
+        let _speakGlowOn = false;
+        function setSpeakGlow(on) {
+            _speakGlowOn = !!on;
+            const glow = document.getElementById('listen-glow');
+            if (!glow) { return; }
+            // So apaga se nao houver tambem escuta ativa.
+            const listening = (_lastWakeState === 'acknowledging' || _lastWakeState === 'recording' || _lastWakeState === 'transcribing');
+            glow.classList.toggle('active', _speakGlowOn || listening);
+        }
+
+        // Fala a pergunta de aprovacao em voz alta (so com JARVIS+autospeak).
+        // Ex.: "Posso editar o arquivo X? Diga sim ou não."
+        function speakApprovalPrompt(kind, detail) {
+            if (!savedSettings || !savedSettings.jarvisEnabled || !savedSettings.jarvisAutoSpeak) { return; }
+            let phrase;
+            if (kind === 'write') {
+                const name = (detail || '').split('/').pop() || 'o arquivo';
+                phrase = 'Posso editar ' + name + '? Diga sim ou não.';
+            } else {
+                phrase = 'Posso executar este comando? Diga sim ou não.';
+            }
+            speakFixed(phrase);
+        }
+
+        // Fala uma frase curta e fixa (feedback do JARVIS), independente do
+        // auto-speak de respostas. Usa a voz/idioma configurados.
+        function speakFixed(phrase) {
+            if (typeof speechSynthesis === 'undefined') { return; }
+            try {
+                speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(phrase);
+                if (typeof applyVoiceParams === 'function') { applyVoiceParams(u); }
+                else { u.lang = 'pt-BR'; }
+                speechSynthesis.speak(u);
+            } catch (e) { /* noop */ }
+        }
+
+        // Banner flutuante que indica a escuta da resposta de aprovacao por voz.
+        let _voiceApprovalBannerTimer = null;
+        function showVoiceApprovalBanner(text, autoHideMs) {
+            let el = document.getElementById('voice-approval-banner');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'voice-approval-banner';
+                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:70px;'
+                    + 'background:#1a2a3a;color:#dbeafe;border:1px solid #2d4a6a;padding:8px 14px;'
+                    + 'border-radius:8px;font-size:12px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4);'
+                    + 'white-space:nowrap;';
+                document.body.appendChild(el);
+            }
+            el.textContent = text;
+            el.style.display = 'block';
+            if (_voiceApprovalBannerTimer) { clearTimeout(_voiceApprovalBannerTimer); _voiceApprovalBannerTimer = null; }
+            if (autoHideMs) {
+                _voiceApprovalBannerTimer = setTimeout(() => { el.style.display = 'none'; }, autoHideMs);
+            }
+        }
+        function hideVoiceApprovalBanner() {
+            const el = document.getElementById('voice-approval-banner');
+            if (el) { el.style.display = 'none'; }
+            if (_voiceApprovalBannerTimer) { clearTimeout(_voiceApprovalBannerTimer); _voiceApprovalBannerTimer = null; }
+        }
+        // Remove o card de confirmacao correspondente quando a aprovacao foi
+        // resolvida por voz (o host ja respondeu o agente; falta limpar a UI).
+        function removeConfirmCardById(id) {
+            if (!id) { return; }
+            const row = chatContainer.querySelector('.message-row[data-confirm-id="' + id + '"]');
+            if (row) { row.remove(); }
         }
 
         // ── Captura nativa via host (ffmpeg) ───────────────────────────────
@@ -2180,6 +2395,57 @@
         // Estrategia: pega o texto recebido em agent_response, remove blocos
         // de codigo (``` ... ```), inline code e markdown pesado, e fala o
         // restante com speechSynthesis nativo do navegador.
+        // Dicionario de pronuncia: aportuguesa termos tecnicos em ingles para
+        // a voz PT-BR nao le-los com pronuncia portuguesa errada. A grafia da
+        // direita e uma aproximacao fonetica em portugues. Aplicado SO na fala
+        // (nao no texto exibido) e SO quando a voz e PT-BR.
+        const SPEECH_PRONUNCIATION_PT = {
+            'deploy': 'déploi', 'deployment': 'déploimênt', 'deploys': 'déplois',
+            'commit': 'câmit', 'commits': 'câmits', 'committing': 'câmiting',
+            'build': 'bíld', 'builds': 'bílds', 'building': 'bílding',
+            'cache': 'quéx', 'caching': 'quéxing',
+            'merge': 'mârj', 'merged': 'mârjed', 'merging': 'mârjing',
+            'branch': 'brânt', 'branches': 'brântches',
+            'push': 'púx', 'pushed': 'púxt',
+            'pull': 'púl', 'pull request': 'púl requést',
+            'request': 'requést', 'requests': 'requésts',
+            'release': 'rilíss', 'releases': 'rilísses',
+            'file': 'fáiou', 'files': 'fáious',
+            'queue': 'quiú',
+            'array': 'arrêi', 'arrays': 'arrêis',
+            'string': 'striing', 'strings': 'striings',
+            'boolean': 'búlian',
+            'default': 'defôlt', 'defaults': 'defôlts',
+            'token': 'tôuken', 'tokens': 'tôukens',
+            'layout': 'lêiaut',
+            'package': 'péquidj', 'packages': 'péquidjes',
+            'framework': 'frêimuork', 'frameworks': 'frêimuorks',
+            'backend': 'béquend', 'frontend': 'frântend',
+            'endpoint': 'êndpoint', 'endpoints': 'êndpoints',
+            'webhook': 'uébruk', 'webhooks': 'uébruks',
+            'pipeline': 'páiplain', 'pipelines': 'páiplains',
+            'runtime': 'rântaim',
+            'timeout': 'táimaut',
+            'overflow': 'ôverflou',
+            'feature': 'fítcher', 'features': 'fítchers',
+            'bug': 'bâg', 'bugs': 'bâgs',
+            'debug': 'dibâg', 'debugging': 'dibâguing',
+            'log': 'lóg', 'logs': 'lógs', 'logging': 'lóguing',
+            'lint': 'lint', 'linter': 'linter',
+            'output': 'autput', 'input': 'input'
+        };
+
+        function applyPtPronunciation(text) {
+            let out = text;
+            for (const [en, pt] of Object.entries(SPEECH_PRONUNCIATION_PT)) {
+                // \b...\b com flag 'i' — substitui a palavra inteira ignorando caixa.
+                // Termos com espaco (pull request) tambem funcionam com \b nas pontas.
+                const re = new RegExp('\\b' + en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+                out = out.replace(re, pt);
+            }
+            return out;
+        }
+
         function cleanForSpeech(text) {
             if (!text) { return ''; }
             let out = text;
@@ -2194,9 +2460,60 @@
             out = out.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
             // Colapsa whitespace
             out = out.replace(/\n{2,}/g, '. ').replace(/\s+/g, ' ').trim();
-            // Cap defensivo — TTS lento em respostas muito longas
-            if (out.length > 1500) { out = out.slice(0, 1500) + '...'; }
+            // Aportuguesa termos tecnicos em ingles para a voz PT-BR pronunciar
+            // melhor. So aplica quando a voz/idioma e portugues.
+            if (isPtSpeech()) { out = applyPtPronunciation(out); }
+            // Remove tabelas markdown e linhas decorativas (---, ===) que soam mal.
+            out = out.replace(/^\s*[|>].*$/gm, ' ');
+            out = out.replace(/[-=]{3,}/g, ' ');
+            out = out.replace(/\s+/g, ' ').trim();
+            // Sem truncamento: respostas longas sao quebradas em pedacos na fala.
             return out;
+        }
+
+        // Quebra um texto longo em pedacos falaveis (~frases), respeitando um
+        // tamanho maximo por pedaco para o speechSynthesis nao travar.
+        function splitForSpeech(text, maxLen) {
+            const limit = maxLen || 240;
+            const chunks = [];
+            // Quebra primeiro por sentenca (. ! ? ; quebra de linha logica).
+            const sentences = text.split(/(?<=[.!?;])\s+|\n+/);
+            let buf = '';
+            for (let s of sentences) {
+                s = s.trim();
+                if (!s) { continue; }
+                // Sentenca isolada maior que o limite — fatia por virgula/espaco.
+                if (s.length > limit) {
+                    if (buf) { chunks.push(buf); buf = ''; }
+                    let rest = s;
+                    while (rest.length > limit) {
+                        let cut = rest.lastIndexOf(',', limit);
+                        if (cut < limit * 0.5) { cut = rest.lastIndexOf(' ', limit); }
+                        if (cut <= 0) { cut = limit; }
+                        chunks.push(rest.slice(0, cut + 1).trim());
+                        rest = rest.slice(cut + 1);
+                    }
+                    if (rest.trim()) { buf = rest.trim(); }
+                    continue;
+                }
+                if ((buf + ' ' + s).trim().length > limit) {
+                    if (buf) { chunks.push(buf); }
+                    buf = s;
+                } else {
+                    buf = buf ? (buf + ' ' + s) : s;
+                }
+            }
+            if (buf) { chunks.push(buf); }
+            return chunks.filter(c => c && c.trim());
+        }
+
+        // Decide se a fala atual sera em portugues (para aplicar o dicionario
+        // de pronuncia). Usa a voz selecionada; se nao houver, cai no idioma
+        // configurado no JARVIS (whisperLanguage).
+        function isPtSpeech() {
+            const v = (typeof ensureVoice === 'function') ? ensureVoice() : null;
+            if (v && v.lang) { return v.lang.toLowerCase().startsWith('pt'); }
+            return !(savedSettings && savedSettings.whisperLanguage === 'en');
         }
 
         // ── Seleção de voz (preferencia: masculina e moderna) ─────────────
@@ -2269,6 +2586,59 @@
             utter.volume = 1.0;
         }
 
+        // Fila de fala (pedaco a pedaco). Mantem a borda verde acesa enquanto
+        // o JARVIS fala e a apaga ao terminar a fila.
+        let _ttsChunks = [];
+        let _ttsSpeaking = false;
+
+        function _ttsDrain() {
+            if (_ttsSpeaking) { return; }
+            const next = _ttsChunks.shift();
+            if (!next) {
+                // Fila acabou — apaga a borda de fala.
+                setSpeakGlow(false);
+                return;
+            }
+            _ttsSpeaking = true;
+            try {
+                const utter = new SpeechSynthesisUtterance(next);
+                applyVoiceParams(utter);
+                utter.onend = () => { _ttsSpeaking = false; _ttsDrain(); };
+                utter.onerror = () => { _ttsSpeaking = false; _ttsDrain(); };
+                speechSynthesis.speak(utter);
+            } catch (e) {
+                _ttsSpeaking = false;
+                _ttsDrain();
+            }
+        }
+
+        function stopSpeaking() {
+            _ttsChunks = [];
+            _ttsSpeaking = false;
+            if (typeof speechSynthesis !== 'undefined') { speechSynthesis.cancel(); }
+            setSpeakGlow(false);
+        }
+
+        // Fala um preambulo (texto que o modelo escreve antes de chamar uma
+        // ferramenta). Enfileira sem cancelar a fala em curso, e evita repetir
+        // o mesmo texto. Frases muito curtas/vazias sao ignoradas.
+        let _lastPreamble = '';
+        function speakPreamble(text) {
+            const on = !!(savedSettings && savedSettings.jarvisEnabled && savedSettings.jarvisAutoSpeak);
+            if (!on) { return; }
+            if (typeof speechSynthesis === 'undefined') { return; }
+            const clean = cleanForSpeech(text || '');
+            if (!clean || clean.length < 15) { return; }
+            if (clean === _lastPreamble) { return; }
+            _lastPreamble = clean;
+            jlog('TTS preambulo: "' + clean.slice(0, 60) + '"');
+            // Enfileira (nao cancela a fala atual) e acende a borda de fala.
+            const chunks = splitForSpeech(clean);
+            _ttsChunks = _ttsChunks.concat(chunks);
+            setSpeakGlow(true);
+            _ttsDrain();
+        }
+
         function speakIfJarvisAutoSpeak(text) {
             const on = !!(savedSettings && savedSettings.jarvisEnabled && savedSettings.jarvisAutoSpeak);
             jlog('speakIfJarvisAutoSpeak | autoSpeak=' + on + ' | textLen=' + (text ? text.length : 0) + ' | voicesReady=' + _ttsVoicesReady);
@@ -2276,16 +2646,13 @@
             if (typeof speechSynthesis === 'undefined') { jlog('TTS: speechSynthesis indisponivel'); return; }
             const clean = cleanForSpeech(text);
             if (!clean) { jlog('TTS: texto vazio apos limpeza — nao fala'); return; }
-            try {
-                // Fala apenas a resposta final do LLM. Cancela qualquer fala
-                // anterior antes de iniciar a nova.
-                speechSynthesis.cancel();
-                const utter = new SpeechSynthesisUtterance(clean);
-                applyVoiceParams(utter);
-                speechSynthesis.speak(utter);
-            } catch (e) {
-                console.warn('TTS falhou:', e);
-            }
+            // Cancela fala anterior e enfileira os pedacos da nova resposta.
+            stopSpeaking();
+            const chunks = splitForSpeech(clean);
+            jlog('TTS: falando em ' + chunks.length + ' pedaco(s)');
+            _ttsChunks = chunks;
+            setSpeakGlow(true);
+            _ttsDrain();
         }
 
         function updateContextBar(files) {
@@ -2323,6 +2690,7 @@
         const modesBtn = document.getElementById('modes-btn');
         const modesDropdown = document.getElementById('modes-dropdown');
         const modesSummary = document.getElementById('modes-summary');
+        const tokenCounter = document.getElementById('token-counter');
         const modesChatNotice = document.getElementById('modes-chat-notice');
         const modeDevBtn = document.getElementById('mode-dev');
         const modeChatBtn = document.getElementById('mode-chat');
@@ -2378,9 +2746,21 @@
             updateModesUI();
         });
 
+        // Aviso mostrado uma vez por sessao quando o usuario liga o AUTO. Em
+        // AUTO o agente escreve arquivos E roda comandos SEM pedir aprovacao —
+        // o usuario precisa saber disso antes de ativar. Nao usa modal (alert)
+        // pra nao virar friccao a cada toggle; e uma nota discreta no chat.
+        let autoWarningShown = false;
         modeAutoToggle.addEventListener('change', () => {
             if (chatMode) { modeAutoToggle.checked = false; return; }
             autoMode = modeAutoToggle.checked;
+            if (autoMode && !autoWarningShown) {
+                autoWarningShown = true;
+                appendMessage(
+                    '⚡ Modo AUTO ligado. O agente vai editar arquivos e executar comandos no seu terminal sem pedir aprovacao, ate a tarefa terminar. Comandos destrutivos conhecidos (rm -rf, git reset --hard...) continuam bloqueados, mas isso nao substitui sua revisao. Desligue o AUTO se quiser aprovar cada acao.',
+                    'agent'
+                );
+            }
             updateModesUI();
         });
 
@@ -2487,8 +2867,27 @@
         const configKeyLabel = document.getElementById('config-key-label');
         const configRagEnabled = document.getElementById('config-rag-enabled');
         const configRagRows = document.getElementById('config-rag-rows');
+        const configRagProvider = document.getElementById('config-rag-provider');
         const configRagEndpoint = document.getElementById('config-rag-endpoint');
         const configRagCollection = document.getElementById('config-rag-collection');
+        const configRagQdrantRows = document.getElementById('config-rag-qdrant-rows');
+        const configRagEmbedHost = document.getElementById('config-rag-embed-host');
+        const configRagEmbedModel = document.getElementById('config-rag-embed-model');
+        const configRagHint = document.getElementById('config-rag-hint');
+        const configRagEndpointLabel = document.getElementById('config-rag-endpoint-label');
+
+        // Toggles the Qdrant-only embedding fields and updates the endpoint
+        // label/placeholder/hint to match the selected backend. Qdrant is BETA.
+        function applyRagProviderUI() {
+            const isQdrant = configRagProvider.value === 'qdrant';
+            configRagQdrantRows.style.display = isQdrant ? 'flex' : 'none';
+            configRagEndpoint.placeholder = isQdrant ? 'http://localhost:6333' : 'http://localhost:8000';
+            configRagEndpointLabel.textContent = isQdrant ? 'Endpoint do Qdrant' : 'Endpoint do Chroma';
+            configRagHint.innerHTML = isQdrant
+                ? '<span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:1px 5px;border-radius:3px;letter-spacing:0.06em;margin-right:6px;">BETA</span>Requer Qdrant rodando localmente. O Qdrant nao embeda texto: informe um host /v1/embeddings (ex: LM Studio) e o modelo de embedding usado para indexar. <a href="https://qdrant.tech/documentation/" style="color:#3a7bd5;text-decoration:none">Docs Qdrant</a>'
+                : 'Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a>';
+        }
+        configRagProvider.addEventListener('change', applyRagProviderUI);
 
         const configHybridEnabled = document.getElementById('config-hybrid-enabled');
         const configHybridRows = document.getElementById('config-hybrid-rows');
@@ -2539,6 +2938,10 @@
         const configMicRefresh = document.getElementById('config-mic-refresh');
         const configTtsVoice = document.getElementById('config-tts-voice');
         const configTtsTest = document.getElementById('config-tts-test');
+        const configWakeWordEnabled = document.getElementById('config-wake-word-enabled');
+        const configWakeWordRows = document.getElementById('config-wake-word-rows');
+        const configWakeWord = document.getElementById('config-wake-word');
+        const wakeWordStatus = document.getElementById('wake-word-status');
         const configVoiceServerEnabled = document.getElementById('config-voice-server-enabled');
         const configVoiceServerRows = document.getElementById('config-voice-server-rows');
         const configVoiceServerPort = document.getElementById('config-voice-server-port');
@@ -2602,6 +3005,10 @@
                 renderTtsVoices();
             };
         }
+
+        configWakeWordEnabled.addEventListener('change', () => {
+            configWakeWordRows.style.display = configWakeWordEnabled.checked ? 'block' : 'none';
+        });
 
         configTtsTest.addEventListener('click', () => {
             if (typeof speechSynthesis === 'undefined') { return; }
@@ -2688,7 +3095,33 @@
 
         function updateConfigUI(provider) {
             const isAnthropic = provider === 'anthropic';
+            const isMlx = provider === 'mlx';
             configHostRow.style.display = isAnthropic ? 'none' : '';
+
+            // MLX: pre-preenche o host default :8080 quando o campo esta vazio ou
+            // ainda no default de outro provedor local (nao sobrescreve um host
+            // que o usuario digitou de proposito). Mostra o comando de start.
+            if (configHostHint) {
+                configHostHint.textContent = isMlx
+                    ? 'Servidor mlx_lm. Inicie com: python3 -m mlx_lm server --model mlx-community/Qwen2.5-Coder-14B-Instruct-4bit --port 8080'
+                    : 'Endereco completo com porta. Ex: http://10.100.0.22:11434';
+            }
+            if (isMlx && KNOWN_DEFAULT_HOSTS.includes(configHostInput.value.trim())) {
+                configHostInput.value = PROVIDER_DEFAULT_HOST.mlx;
+            }
+            configHostInput.placeholder = isMlx ? PROVIDER_DEFAULT_HOST.mlx : 'http://localhost:1234';
+
+            // Janela de contexto: o placeholder mostra o default do provedor
+            // selecionado. Se o campo estiver vazio (usuario nao sobrescreveu),
+            // deixa vazio para herdar esse default no backend.
+            const ctxDefault = providerContextDefaults[provider] || 8192;
+            if (configContextBudget) {
+                configContextBudget.placeholder = String(ctxDefault);
+                if (configContextBudgetHint) {
+                    configContextBudgetHint.textContent =
+                        `Calibra a poda de contexto e os limites de output. Vazio = usa o padrao deste provedor (${ctxDefault}). Ajuste para casar com a janela real do modelo carregado.`;
+                }
+            }
             configKeyLabel.innerHTML = isAnthropic
                 ? 'API Key'
                 : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
@@ -2697,7 +3130,9 @@
             configModelHint.textContent = isAnthropic
                 ? 'Modelo Claude a usar. Clique num atalho abaixo ou digite o ID.'
                 : 'Nome exato do modelo carregado. Vazio usa o padrao do servidor.';
-            configModelInput.placeholder = isAnthropic ? 'claude-sonnet-4-6' : 'google/gemma-4-e4b';
+            configModelInput.placeholder = isAnthropic
+                ? 'claude-sonnet-4-6'
+                : isMlx ? 'mlx-community/Qwen2.5-Coder-14B-Instruct-4bit' : 'google/gemma-4-e4b';
 
             if (isAnthropic) {
                 configClaudeModels.style.display = 'flex';
@@ -2731,9 +3166,13 @@
                 applyKeyPlaceholders();
                 renderToolsGrid(savedSettings.enabledTools || ALL_TOOLS.map(t => t.name));
                 configRagEnabled.checked = !!savedSettings.ragEnabled;
+                configRagProvider.value = savedSettings.ragProvider || 'chroma';
                 configRagEndpoint.value = savedSettings.ragEndpoint || 'http://localhost:8000';
                 configRagCollection.value = savedSettings.ragCollection || 'eucode';
+                configRagEmbedHost.value = savedSettings.ragEmbedHost || 'http://localhost:1234';
+                configRagEmbedModel.value = savedSettings.ragEmbedModel || '';
                 configRagRows.style.display = configRagEnabled.checked ? 'flex' : 'none';
+                applyRagProviderUI();
 
                 configHybridEnabled.checked = !!savedSettings.hybridEnabled;
                 configHybridProvider.value = savedSettings.supportProvider || 'anthropic';
@@ -2749,6 +3188,11 @@
                 configInlineCompletion.checked = !!savedSettings.inlineCompletionEnabled;
                 configFixWithEucode.checked = !!savedSettings.fixWithEucodeEnabled;
                 configProjectIntel.checked = savedSettings.projectIntelEnabled !== false;
+                // Campo vazio quando 0 (herda default do provedor); senao o valor salvo.
+                if (configContextBudget) {
+                    configContextBudget.value = (savedSettings.contextTokenBudget && savedSettings.contextTokenBudget > 0)
+                        ? String(savedSettings.contextTokenBudget) : '';
+                }
 
                 configJarvisEnabled.checked = !!savedSettings.jarvisEnabled;
                 configJarvisAutoSpeak.checked = savedSettings.jarvisAutoSpeak !== false;
@@ -2759,6 +3203,9 @@
                 renderMicDevices([], savedSettings.micDeviceIndex || '');
                 if (savedSettings.jarvisEnabled) { requestMicDevices(); }
                 renderTtsVoices();
+                configWakeWordEnabled.checked = !!savedSettings.wakeWordEnabled;
+                configWakeWord.value = savedSettings.wakeWord || 'eucode';
+                configWakeWordRows.style.display = configWakeWordEnabled.checked ? 'block' : 'none';
                 configVoiceServerEnabled.checked = !!savedSettings.voiceServerEnabled;
                 configVoiceServerPort.value = savedSettings.voiceServerPort || 9876;
                 configVoiceServerExpose.checked = !!savedSettings.voiceServerExposeNetwork;
@@ -2790,8 +3237,11 @@
                 apiKey: configKeyInput.value.trim(),
                 enabledTools: getEnabledTools(),
                 ragEnabled: configRagEnabled.checked,
+                ragProvider: configRagProvider.value,
                 ragEndpoint: configRagEndpoint.value.trim(),
                 ragCollection: configRagCollection.value.trim(),
+                ragEmbedHost: configRagEmbedHost.value.trim(),
+                ragEmbedModel: configRagEmbedModel.value.trim(),
                 hybridEnabled: configHybridEnabled.checked,
                 supportProvider: configHybridProvider.value,
                 supportApiKey: configHybridKey.value.trim(),
@@ -2800,6 +3250,7 @@
                 inlineCompletionEnabled: configInlineCompletion.checked,
                 fixWithEucodeEnabled: configFixWithEucode.checked,
                 projectIntelEnabled: configProjectIntel.checked,
+                contextTokenBudget: (function(){ const v = parseInt(configContextBudget && configContextBudget.value, 10); return Number.isFinite(v) && v > 0 ? v : 0; })(),
                 jarvisEnabled: configJarvisEnabled.checked,
                 jarvisAutoSpeak: configJarvisAutoSpeak.checked,
                 jarvisTtsVoice: configTtsVoice.value || '',
@@ -2807,6 +3258,8 @@
                 whisperModel: configWhisperModel.value.trim() || 'whisper-1',
                 whisperLanguage: configWhisperLanguage.value.trim(),
                 micDeviceIndex: configMicDevice.value || '',
+                wakeWordEnabled: configWakeWordEnabled.checked,
+                wakeWord: (configWakeWord.value.trim() || 'eucode').toLowerCase(),
                 voiceServerEnabled: configVoiceServerEnabled.checked,
                 voiceServerPort: parseInt(configVoiceServerPort.value, 10) || 9876,
                 voiceServerExposeNetwork: configVoiceServerExpose.checked,
@@ -3177,6 +3630,7 @@
         function appendConfirmCommandCard(id, command, cwd) {
             const row = document.createElement('div');
             row.className = 'message-row agent';
+            row.dataset.confirmId = id;
 
             const meta = document.createElement('div');
             meta.className = 'message-meta';
@@ -3238,6 +3692,7 @@
             function decide(decision) {
                 vscode.postMessage({ command: 'confirm_command_response', id, decision });
                 row.remove();
+                hideVoiceApprovalBanner();
             }
 
             blockBtn.addEventListener('click', () => decide('block'));
@@ -3264,6 +3719,7 @@
 
             const row = document.createElement('div');
             row.className = 'message-row agent';
+            row.dataset.confirmId = id;
 
             const meta = document.createElement('div');
             meta.className = 'message-meta';
@@ -3324,6 +3780,7 @@
             function decide(approved) {
                 vscode.postMessage({ command: 'confirm_write_response', id, approved });
                 row.remove();
+                hideVoiceApprovalBanner();
             }
 
             acceptBtn.addEventListener('click', () => decide(true));
@@ -3346,12 +3803,14 @@
             const msg = event.data;
 
             if (msg.command === 'load_config') {
-                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '' };
+                savedSettings = { provider: msg.provider, apiHost: msg.apiHost, apiKey: msg.apiKey || '', model: msg.model || '', enabledTools: msg.enabledTools || ALL_TOOLS.map(t => t.name), ragEnabled: !!msg.ragEnabled, ragProvider: msg.ragProvider || 'chroma', ragEndpoint: msg.ragEndpoint || 'http://localhost:8000', ragCollection: msg.ragCollection || 'eucode', ragEmbedHost: msg.ragEmbedHost || 'http://localhost:1234', ragEmbedModel: msg.ragEmbedModel || '', hybridEnabled: !!msg.hybridEnabled, supportProvider: msg.supportProvider || 'anthropic', supportApiKey: msg.supportApiKey || '', supportModel: msg.supportModel || '', inlineCompletionEnabled: !!msg.inlineCompletionEnabled, fixWithEucodeEnabled: !!msg.fixWithEucodeEnabled, customCommandsScope: msg.customCommandsScope || 'workspace', hybridIntensity: [25,50,75,100].includes(msg.hybridIntensity) ? msg.hybridIntensity : 50, projectIntelEnabled: msg.projectIntelEnabled !== false, contextTokenBudget: (typeof msg.contextTokenBudget === 'number' ? msg.contextTokenBudget : 0), jarvisEnabled: !!msg.jarvisEnabled, jarvisAutoSpeak: msg.jarvisAutoSpeak !== false, jarvisTtsVoice: msg.jarvisTtsVoice || '', jarvisTtsRate: msg.jarvisTtsRate || 1.03, whisperEndpoint: msg.whisperEndpoint || 'http://localhost:1234', whisperModel: msg.whisperModel || 'whisper-1', whisperLanguage: msg.whisperLanguage || 'pt', voiceServerEnabled: !!msg.voiceServerEnabled, voiceServerPort: msg.voiceServerPort || 9876, voiceServerExposeNetwork: !!msg.voiceServerExposeNetwork, micDeviceIndex: msg.micDeviceIndex || '', wakeWordEnabled: !!msg.wakeWordEnabled, wakeWord: msg.wakeWord || 'eucode' };
                 customCommandsScope = savedSettings.customCommandsScope;
                 jlog('load_config recebido | jarvisEnabled =', savedSettings.jarvisEnabled,
                     '| whisperEndpoint =', savedSettings.whisperEndpoint);
+                jarvisFeatureEnabled = !!msg.jarvisFeatureEnabled;
+                if (msg.providerContextDefaults) { providerContextDefaults = msg.providerContextDefaults; }
                 syncHybridModeWithSettings();
-                updateMicButtonVisibility();
+                applyJarvisFeatureFlag();
             } else if (msg.command === 'load_sessions') {
                 renderSessions(msg.sessions);
             } else if (msg.command === 'load_history') {
@@ -3368,6 +3827,8 @@
                 rows.forEach(r => r.remove());
                 appendMessage('Ola! Como posso ajudar?', 'agent');
                 sendBtn.disabled = false;
+                // Reset token counters for the new session
+                try { sessionTokenTotal = 0; lastLiveCountForCall = null; updateTokenCounter(0); } catch (e) {}
             } else if (msg.command === 'connection_status') {
                 statusDot.classList.toggle('online', msg.online);
             } else if (msg.command === 'config_saved') {
@@ -3379,14 +3840,18 @@
                 if (configKeyInput.value.trim()) { savedSettings.apiKey = configKeyInput.value.trim(); }
                 savedSettings.enabledTools = getEnabledTools();
                 savedSettings.ragEnabled = configRagEnabled.checked;
+                savedSettings.ragProvider = configRagProvider.value;
                 savedSettings.ragEndpoint = configRagEndpoint.value.trim();
                 savedSettings.ragCollection = configRagCollection.value.trim();
+                savedSettings.ragEmbedHost = configRagEmbedHost.value.trim();
+                savedSettings.ragEmbedModel = configRagEmbedModel.value.trim();
                 savedSettings.hybridEnabled = configHybridEnabled.checked;
                 savedSettings.supportProvider = configHybridProvider.value;
                 if (configHybridKey.value.trim()) { savedSettings.supportApiKey = configHybridKey.value.trim(); }
                 savedSettings.supportModel = configHybridModel.value.trim();
                 savedSettings.hybridIntensity = selectedHybridIntensity;
                 savedSettings.projectIntelEnabled = configProjectIntel.checked;
+                savedSettings.contextTokenBudget = (function(){ const v = parseInt(configContextBudget && configContextBudget.value, 10); return Number.isFinite(v) && v > 0 ? v : 0; })();
                 savedSettings.inlineCompletionEnabled = configInlineCompletion.checked;
                 savedSettings.fixWithEucodeEnabled = configFixWithEucode.checked;
                 savedSettings.jarvisEnabled = configJarvisEnabled.checked;
@@ -3397,6 +3862,8 @@
                 savedSettings.whisperModel = configWhisperModel.value.trim() || 'whisper-1';
                 savedSettings.whisperLanguage = configWhisperLanguage.value.trim();
                 savedSettings.micDeviceIndex = configMicDevice.value || '';
+                savedSettings.wakeWordEnabled = configWakeWordEnabled.checked;
+                savedSettings.wakeWord = (configWakeWord.value.trim() || 'eucode').toLowerCase();
                 savedSettings.voiceServerEnabled = configVoiceServerEnabled.checked;
                 savedSettings.voiceServerPort = parseInt(configVoiceServerPort.value, 10) || 9876;
                 savedSettings.voiceServerExposeNetwork = configVoiceServerExpose.checked;
@@ -3426,14 +3893,29 @@
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
+                speakApprovalPrompt('write', msg.filePath);
             } else if (msg.command === 'todo_update') {
                 renderTodoList(msg.todos);
             } else if (msg.command === 'confirm_command') {
                 clearStatus();
                 appendConfirmCommandCard(msg.id, msg.cmd, msg.cwd);
+                speakApprovalPrompt('command', msg.cmd);
+            } else if (msg.command === 'voice_approval_listening') {
+                showVoiceApprovalBanner('🎙 Diga "sim" ou "não" para responder…');
+            } else if (msg.command === 'voice_approval_result') {
+                if (msg.verdict === 'yes') {
+                    showVoiceApprovalBanner('✓ Você disse "sim" — aprovando', 1500);
+                    removeConfirmCardById(msg.id);
+                } else if (msg.verdict === 'no') {
+                    showVoiceApprovalBanner('✕ Você disse "não" — recusando', 1500);
+                    removeConfirmCardById(msg.id);
+                } else {
+                    showVoiceApprovalBanner('Não entendi — decida pelo botão', 2000);
+                }
             } else if (msg.command === 'open_files') {
                 updateContextBar(msg.files);
             } else if (msg.command === 'live_telemetry') {
+                try { console.debug('[webview] live_telemetry received', msg); } catch(e){}
                 updateLiveTelemetry(msg.tokens, msg.tokensPerSec, msg.elapsedMs);
             } else if (msg.command === 'telemetry') {
                 finalizeTelemetry(msg.promptTokens, msg.completionTokens, msg.tokensPerSec, msg.elapsedMs);
@@ -3465,6 +3947,10 @@
                 }
             } else if (msg.command === 'agent_running') {
                 setAgentRunning(msg.running);
+                if (msg.running) {
+                    // Nova execucao: permite falar um preambulo igual ao anterior.
+                    _lastPreamble = '';
+                }
                 if (!msg.running) {
                     currentTodoCard = null;
                     // Failsafe: ao parar a execucao (stop pelo usuario ou fim
@@ -3477,6 +3963,25 @@
                     }
                 }
             } else if (msg.command === 'stream_chunk') {
+                if (msg.text === '\x00DISCARD') {
+                    // O texto streamado era o proprio JSON de uma tool call
+                    // (servidor sem tool-calling nativo, ex: mlx_lm.server).
+                    // Nao e preambulo util — apaga a bolha por completo em vez
+                    // de congelar o JSON cru na timeline.
+                    const tl = getTimeline();
+                    if (tl) {
+                        const responseItem = tl.querySelector('.tl-item.tl-response');
+                        if (responseItem) { responseItem.remove(); }
+                    }
+                    streamBubble = null;
+                    streamText = '';
+                    streamRafPending = false;
+                    if (liveTelemetryItem) { liveTelemetryItem.remove(); }
+                    liveTelemetryItem = null;
+                    liveTelemetryChips = null;
+                    liveTelemetryPending = null;
+                    return;
+                }
                 if (msg.text === '\x00CLEAR') {
                     // Tool call iniciou — congela o texto ja escrito como markdown fixo,
                     // limpa o estado de streaming mas mantem o conteudo visivel na timeline
@@ -3498,6 +4003,10 @@
                             responseItem.classList.add('done');
                         }
                     }
+                    // Fala o preambulo (ex.: "Vou analisar a estrutura...") que o
+                    // modelo escreveu antes de chamar uma ferramenta. Esse texto
+                    // nao passa por agent_response, entao falamos aqui.
+                    speakPreamble(streamText);
                     streamBubble = null;
                     streamText = '';
                     streamRafPending = false;
@@ -3559,6 +4068,16 @@
                     jlog('voice_devices_result erro: ' + (msg.error || ''));
                     renderMicDevices([], savedSettings.micDeviceIndex || '');
                 }
+                return;
+            } else if (msg.command === 'wake_word_state') {
+                if (wakeWordStatus) {
+                    const labels = { listening: '● ouvindo…', recording: '● gravando…', transcribing: '● transcrevendo…', idle: '' };
+                    const colors = { listening: '#22c55e', recording: '#ff4757', transcribing: '#f59e0b', idle: '#888' };
+                    wakeWordStatus.textContent = labels[msg.state] || '';
+                    wakeWordStatus.style.color = colors[msg.state] || '#888';
+                }
+                applyListenGlow(msg.state);
+                if (msg.error) { jlog('wake_word erro: ' + msg.error); }
                 return;
             } else if (msg.command === 'voice_record_started') {
                 jlog('host confirmou: gravando');
@@ -3666,7 +4185,7 @@
                     if (!hasContinueBtn) { return; }
                     const btn = document.createElement('button');
                     btn.className = 'continue-btn';
-                    btn.innerHTML = '<span class="mi" style="font-size:14px">replay</span>Tentar mais 5 vezes';
+                    btn.innerHTML = '<span class="mi" style="font-size:14px">replay</span>Continuar tarefa';
                     btn.addEventListener('click', () => {
                         btn.disabled = true;
                         vscode.postMessage({ command: 'user_input', text: 'Continue a tarefa de onde parou. Voce nao terminou — execute as proximas etapas ate o build passar com sucesso.', autoMode: true });
@@ -3823,6 +4342,23 @@
         // Throttle live updates to ~10fps to avoid layout thrashing
         let liveTelemetryRaf = false;
         let liveTelemetryPending = null;
+        // Acumula tokens por sessao (nao zerar a cada chamada streaming)
+        let sessionTokenTotal = 0;
+        // ultimo contador live recebido para a chamada atual (incremental)
+        let lastLiveCountForCall = null;
+
+        function updateTokenCounter(tokens) {
+            try {
+                if (!tokenCounter) { return; }
+                // Sempre exibe o contador; quando nao houver valor, mostra 0
+                const value = (tokens == null) ? 0 : (typeof tokens === 'number' ? tokens : Number(tokens) || 0);
+                tokenCounter.style.display = 'inline-flex';
+                tokenCounter.textContent = `Tokens: ${value}`;
+                try { console.debug('[webview] updateTokenCounter', value); } catch (e) {}
+            } catch (e) {
+                // ignore
+            }
+        }
 
         function getOrCreateLiveTelemetryItem() {
             if (liveTelemetryItem) { return; }
@@ -3874,6 +4410,19 @@
                     tps > 0 ? `<span>${tps} t/s</span>` : null,
                     `<span>${(ms / 1000).toFixed(1)}s</span>`,
                 ]);
+                // Atualiza contador acumulado por sessao usando o delta do stream
+                try {
+                    const numeric = (typeof t === 'number') ? t : Number(t) || 0;
+                    let delta = numeric;
+                    if (lastLiveCountForCall != null) {
+                        delta = numeric - lastLiveCountForCall;
+                    }
+                    if (delta > 0) {
+                        sessionTokenTotal += delta;
+                    }
+                    lastLiveCountForCall = numeric;
+                    updateTokenCounter(sessionTokenTotal);
+                } catch (e) { /* ignore */ }
             });
         }
 
@@ -3894,6 +4443,20 @@
                 tokensPerSec > 0 ? `<span>${tokensPerSec} t/s</span>` : null,
                 `Tempo <span>${elapsedSec}s</span>`,
             ]);
+            // Atualiza acumulador de sessao com o total desta chamada (evita double-counting)
+            try {
+                const callTotal = (promptTokens || 0) + (completionTokens || 0);
+                if (lastLiveCountForCall != null) {
+                    const remaining = callTotal - lastLiveCountForCall;
+                    if (remaining > 0) { sessionTokenTotal += remaining; }
+                } else {
+                    // nao recebemos updates live nesta chamada — soma tudo
+                    sessionTokenTotal += callTotal;
+                }
+                // reset para proxima chamada
+                lastLiveCountForCall = null;
+                updateTokenCounter(sessionTokenTotal);
+            } catch (e) { /* ignore */ }
             liveTelemetryItem = null;
             liveTelemetryChips = null;
 

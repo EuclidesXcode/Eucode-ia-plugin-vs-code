@@ -13,7 +13,10 @@ import * as https from 'https';
 //     the user explicitly enables "Expose to local network" in settings.
 //   - Token-based auth: every request must include a bearer token. Token is
 //     generated once at first start and persisted in settings.
-//   - CORS: only allows the vscode-webview origin and the pairing origins.
+//   - CORS: reflects only the vscode-webview origin. Requests carrying any
+//     other browser Origin are rejected with 403 (no `*`, no credential echo),
+//     so a malicious page can't ride a leaked token. Native clients send no
+//     Origin and are gated purely by the token.
 
 export type VoiceRequestHandler = (text: string, source: 'mobile' | 'webview') => void;
 
@@ -74,10 +77,25 @@ export class VoiceServer {
         this.cfg.onLog?.(`[VoiceServer] ${msg}`);
     }
 
-    private setCors(res: http.ServerResponse): void {
-        // Restritivo: aceita vscode-webview (do plugin local) e qualquer origem
-        // que ja tenha sido autenticada pelo token (pareamento previo).
-        res.setHeader('Access-Control-Allow-Origin', '*');
+    // Decide se uma Origin de browser pode receber CORS. O cliente mobile
+    // nativo NÃO manda Origin (só apps de browser mandam), então requests sem
+    // Origin passam — a barreira real deles é o bearer token. Para requests COM
+    // Origin (ou seja, feitas a partir de uma página web), só liberamos o
+    // webview do próprio VS Code. Isso impede que um site aberto no navegador
+    // da vítima faça POST autenticado no agente (CSRF-style) caso o token vaze.
+    private isAllowedOrigin(origin: string | undefined): boolean {
+        if (!origin) { return true; } // cliente nativo (sem browser) — sem Origin
+        return /^vscode-webview:\/\//i.test(origin);
+    }
+
+    private setCors(req: http.IncomingMessage, res: http.ServerResponse): void {
+        const origin = req.headers['origin'];
+        // Só ecoa o header de origem permitida quando ela é confiável. Sem `*`:
+        // com credenciais/token, refletir qualquer origem é vetor de CSRF.
+        if (typeof origin === 'string' && this.isAllowedOrigin(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Vary', 'Origin');
+        }
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
         res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         res.setHeader('Access-Control-Max-Age', '600');
@@ -102,16 +120,26 @@ export class VoiceServer {
     }
 
     private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        this.setCors(res);
+        this.setCors(req, res);
         if (req.method === 'OPTIONS') {
             res.statusCode = 204;
             res.end();
             return;
         }
 
-        // Health check (no auth)
+        // Bloqueia requests vindas de uma página web de origem não confiável
+        // ANTES de qualquer processamento. Requests sem Origin (cliente nativo)
+        // passam e caem na verificação de token abaixo.
+        const origin = req.headers['origin'];
+        if (typeof origin === 'string' && !this.isAllowedOrigin(origin)) {
+            this.json(res, 403, { ok: false, error: 'forbidden origin' });
+            return;
+        }
+
+        // Health check (no auth). Resposta mínima: só confirma que o serviço
+        // está de pé, sem revelar nome/versão que ajudariam fingerprinting.
         if (req.method === 'GET' && req.url === '/health') {
-            this.json(res, 200, { ok: true, name: 'eucode-voice-server', version: 1 });
+            this.json(res, 200, { ok: true });
             return;
         }
 

@@ -23,6 +23,7 @@ exports.ALL_TOOL_NAMES = [
     'web_search',
     'memory_remember',
     'memory_read',
+    'browser_action',
 ];
 const DEFAULTS = {
     provider: 'lmstudio',
@@ -31,8 +32,11 @@ const DEFAULTS = {
     model: '',
     enabledTools: [...exports.ALL_TOOL_NAMES],
     ragEnabled: false,
+    ragProvider: 'chroma',
     ragEndpoint: 'http://localhost:8000',
     ragCollection: 'eucode',
+    ragEmbedHost: 'http://localhost:1234',
+    ragEmbedModel: '',
     hybridEnabled: false,
     supportProvider: 'anthropic',
     supportApiKey: '',
@@ -42,6 +46,7 @@ const DEFAULTS = {
     customCommandsScope: 'workspace',
     hybridIntensity: 50,
     projectIntelEnabled: true,
+    contextTokenBudget: 0, // 0 = usa o default do provedor
     jarvisEnabled: false,
     jarvisAutoSpeak: true,
     jarvisTtsVoice: '',
@@ -54,6 +59,8 @@ const DEFAULTS = {
     whisperModel: 'whisper-1',
     whisperLanguage: 'pt',
     micDeviceIndex: '',
+    wakeWordEnabled: false,
+    wakeWord: 'eucode',
 };
 const KEYS = {
     provider: 'eucode.provider',
@@ -62,8 +69,11 @@ const KEYS = {
     model: 'eucode.model',
     enabledTools: 'eucode.enabledTools',
     ragEnabled: 'eucode.ragEnabled',
+    ragProvider: 'eucode.ragProvider',
     ragEndpoint: 'eucode.ragEndpoint',
     ragCollection: 'eucode.ragCollection',
+    ragEmbedHost: 'eucode.ragEmbedHost',
+    ragEmbedModel: 'eucode.ragEmbedModel',
     hybridEnabled: 'eucode.hybridEnabled',
     supportProvider: 'eucode.supportProvider',
     supportApiKey: 'eucode.supportApiKey',
@@ -73,6 +83,7 @@ const KEYS = {
     customCommandsScope: 'eucode.customCommandsScope',
     hybridIntensity: 'eucode.hybridIntensity',
     projectIntelEnabled: 'eucode.projectIntelEnabled',
+    contextTokenBudget: 'eucode.contextTokenBudget',
     jarvisEnabled: 'eucode.jarvisEnabled',
     jarvisAutoSpeak: 'eucode.jarvisAutoSpeak',
     jarvisTtsVoice: 'eucode.jarvisTtsVoice',
@@ -85,6 +96,8 @@ const KEYS = {
     whisperModel: 'eucode.whisperModel',
     whisperLanguage: 'eucode.whisperLanguage',
     micDeviceIndex: 'eucode.micDeviceIndex',
+    wakeWordEnabled: 'eucode.wakeWordEnabled',
+    wakeWord: 'eucode.wakeWord',
 };
 exports.DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 function loadSettings(context) {
@@ -99,8 +112,11 @@ function loadSettings(context) {
         model: context.globalState.get(KEYS.model) ?? DEFAULTS.model,
         enabledTools,
         ragEnabled: context.globalState.get(KEYS.ragEnabled) ?? DEFAULTS.ragEnabled,
+        ragProvider: context.globalState.get(KEYS.ragProvider) ?? DEFAULTS.ragProvider,
         ragEndpoint: context.globalState.get(KEYS.ragEndpoint) ?? DEFAULTS.ragEndpoint,
         ragCollection: context.globalState.get(KEYS.ragCollection) ?? DEFAULTS.ragCollection,
+        ragEmbedHost: context.globalState.get(KEYS.ragEmbedHost) ?? DEFAULTS.ragEmbedHost,
+        ragEmbedModel: context.globalState.get(KEYS.ragEmbedModel) ?? DEFAULTS.ragEmbedModel,
         hybridEnabled: context.globalState.get(KEYS.hybridEnabled) ?? DEFAULTS.hybridEnabled,
         supportProvider: context.globalState.get(KEYS.supportProvider) ?? DEFAULTS.supportProvider,
         supportApiKey: context.globalState.get(KEYS.supportApiKey) ?? DEFAULTS.supportApiKey,
@@ -110,6 +126,7 @@ function loadSettings(context) {
         customCommandsScope: context.globalState.get(KEYS.customCommandsScope) ?? DEFAULTS.customCommandsScope,
         hybridIntensity: (context.globalState.get(KEYS.hybridIntensity) ?? DEFAULTS.hybridIntensity),
         projectIntelEnabled: context.globalState.get(KEYS.projectIntelEnabled) ?? DEFAULTS.projectIntelEnabled,
+        contextTokenBudget: context.globalState.get(KEYS.contextTokenBudget) ?? DEFAULTS.contextTokenBudget,
         jarvisEnabled: context.globalState.get(KEYS.jarvisEnabled) ?? DEFAULTS.jarvisEnabled,
         jarvisAutoSpeak: context.globalState.get(KEYS.jarvisAutoSpeak) ?? DEFAULTS.jarvisAutoSpeak,
         jarvisTtsVoice: context.globalState.get(KEYS.jarvisTtsVoice) ?? DEFAULTS.jarvisTtsVoice,
@@ -122,6 +139,8 @@ function loadSettings(context) {
         whisperModel: context.globalState.get(KEYS.whisperModel) ?? DEFAULTS.whisperModel,
         whisperLanguage: context.globalState.get(KEYS.whisperLanguage) ?? DEFAULTS.whisperLanguage,
         micDeviceIndex: context.globalState.get(KEYS.micDeviceIndex) ?? DEFAULTS.micDeviceIndex,
+        wakeWordEnabled: context.globalState.get(KEYS.wakeWordEnabled) ?? DEFAULTS.wakeWordEnabled,
+        wakeWord: context.globalState.get(KEYS.wakeWord) ?? DEFAULTS.wakeWord,
     };
 }
 async function saveSettings(context, settings) {
@@ -131,8 +150,11 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.model, settings.model.trim());
     await context.globalState.update(KEYS.enabledTools, settings.enabledTools);
     await context.globalState.update(KEYS.ragEnabled, settings.ragEnabled);
+    await context.globalState.update(KEYS.ragProvider, settings.ragProvider);
     await context.globalState.update(KEYS.ragEndpoint, settings.ragEndpoint.replace(/\/+$/, ''));
     await context.globalState.update(KEYS.ragCollection, settings.ragCollection.trim());
+    await context.globalState.update(KEYS.ragEmbedHost, settings.ragEmbedHost.replace(/\/+$/, ''));
+    await context.globalState.update(KEYS.ragEmbedModel, settings.ragEmbedModel.trim());
     await context.globalState.update(KEYS.hybridEnabled, settings.hybridEnabled);
     await context.globalState.update(KEYS.supportProvider, settings.supportProvider);
     await context.globalState.update(KEYS.supportApiKey, settings.supportApiKey);
@@ -142,6 +164,7 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.customCommandsScope, settings.customCommandsScope);
     await context.globalState.update(KEYS.hybridIntensity, settings.hybridIntensity);
     await context.globalState.update(KEYS.projectIntelEnabled, settings.projectIntelEnabled);
+    await context.globalState.update(KEYS.contextTokenBudget, settings.contextTokenBudget);
     await context.globalState.update(KEYS.jarvisEnabled, settings.jarvisEnabled);
     await context.globalState.update(KEYS.jarvisAutoSpeak, settings.jarvisAutoSpeak);
     await context.globalState.update(KEYS.jarvisTtsVoice, settings.jarvisTtsVoice);
@@ -154,6 +177,8 @@ async function saveSettings(context, settings) {
     await context.globalState.update(KEYS.whisperModel, settings.whisperModel);
     await context.globalState.update(KEYS.whisperLanguage, settings.whisperLanguage);
     await context.globalState.update(KEYS.micDeviceIndex, settings.micDeviceIndex);
+    await context.globalState.update(KEYS.wakeWordEnabled, settings.wakeWordEnabled);
+    await context.globalState.update(KEYS.wakeWord, settings.wakeWord);
 }
 // Not used for Anthropic provider — Anthropic uses its own endpoint in api-client.ts
 function buildApiEndpoint(settings) {

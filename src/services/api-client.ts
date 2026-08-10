@@ -58,6 +58,15 @@ export function tryParseJsonChunk(raw: string): unknown {
     return null;
 }
 
+// Remove special tokens do chat template que alguns servidores (ex:
+// mlx_lm.server) nao filtram da saida — eles vazam como texto na resposta
+// (<|im_start|>, <|im_end|>, <|endoftext|>, <|eot_id|>, etc). Puramente
+// cosmetico: nunca fazem parte do conteudo util.
+const SPECIAL_TOKEN_RE = /<\|(?:im_start|im_end|endoftext|eot_id|end_of_text|begin_of_text|start_header_id|end_header_id|assistant|user|system)\|>/gi;
+export function stripSpecialTokens(text: string): string {
+    return text.replace(SPECIAL_TOKEN_RE, '').trim();
+}
+
 // Maps a raw error message from the HTTP layer into a structured reason.
 // Used by both callAI and callAnthropicAI to produce consistent diagnostics.
 export function classifyApiError(rawMessage: string): { reason: AIResponse['errorReason']; userMessage: string } {
@@ -76,6 +85,9 @@ export function classifyApiError(rawMessage: string): { reason: AIResponse['erro
     }
     if (/econnrefused|enotfound|network|fetch failed|socket hang up|connection (reset|refused|closed)/.test(m)) {
         return { reason: 'connection', userMessage: 'Nao foi possivel conectar ao provedor. Verifique se o LM Studio esta rodando ou se ha internet.' };
+    }
+    if (/compute error|engine protocol|predict stream|out of memory|oom|failed to (load|run) model/.test(m)) {
+        return { reason: 'server_error', userMessage: 'O modelo local falhou ao gerar a resposta (erro de compute no LM Studio). Isso costuma ser falta de memoria (VRAM/RAM) ou o modelo instavel. Tente: recarregar o modelo no LM Studio, usar um quant menor, ou reduzir o contexto.' };
     }
     if (/\b5\d\d\b|internal server error|bad gateway|service unavailable/.test(m)) {
         return { reason: 'server_error', userMessage: 'Erro no servidor do provedor. Tente novamente em instantes.' };
@@ -170,11 +182,35 @@ function requestStream(
         };
 
         const transport = url.startsWith('https://') ? https : http;
+        // Timeout de INATIVIDADE do stream (nao do request inteiro). Modelos
+        // locais lentos (ex: MLX num MacBook Air) levam 15-30s so processando um
+        // prompt grande ANTES do 1o token. O default de socket do Node e curto
+        // e derrubava a conexao nesse intervalo -> "[API] Falha ao chamar o LLM"
+        // intermitente, sempre em prompts maiores. Aqui o timer e RE-ARMADO a
+        // cada chunk (inclusive keepalives ": keepalive" que o MLX envia durante
+        // o processamento), entao so dispara se o servidor ficar REALMENTE mudo.
+        const IDLE_TIMEOUT_MS = 120000; // 2 min sem NENHUM byte = servidor travado
+        let idleTimer: NodeJS.Timeout | null = null;
+        let settled = false;
+        const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+        const armIdle = (req: http.ClientRequest) => {
+            clearIdle();
+            idleTimer = setTimeout(() => {
+                if (settled) { return; }
+                settled = true;
+                req.destroy();
+                reject(new Error('Timeout: o modelo ficou mais de 120s sem responder (servidor local travado ou sem memoria?).'));
+            }, IDLE_TIMEOUT_MS);
+        };
         const req = transport.request(options, (res) => {
+            armIdle(req);
             if (res.statusCode && res.statusCode >= 400) {
                 const chunks: Buffer[] = [];
                 res.on('data', (c: Buffer) => chunks.push(c));
                 res.on('end', () => {
+                    clearIdle();
+                    if (settled) { return; }
+                    settled = true;
                     const raw = Buffer.concat(chunks).toString('utf8');
                     try {
                         const parsed = JSON.parse(raw);
@@ -214,19 +250,29 @@ function requestStream(
                 onLine(rawLine);
             };
             res.on('data', (chunk: Buffer) => {
+                armIdle(req); // atividade recebida (inclui keepalives) → re-arma
                 buf += chunk.toString('utf8');
                 const lines = buf.split('\n');
                 buf = lines.pop() ?? '';
                 for (const line of lines) { dispatchLine(line); }
             });
             res.on('end', () => {
+                clearIdle();
+                if (settled) { return; }
+                settled = true;
                 if (buf) { dispatchLine(buf); }
                 resolve();
             });
+            res.on('error', (e) => {
+                clearIdle();
+                if (settled) { return; }
+                settled = true;
+                reject(e instanceof Error ? e : new Error(String(e)));
+            });
         });
 
-        signal?.addEventListener('abort', () => { req.destroy(); reject(new Error('ABORTED')); });
-        req.on('error', reject);
+        signal?.addEventListener('abort', () => { clearIdle(); if (!settled) { settled = true; req.destroy(); reject(new Error('ABORTED')); } });
+        req.on('error', (e) => { clearIdle(); if (!settled) { settled = true; reject(e instanceof Error ? e : new Error(String(e))); } });
         req.write(payload);
         req.end();
     });
@@ -261,6 +307,41 @@ export async function checkConnection(endpoint: string, authHeaders: Record<stri
         return status === 200;
     } catch {
         return false;
+    }
+}
+
+// Consulta GET /v1/models e retorna o id do primeiro modelo servido, ou null.
+// Usado pelo provider MLX: o mlx_lm.server conhece o modelo pelo id COMPLETO
+// (ex: "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"). Se o usuário digitar o
+// nome sem o prefixo (ou deixar vazio), o POST /v1/chat/completions dá 404.
+// Resolver o id real evita esse 404 sem exigir que o usuário acerte o prefixo.
+export async function fetchFirstModelId(endpoint: string, authHeaders: Record<string, string>): Promise<string | null> {
+    const base = endpoint.replace('/v1/chat/completions', '');
+    try {
+        const parsed = new URL(`${base}/v1/models`);
+        const transport = parsed.protocol === 'https:' ? https : http;
+        const raw = await new Promise<string>((resolve, reject) => {
+            const req = transport.request({
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                path: parsed.pathname + parsed.search,
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
+                timeout: 4000,
+            }, (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+            });
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.on('error', reject);
+            req.end();
+        });
+        const json = JSON.parse(raw);
+        const id = json?.data?.[0]?.id;
+        return typeof id === 'string' && id.length > 0 ? id : null;
+    } catch {
+        return null;
     }
 }
 
@@ -306,6 +387,11 @@ export async function callAI(
             let completionTokens = 0;
             let liveTokens = 0;
             const t0 = Date.now();
+            // Erro reportado DENTRO do stream (ver abaixo). Capturado numa
+            // variavel em vez de lancado no callback — o callback tem um
+            // try/catch que engoliria o throw como "chunk malformado". Depois do
+            // stream terminar, re-lancamos para cair no catch externo.
+            let streamError: Error | null = null;
 
             await requestStream(endpoint, {
                 model, messages, tools: formattedTools, tool_choice: 'auto', stream: true,
@@ -318,6 +404,18 @@ export async function callAI(
                     // the chunk has trailing junk from a concatenated event.
                     const evt = tryParseJsonChunk(data) as any;
                     if (!evt) { return; }
+                    // Erro reportado DENTRO do stream: LM Studio abre o SSE com
+                    // status 200 e, se o engine falha no meio (ex: "Compute
+                    // error"), manda um evento { error: {...} } ou { code: 500,
+                    // message, type } em vez de um delta. Sem tratar isso, o
+                    // stream terminava vazio e o loop interpretava como "contexto
+                    // cheio" — mostrando um checkpoint enganoso.
+                    const streamErr = evt.error || (typeof evt.code === 'number' && evt.code >= 400 ? evt : null);
+                    if (streamErr) {
+                        const detail = streamErr.message || streamErr.error?.message || 'erro reportado pelo modelo no stream';
+                        streamError = new Error(`API stream error ${streamErr.code || ''}: ${detail}`.trim());
+                        return;
+                    }
                     // Capture usage when present (LM Studio sends it in last chunk)
                     if (evt?.usage) {
                         promptTokens = evt.usage.prompt_tokens ?? 0;
@@ -346,6 +444,10 @@ export async function callAI(
                 } catch { /* malformed chunk */ }
             });
 
+            // Erro sinalizado dentro do stream — propaga para o catch externo,
+            // que retorna __INFRA_ERROR__ com a mensagem classificada.
+            if (streamError) { throw streamError; }
+
             const usage = { promptTokens, completionTokens, elapsedMs: Date.now() - t0 };
             if (toolName) {
                 // Tool args are streamed in chunks and accumulated. If the
@@ -359,7 +461,7 @@ export async function callAI(
                 // Tool args failed to parse — log and degrade to text response
                 console.warn('[API] Tool args JSON malformado, degradando para resposta de texto:', toolArgsRaw.slice(0, 200));
             }
-            return { responseText: textAcc.trim(), usage };
+            return { responseText: stripSpecialTokens(textAcc), usage };
 
         } else {
             // ── Non-streaming path (fallback) ──
@@ -388,7 +490,7 @@ export async function callAI(
         console.error('[API] Falha ao chamar o LLM:', { reason, rawMessage, partialLen: textAcc.length });
         return {
             responseText: '__INFRA_ERROR__',
-            partialText: textAcc.trim(),
+            partialText: stripSpecialTokens(textAcc),
             errorReason: reason,
             errorDetail: userMessage,
         };
@@ -466,6 +568,10 @@ export async function callAnthropicAI(
         let currentBlockType = '';
         let liveTokens = 0;
         const t0 = Date.now();
+        // Erro sinalizado dentro do stream (Anthropic manda { type: 'error' }).
+        // Capturado numa variavel e re-lancado apos o stream — o callback tem
+        // try/catch que engoliria um throw como chunk malformado.
+        let streamError: Error | null = null;
 
         await requestStream(`${ANTHROPIC_API_BASE}/v1/messages`, body, headers, signal, (line) => {
             if (!line.startsWith('data: ')) { return; }
@@ -476,6 +582,12 @@ export async function callAnthropicAI(
                 const evt = tryParseJsonChunk(data) as any;
                 if (!evt) { return; }
                 const type: string = evt?.type ?? '';
+
+                if (type === 'error') {
+                    const detail = evt.error?.message || evt.error?.type || 'erro reportado pela API no stream';
+                    streamError = new Error(`API stream error: ${detail}`);
+                    return;
+                }
 
                 if (type === 'content_block_start') {
                     currentBlockType = evt.content_block?.type ?? '';
@@ -501,6 +613,8 @@ export async function callAnthropicAI(
             } catch { /* malformed chunk */ }
         });
 
+        if (streamError) { throw streamError; }
+
         if (toolName) {
             // Tool args are accumulated chunk-by-chunk. Use tolerant parser
             // and fall back to text response if JSON is malformed.
@@ -510,7 +624,7 @@ export async function callAnthropicAI(
             }
             console.warn('[API Anthropic] Tool args JSON malformado, degradando para texto:', toolArgsRaw.slice(0, 200));
         }
-        return { responseText: textAcc.trim() };
+        return { responseText: stripSpecialTokens(textAcc) };
 
     } catch (error) {
         if (error instanceof Error && error.message === 'ABORTED') {
@@ -521,7 +635,7 @@ export async function callAnthropicAI(
         console.error('[API Anthropic] Falha:', { reason, rawMessage, partialLen: textAcc.length });
         return {
             responseText: '__INFRA_ERROR__',
-            partialText: textAcc.trim(),
+            partialText: stripSpecialTokens(textAcc),
             errorReason: reason,
             errorDetail: userMessage,
         };
