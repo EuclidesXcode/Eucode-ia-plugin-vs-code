@@ -35,11 +35,36 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.browserManager = void 0;
 exports.executeBrowserAction = executeBrowserAction;
-const playwright_1 = require("playwright");
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
 const fs = __importStar(require("fs"));
 const url_1 = require("url");
+// Carrega o Playwright sob demanda. Como o pacote NAO vai no .vsix (fica em
+// devDependencies), tentamos resolver de varios lugares: (1) o node_modules do
+// proprio plugin — util em dev; (2) a instalacao GLOBAL do npm do usuario, que
+// e onde 'npm i -g playwright' coloca. Retorna null se nada resolver, para
+// browser_action responder com instrucao de instalacao em vez de crashar.
+function loadPlaywright() {
+    // 1) resolucao padrao (node_modules local / dev)
+    try {
+        return require('playwright');
+    }
+    catch { /* tenta global */ }
+    // 2) resolucao global: descobre o prefixo do npm e monta o caminho.
+    try {
+        const { execSync } = require('child_process');
+        const globalRoot = String(execSync('npm root -g', { encoding: 'utf8' })).trim();
+        if (globalRoot) {
+            return require(path.join(globalRoot, 'playwright'));
+        }
+    }
+    catch { /* sem global tambem */ }
+    return null;
+}
+const PLAYWRIGHT_MISSING_MSG = '[ERRO] O controle de navegador (browser_action) precisa do Playwright, que nao esta instalado. '
+    + 'Instale uma vez com:\n\n  npm i -g playwright && npx playwright install\n\n'
+    + 'ou, no projeto:\n\n  npm i playwright && npx playwright install\n\n'
+    + 'Depois tente novamente.';
 class BrowserManager {
     constructor() {
         this.browser = null;
@@ -74,7 +99,11 @@ class BrowserManager {
             await this.close();
         }
         if (!this.browser || !this.browser.isConnected()) {
-            const launcher = browserType === 'webkit' ? playwright_1.webkit : playwright_1.chromium;
+            const pw = loadPlaywright();
+            if (!pw) {
+                throw new Error(PLAYWRIGHT_MISSING_MSG);
+            }
+            const launcher = browserType === 'webkit' ? pw.webkit : pw.chromium;
             this.browser = await launcher.launch({ headless: false });
             this.currentBrowserType = browserType;
         }
@@ -534,6 +563,11 @@ async function executeBrowserAction(action, params, browserType = 'chromium') {
         }
     }
     catch (e) {
-        return `[ERRO] Falha em browser_action (${action}): ${e instanceof Error ? e.message : String(e)}`;
+        const msg = e instanceof Error ? e.message : String(e);
+        // Playwright ausente: retorna a instrucao de instalacao sem ruido.
+        if (msg.includes('browser_action) precisa do Playwright') || msg.startsWith('[ERRO] O controle de navegador')) {
+            return msg;
+        }
+        return `[ERRO] Falha em browser_action (${action}): ${msg}`;
     }
 }

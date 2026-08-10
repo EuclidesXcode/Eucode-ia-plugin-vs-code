@@ -16,3 +16,5 @@ open_google.py
 **/*.map
 **/*.ts
 !dist/**
+node_modules/playwright/
+node_modules/playwright-core/
