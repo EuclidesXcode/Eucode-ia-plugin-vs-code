@@ -1273,7 +1273,15 @@
             background: #1a0a0a;
             border: 1px solid #c0392b;
             color: #e05555;
-            display: none;
+            /* visibility (nao display): o botao fica sempre no fluxo do flexbox,
+               so invisivel/inerte quando o agente nao esta rodando. Se ele fosse
+               inserido/removido do layout no exato instante em que a resposta
+               comeca a chegar, o botao Enviar/Injetar salta de lugar bem quando
+               o usuario mais provavelmente vai clicar ali de novo — um clique
+               destinado ao Enviar acaba caindo no Stop recem-aparecido e cancela
+               a execucao sem o usuario perceber. */
+            visibility: hidden;
+            pointer-events: none;
         }
         #stop-btn:hover { background: #c0392b; color: #fff; }
 
@@ -2673,7 +2681,8 @@
 
         function setAgentRunning(running) {
             agentRunning = running;
-            stopBtn.style.display = running ? 'inline-flex' : 'none';
+            stopBtn.style.visibility = running ? 'visible' : 'hidden';
+            stopBtn.style.pointerEvents = running ? 'auto' : 'none';
             sendBtn.innerHTML = running
                 ? '<span class="mi" style="font-size:16px">send</span>Injetar'
                 : '<span class="mi" style="font-size:16px">send</span>Enviar';

@@ -45,6 +45,17 @@ export function appendEntry(entries: HistoryEntry[], entry: HistoryEntry): Histo
     return updated;
 }
 
+// [CONTINUE_BUTTON] e puramente um sentinel de UI (o webview o usa pra
+// desenhar o botao "Continuar" e nunca o mostra ao usuario) — sem nenhum
+// significado conversacional. Se ele vazar pro historico reinjetado no
+// modelo, um modelo local pequeno que ve seu proprio turno anterior
+// terminando nesse token tende a imita-lo, entrando num loop degenerado.
+// Removido aqui tambem (nao so na escrita) para saneiar entradas antigas
+// que ja tenham sido persistidas em disco antes desse fix.
+function stripUiSentinels(content: string): string {
+    return content.replace(/\n*\[CONTINUE_BUTTON\]\s*$/, '');
+}
+
 export function buildMessagesFromHistory(
     entries: HistoryEntry[],
     maxPairs: number = MAX_HISTORY_PAIRS
@@ -53,15 +64,16 @@ export function buildMessagesFromHistory(
     const BAD_PREFIXES = ['ERRO DE CONEXAO', 'Nao foi possivel obter resposta', 'O agente atingiu o limite'];
     const clean = entries.filter(e => !BAD_PREFIXES.some(p => e.content.startsWith(p)));
     return clean.slice(-maxPairs * 2).map(e => {
+        const content = stripUiSentinels(e.content);
         if (e.hasImage && e.imageSummary) {
             return {
                 role: e.role,
                 content: e.role === 'user'
-                    ? `[Usuario enviou uma imagem. Analise anterior: ${e.imageSummary}]\n${e.content}`
-                    : e.content,
+                    ? `[Usuario enviou uma imagem. Analise anterior: ${e.imageSummary}]\n${content}`
+                    : content,
             };
         }
-        return { role: e.role, content: e.content };
+        return { role: e.role, content };
     });
 }
 
@@ -71,9 +83,10 @@ export function buildHistorySummary(entries: HistoryEntry[]): string {
     const lines = entries.slice(-20).map(e => {
         const time = new Date(e.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         const prefix = e.role === 'user' ? 'Dev' : 'Eucode';
-        const snippet = e.content.slice(0, 120).replace(/\n/g, ' ');
+        const content = stripUiSentinels(e.content);
+        const snippet = content.slice(0, 120).replace(/\n/g, ' ');
         const imgNote = e.hasImage ? ' [imagem]' : '';
-        return `[${time}] ${prefix}${imgNote}: ${snippet}${e.content.length > 120 ? '...' : ''}`;
+        return `[${time}] ${prefix}${imgNote}: ${snippet}${content.length > 120 ? '...' : ''}`;
     });
 
     return `# HISTORICO RECENTE DA SESSAO\n${lines.join('\n')}`;

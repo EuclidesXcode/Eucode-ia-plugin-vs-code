@@ -50,6 +50,7 @@ const fix_code_action_provider_1 = require("./providers/fix-code-action-provider
 const custom_commands_1 = require("./services/custom-commands");
 const memory_service_1 = require("./services/memory-service");
 const workspace_init_1 = require("./services/workspace-init");
+const rag_indexer_1 = require("./services/rag-indexer");
 const voice_server_1 = require("./services/voice-server");
 const audio_capture_1 = require("./services/audio-capture");
 const wake_word_1 = require("./services/wake-word");
@@ -718,19 +719,16 @@ class EucodeViewProvider {
             const endpoint = (0, settings_1.buildApiEndpoint)(this._settings);
             const authHeaders = (0, settings_1.buildAuthHeader)(this._settings);
             // Resolução do modelo. MLX: o mlx_lm.server conhece o modelo pelo id
-            // COMPLETO (ex: "mlx-community/Qwen2.5-...4bit"). Se o usuário deixar
-            // vazio OU digitar o nome sem o prefixo "org/", o POST dá 404. Então,
-            // para MLX, consultamos /v1/models e usamos o id REAL do servidor,
-            // exceto quando o usuário digitou exatamente esse id. Para os demais
+            // COMPLETO (ex: "mlx-community/Qwen2.5-...4bit"), mas o /v1/models dele
+            // lista TODO o cache Hugging Face do usuário, não só o modelo carregado
+            // — então resolveModelId só completa o prefixo "org/" quando falta, ou
+            // usa o primeiro da lista quando o campo Modelo está vazio; um id
+            // digitado explicitamente nunca é substituído por outro. Para os demais
             // provedores, mantém o comportamento anterior.
             let activeModel;
             if (this._settings.provider === 'mlx') {
-                const serverModel = await (0, api_client_1.fetchFirstModelId)(endpoint, authHeaders);
                 const typed = this._settings.model?.trim() || '';
-                // Usa o que o usuário digitou só se bater com o id do servidor;
-                // senão (vazio ou sem prefixo), usa o id real. Sem servidor no ar,
-                // cai no que foi digitado (o erro de conexão será mostrado depois).
-                activeModel = (typed && typed === serverModel) ? typed : (serverModel || typed);
+                activeModel = (await (0, api_client_1.resolveModelId)(endpoint, authHeaders, typed)) || typed;
             }
             else {
                 activeModel = this._settings.model || constants_1.DEFAULT_MODEL;
@@ -812,8 +810,16 @@ class EucodeViewProvider {
                 if (response && !response.startsWith('[INTERROMPIDO]')) {
                     notifyUser('Tarefa concluida', ['Abrir chat']);
                 }
+                // [CONTINUE_BUTTON] e um sentinel de UI (o webview usa pra desenhar o
+                // botao "Continuar") sem NENHUM significado para o modelo. Ele nunca
+                // pode ir pro historico: buildMessagesFromHistory() reinjeta o texto
+                // salvo aqui como contexto nas proximas rodadas, e um modelo local
+                // pequeno que ve seu proprio turno anterior terminando nesse token
+                // passa a imita-lo — leva a um loop degenerado repetindo a mesma
+                // frase + "[CONTINUE_BUTTON]" ate esgotar os passos.
+                const forHistory = response.replace(/\n*\[CONTINUE_BUTTON\]\s*$/, '');
                 // Truncate long responses before saving to history to avoid inflating future prompts.
-                const historySummary = response.length > 400 ? response.slice(0, 400) + '...' : response;
+                const historySummary = forHistory.length > 400 ? forHistory.slice(0, 400) + '...' : forHistory;
                 this._sessionHistory = this._historyManager.append(this._sessionHistory, { role: 'assistant', content: historySummary, timestamp: Date.now(), mode: userMode });
             }
             webviewView.webview.postMessage({ command: 'agent_response', text: response, mode: userMode });
@@ -845,6 +851,107 @@ function activate(context) {
     context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, new fix_code_action_provider_1.EucodeFixCodeActionProvider(getSettings), { providedCodeActionKinds: fix_code_action_provider_1.EucodeFixCodeActionProvider.providedCodeActionKinds }));
     // Register the fixWithEucode command (used by code action AND context menu).
     context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.fixWithEucode', (uri, range, diags) => (0, fix_code_action_provider_1.executeFixWithEucode)(getSettings, uri, range, diags)));
+    context.subscriptions.push(vscode.commands.registerCommand('eucode-ia.indexRagWorkspace', () => executeIndexRagWorkspace(getSettings)));
+    // Keep the Qdrant index close to what's actually on disk. Without this,
+    // RAG context drifts stale the moment the agent (or the user) edits a
+    // file that was indexed earlier — and stale context is exactly what
+    // makes a local model hallucinate about code that no longer looks like
+    // that. Best-effort and silent: never a toast on every save, only a
+    // transient status-bar message on the ones that actually did something.
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((doc) => reindexRagFile(doc.uri, getSettings)));
+    context.subscriptions.push(vscode.workspace.onDidDeleteFiles((e) => e.files.forEach((uri) => removeRagFile(uri, getSettings))));
+    context.subscriptions.push(vscode.workspace.onDidRenameFiles((e) => e.files.forEach(({ oldUri, newUri }) => {
+        removeRagFile(oldUri, getSettings);
+        reindexRagFile(newUri, getSettings);
+    })));
+}
+function ragIndexOptionsFor(uri, settings) {
+    if (!settings.ragEnabled || settings.ragProvider !== 'qdrant') {
+        return null;
+    }
+    const root = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
+    if (!root) {
+        return null;
+    }
+    return {
+        workspaceRoot: root,
+        provider: settings.ragProvider,
+        endpoint: settings.ragEndpoint,
+        collection: settings.ragCollection,
+        embedHost: settings.ragEmbedHost,
+        embedModel: settings.ragEmbedModel,
+    };
+}
+async function reindexRagFile(uri, getSettings) {
+    if (uri.scheme !== 'file') {
+        return;
+    }
+    const settings = getSettings();
+    const opts = ragIndexOptionsFor(uri, settings);
+    if (!opts || !opts.embedHost || !opts.embedModel) {
+        return;
+    }
+    try {
+        const result = await (0, rag_indexer_1.indexSingleFileForRag)(opts, uri.fsPath);
+        if (result && result.chunksIndexed > 0) {
+            vscode.window.setStatusBarMessage(`$(sync) Eucode IA: RAG atualizado (${path.basename(uri.fsPath)})`, 3000);
+        }
+    }
+    catch {
+        // Best-effort background sync — a down/unreachable embedding server
+        // must not interrupt the user's normal save flow with an error toast.
+    }
+}
+async function removeRagFile(uri, getSettings) {
+    if (uri.scheme !== 'file') {
+        return;
+    }
+    const opts = ragIndexOptionsFor(uri, getSettings());
+    if (!opts) {
+        return;
+    }
+    try {
+        await (0, rag_indexer_1.removeFileFromRag)(opts, uri.fsPath);
+    }
+    catch {
+        // Same as above: best-effort, never surfaced to the user.
+    }
+}
+// Reads the workspace and upserts its files into the configured Qdrant
+// collection so the RAG query path (rag-client.ts) has real data to search.
+async function executeIndexRagWorkspace(getSettings) {
+    const settings = getSettings();
+    if (settings.ragProvider !== 'qdrant') {
+        vscode.window.showWarningMessage('Eucode IA: indexacao automatica so esta disponivel para o backend Qdrant. Selecione Qdrant nas configuracoes de RAG.');
+        return;
+    }
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+        vscode.window.showWarningMessage('Eucode IA: abra uma pasta de workspace antes de indexar.');
+        return;
+    }
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Eucode IA — indexando workspace no Qdrant',
+        cancellable: false,
+    }, async (progress) => {
+        try {
+            const result = await (0, rag_indexer_1.indexWorkspaceForRag)({
+                workspaceRoot: root,
+                provider: settings.ragProvider,
+                endpoint: settings.ragEndpoint,
+                collection: settings.ragCollection,
+                embedHost: settings.ragEmbedHost,
+                embedModel: settings.ragEmbedModel,
+                onProgress: (p) => progress.report({ message: `${p.filesIndexed}/${p.filesScanned} arquivos, ${p.chunksIndexed} chunks` }),
+            });
+            const skippedNote = result.chunksSkipped > 0 ? ` (${result.chunksSkipped} chunks pulados)` : '';
+            vscode.window.showInformationMessage(`Eucode IA: workspace indexado — ${result.filesIndexed} arquivos, ${result.chunksIndexed} chunks na collection "${settings.ragCollection}"${skippedNote}.`);
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`Eucode IA: falha ao indexar para RAG — ${err instanceof Error ? err.message : String(err)}`);
+        }
+    });
 }
 function deactivate() { }
 // ── Voice helpers (used by the webview transcribe handler) ─────────────

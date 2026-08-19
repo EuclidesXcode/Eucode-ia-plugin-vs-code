@@ -38,7 +38,7 @@ exports.tryParseJsonChunk = tryParseJsonChunk;
 exports.stripSpecialTokens = stripSpecialTokens;
 exports.classifyApiError = classifyApiError;
 exports.checkConnection = checkConnection;
-exports.fetchFirstModelId = fetchFirstModelId;
+exports.resolveModelId = resolveModelId;
 exports.checkAnthropicConnection = checkAnthropicConnection;
 exports.callAI = callAI;
 exports.callAnthropicAI = callAnthropicAI;
@@ -362,12 +362,7 @@ async function checkConnection(endpoint, authHeaders) {
         return false;
     }
 }
-// Consulta GET /v1/models e retorna o id do primeiro modelo servido, ou null.
-// Usado pelo provider MLX: o mlx_lm.server conhece o modelo pelo id COMPLETO
-// (ex: "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"). Se o usuário digitar o
-// nome sem o prefixo (ou deixar vazio), o POST /v1/chat/completions dá 404.
-// Resolver o id real evita esse 404 sem exigir que o usuário acerte o prefixo.
-async function fetchFirstModelId(endpoint, authHeaders) {
+async function fetchModelIds(endpoint, authHeaders) {
     const base = endpoint.replace('/v1/chat/completions', '');
     try {
         const parsed = new URL(`${base}/v1/models`);
@@ -390,12 +385,35 @@ async function fetchFirstModelId(endpoint, authHeaders) {
             req.end();
         });
         const json = JSON.parse(raw);
-        const id = json?.data?.[0]?.id;
-        return typeof id === 'string' && id.length > 0 ? id : null;
+        const list = Array.isArray(json?.data) ? json.data : [];
+        return list.map((m) => m?.id).filter((id) => typeof id === 'string' && id.length > 0);
     }
     catch {
-        return null;
+        return [];
     }
+}
+// Resolve qual model id mandar no POST /v1/chat/completions para o provider MLX.
+// O mlx_lm.server conhece o modelo pelo id COMPLETO (ex:
+// "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit"), mas seu /v1/models NAO lista
+// so o modelo carregado via --model: ele escaneia o cache inteiro do Hugging Face
+// (scan_cache_dir) atras de qualquer coisa com "cara" de modelo mlx-lm, e devolve
+// TUDO que encontrar, na ordem em que o cache foi escaneado — nao por relevancia.
+// Se o usuario tiver outro modelo mlx no mesmo cache (ex: um modelo de embedding
+// baixado para o RAG via Qdrant), ele pode aparecer ANTES do modelo carregado.
+// Por isso: um id digitado explicitamente e sempre respeitado tal como esta —
+// so completamos o prefixo "org/" quando falta, e so caimos para "o primeiro da
+// lista" quando o campo Modelo estiver vazio (usuario nao escolheu nada).
+async function resolveModelId(endpoint, authHeaders, typed) {
+    const ids = await fetchModelIds(endpoint, authHeaders);
+    const clean = typed.trim();
+    if (!clean) {
+        return ids[0] ?? null;
+    }
+    if (ids.includes(clean)) {
+        return clean;
+    }
+    const suffixMatch = ids.find((id) => id.endsWith(`/${clean}`));
+    return suffixMatch ?? clean;
 }
 async function checkAnthropicConnection(apiKey) {
     if (!apiKey) {
