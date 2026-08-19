@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.1
+
+- **Correcao critica: `run_command` nao achava `node`/`npx`/`npm` mesmo instalados** — quando o VS Code e aberto pelo Finder/Dock/Spotlight (nao a partir de um terminal), o processo herda o PATH minimo do sistema operacional (`/usr/bin:/bin:/usr/sbin:/sbin`). Homebrew, nvm, pyenv etc so entram no PATH via `.zshrc`/`.zprofile`, que um app GUI nunca sourceia — entao o extension host via `spawn` sem ajuste de `env` simplesmente nao encontrava esses binarios, mesmo funcionando perfeitamente num terminal normal. Reproduzido com `npx create-next-app@latest`: "npx was not found" apesar do Node instalado. Agora o plugin resolve o PATH real do usuario uma vez por sessao (rodando o shell de login do usuario, a mesma tecnica que o terminal integrado do proprio VS Code usa) e usa esse PATH — mais um fallback fixo com os diretorios mais comuns do Homebrew — em toda execucao de comando: `run_command` (ferramenta principal do agente), `runCommand`/`runGit` (usados por outras ferramentas) e a deteccao de instalacao global do Playwright. Verificado com um PATH minimo simulado: `npx --version` e `npm root -g` passaram a resolver corretamente
+
 ## 0.18.0
 
 - **NOVO: indexacao real do RAG via Qdrant** — o backend Qdrant (BETA desde 0.15.0) so sabia *consultar* o vetorial; nao existia nenhum caminho no codigo para *popular* uma collection, entao qualquer teste dependia de indexar na mao por fora do plugin. Agora o comando **"Eucode IA: Indexar Workspace para RAG (Qdrant)"** (Command Palette) varre o workspace, faz chunking, gera embeddings no host configurado (`ragEmbedHost`/`ragEmbedModel` — qualquer servidor `/v1/embeddings` compativel com OpenAI: LM Studio, Ollama, ou um shim sobre MLX) e faz upsert no Qdrant, criando a collection automaticamente com a dimensao certa. Verificado de ponta a ponta contra um Qdrant e um servidor de embeddings locais reais: indexar → consultar → contexto formatado, tudo com dados de verdade

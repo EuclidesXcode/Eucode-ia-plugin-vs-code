@@ -1,6 +1,7 @@
 import { ToolDefinition } from '../services/api-client';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import { buildCommandEnv } from '../tools/shell-tools';
 
 const SERVER_READY_PATTERNS = [
     /listening on/i, /server running/i, /started on/i, /ready on/i,
@@ -22,77 +23,86 @@ const COMMAND_HARD_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const runCommandTool = (command: string, cwd: string): EventEmitter => {
     const emitter = new EventEmitter();
-    const processChild = spawn(command, [], { cwd: cwd || process.cwd(), shell: true });
-
     let outputBuffer = '';
     let resolved = false;
-    const isLongRunning = LONG_RUNNING_PREFIXES.some(p => command.trim().startsWith(p));
 
-    let longRunningTimer: NodeJS.Timeout | null = null;
-    if (isLongRunning) {
-        longRunningTimer = setTimeout(() => {
-            if (!resolved) {
-                resolved = true;
-                emitter.emit('long_running');
-                emitter.emit('done', outputBuffer || '[Process running in background]');
-            }
-        }, 8000);
-    }
-
-    // Hard timeout — kills the process if it never exits.
-    const hardTimer = setTimeout(() => {
+    // Resolve o PATH real do usuario (Homebrew/nvm/pyenv) antes de spawnar —
+    // ver buildCommandEnv em shell-tools.ts. Assincrono, mas nao perde
+    // eventos: o caller (loop.ts) sempre registra os listeners no emitter
+    // de forma sincrona logo apos chamar runCommandTool, entao nada e
+    // emitido antes deles estarem prontos.
+    buildCommandEnv().then((env) => {
         if (resolved) { return; }
-        resolved = true;
-        try { processChild.kill('SIGTERM'); } catch {}
-        setTimeout(() => { try { processChild.kill('SIGKILL'); } catch {} }, 2000);
-        if (longRunningTimer) { clearTimeout(longRunningTimer); }
-        emitter.emit('exit_code', 124);
-        emitter.emit('done', `${outputBuffer}\n[TIMEOUT] Command exceeded ${COMMAND_HARD_TIMEOUT_MS / 1000}s and was terminated. If this was a build on a slow machine, simplify the task or run it manually.`);
-    }, COMMAND_HARD_TIMEOUT_MS);
+        const processChild = spawn(command, [], { cwd: cwd || process.cwd(), shell: true, env });
 
-    function checkServerReady(chunk: string) {
-        if (!resolved && isLongRunning && SERVER_READY_PATTERNS.some(p => p.test(chunk))) {
+        const isLongRunning = LONG_RUNNING_PREFIXES.some(p => command.trim().startsWith(p));
+
+        let longRunningTimer: NodeJS.Timeout | null = null;
+        if (isLongRunning) {
+            longRunningTimer = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    emitter.emit('long_running');
+                    emitter.emit('done', outputBuffer || '[Process running in background]');
+                }
+            }, 8000);
+        }
+
+        // Hard timeout — kills the process if it never exits.
+        const hardTimer = setTimeout(() => {
+            if (resolved) { return; }
             resolved = true;
+            try { processChild.kill('SIGTERM'); } catch {}
+            setTimeout(() => { try { processChild.kill('SIGKILL'); } catch {} }, 2000);
+            if (longRunningTimer) { clearTimeout(longRunningTimer); }
+            emitter.emit('exit_code', 124);
+            emitter.emit('done', `${outputBuffer}\n[TIMEOUT] Command exceeded ${COMMAND_HARD_TIMEOUT_MS / 1000}s and was terminated. If this was a build on a slow machine, simplify the task or run it manually.`);
+        }, COMMAND_HARD_TIMEOUT_MS);
+
+        function checkServerReady(chunk: string) {
+            if (!resolved && isLongRunning && SERVER_READY_PATTERNS.some(p => p.test(chunk))) {
+                resolved = true;
+                if (longRunningTimer) { clearTimeout(longRunningTimer); }
+                clearTimeout(hardTimer);
+                emitter.emit('long_running');
+                setTimeout(() => emitter.emit('done', outputBuffer), 300);
+            }
+        }
+
+        processChild.stdout?.on('data', (data) => {
+            const chunk = data.toString();
+            outputBuffer += chunk;
+            emitter.emit('stdout', chunk);
+            checkServerReady(chunk);
+        });
+
+        processChild.stderr?.on('data', (data) => {
+            const chunk = data.toString();
+            outputBuffer += chunk;
+            emitter.emit('stderr', chunk);
+            checkServerReady(chunk);
+        });
+
+        processChild.on('close', (code) => {
             if (longRunningTimer) { clearTimeout(longRunningTimer); }
             clearTimeout(hardTimer);
-            emitter.emit('long_running');
-            setTimeout(() => emitter.emit('done', outputBuffer), 300);
-        }
-    }
+            if (!resolved) {
+                resolved = true;
+                emitter.emit('exit_code', code ?? 0);
+                emitter.emit('done', outputBuffer || `[Process exited with code ${code}]`);
+            }
+        });
 
-    processChild.stdout?.on('data', (data) => {
-        const chunk = data.toString();
-        outputBuffer += chunk;
-        emitter.emit('stdout', chunk);
-        checkServerReady(chunk);
-    });
-
-    processChild.stderr?.on('data', (data) => {
-        const chunk = data.toString();
-        outputBuffer += chunk;
-        emitter.emit('stderr', chunk);
-        checkServerReady(chunk);
-    });
-
-    processChild.on('close', (code) => {
-        if (longRunningTimer) { clearTimeout(longRunningTimer); }
-        clearTimeout(hardTimer);
-        if (!resolved) {
-            resolved = true;
-            emitter.emit('exit_code', code ?? 0);
-            emitter.emit('done', outputBuffer || `[Process exited with code ${code}]`);
-        }
-    });
-
-    processChild.on('error', (err) => {
-        if (longRunningTimer) { clearTimeout(longRunningTimer); }
-        clearTimeout(hardTimer);
-        if (!resolved) {
-            resolved = true;
-            emitter.emit('exit_code', 1);
-            emitter.emit('stderr', `[ERROR] ${err.message}`);
-            emitter.emit('done', `[ERROR] ${err.message}`);
-        }
+        processChild.on('error', (err) => {
+            if (longRunningTimer) { clearTimeout(longRunningTimer); }
+            clearTimeout(hardTimer);
+            if (!resolved) {
+                resolved = true;
+                emitter.emit('exit_code', 1);
+                emitter.emit('stderr', `[ERROR] ${err.message}`);
+                emitter.emit('done', `[ERROR] ${err.message}`);
+            }
+        });
     });
 
     return emitter;
