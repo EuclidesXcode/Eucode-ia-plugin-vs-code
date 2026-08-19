@@ -57,6 +57,7 @@ const orchestration_metrics_1 = require("../services/orchestration-metrics");
 const fact_sheet_1 = require("../services/fact-sheet");
 const document_extractor_1 = require("../services/document-extractor");
 const browser_tools_1 = require("../tools/browser-tools");
+const pending_action_1 = require("./pending-action");
 const command_safety_1 = require("../tools/command-safety");
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code) {
@@ -457,36 +458,6 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }, (args.browser === 'webkit' ? 'webkit' : 'chromium'));
         },
     };
-}
-const PENDING_ACTION_PATTERNS = [
-    /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
-    /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
-    /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
-    /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
-    /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
-    /vou procurar/i, /vou buscar/i, /vou ler/i, /vou analisar/i, /vou listar/i, /vou abrir/i,
-    /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
-    /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
-    /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
-    /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
-    /escrevi o arquivo/i, /gravei o arquivo/i,
-    /criei o mock/i, /gerei o arquivo/i,
-    /eu removi/i, /removi os/i, /apaguei os/i, /deletei os/i,
-    /eu criei/i, /eu escrevi/i, /eu atualizei/i, /eu modifiquei/i,
-    /eu executei/i, /executei os testes/i, /rodei os testes/i,
-    /testes passaram/i, /testes foram executados/i,
-    /atualizei o/i, /modifiquei o/i, /corrigi o/i,
-    /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
-    /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
-    /i will refactor/i, /i will fix/i, /i will update/i,
-    /i removed/i, /i deleted/i, /i updated/i, /i modified/i,
-    /i ran the tests/i, /tests passed/i, /i executed/i,
-];
-function detectsPendingAction(text, autoMode = false) {
-    const toCheck = autoMode
-        ? text
-        : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
-    return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 // Normaliza um objeto ja parseado para ToolCall, cobrindo os varios shapes que
 // modelos pequenos emitem quando o servidor NAO faz o tool-calling nativo:
@@ -1301,7 +1272,7 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
                 const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
                 const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
-                if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+                if ((0, pending_action_1.detectsPendingAction)(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
                     pendingActionStreak++;
                     orchMetrics.recordPendingNudge();
                     // ── GATILHOS 3/4/5: recuperacao via pago ───────────────

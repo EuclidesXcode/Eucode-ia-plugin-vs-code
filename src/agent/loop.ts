@@ -23,6 +23,7 @@ import { OrchestrationMetrics } from '../services/orchestration-metrics';
 import { FactSheet } from '../services/fact-sheet';
 import { isExtractable, extractDocument } from '../services/document-extractor';
 import { executeBrowserAction } from '../tools/browser-tools';
+import { detectsPendingAction } from './pending-action';
 import { validateCommandSafety } from '../tools/command-safety';
 
 export type TodoItem = { content: string; status: 'pending' | 'in_progress' | 'completed' };
@@ -470,38 +471,6 @@ function buildToolHandlers(
             );
         },
     };
-}
-
-const PENDING_ACTION_PATTERNS = [
-    /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
-    /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
-    /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
-    /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
-    /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
-    /vou procurar/i, /vou buscar/i, /vou ler/i, /vou analisar/i, /vou listar/i, /vou abrir/i,
-    /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
-    /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
-    /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
-    /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
-    /escrevi o arquivo/i, /gravei o arquivo/i,
-    /criei o mock/i, /gerei o arquivo/i,
-    /eu removi/i, /removi os/i, /apaguei os/i, /deletei os/i,
-    /eu criei/i, /eu escrevi/i, /eu atualizei/i, /eu modifiquei/i,
-    /eu executei/i, /executei os testes/i, /rodei os testes/i,
-    /testes passaram/i, /testes foram executados/i,
-    /atualizei o/i, /modifiquei o/i, /corrigi o/i,
-    /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
-    /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
-    /i will refactor/i, /i will fix/i, /i will update/i,
-    /i removed/i, /i deleted/i, /i updated/i, /i modified/i,
-    /i ran the tests/i, /tests passed/i, /i executed/i,
-];
-
-function detectsPendingAction(text: string, autoMode = false): boolean {
-    const toCheck = autoMode
-        ? text
-        : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
-    return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 
 // Normaliza um objeto ja parseado para ToolCall, cobrindo os varios shapes que
