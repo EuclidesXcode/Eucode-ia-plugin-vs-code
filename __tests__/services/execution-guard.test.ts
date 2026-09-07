@@ -135,6 +135,16 @@ describe('ExecutionGuardService', () => {
             });
             expect(guard.evaluate(state)?.reason).toBe('capability_denial');
         });
+
+        // Regression coverage for a real bug: the model claimed it had pushed
+        // the project to GitHub in an earlier turn, then denied it could do
+        // that at all when asked which account/repo — with wording ("nao
+        // tenho a capacidade de SUBIR") that the original regex (only
+        // executar/acessar/rodar) didn't match.
+        it('detects a denial of git push/upload capability', () => {
+            const text = 'Desculpe pela confusão anterior. Como um assistente de inteligência artificial, não tenho a capacidade de subir projetos para o GitHub ou qualquer outro repositório.';
+            expect(detectsCapabilityDenial(text)).toBe(true);
+        });
     });
 
     // Regression coverage for a real bug: a local model got stuck in AUTO

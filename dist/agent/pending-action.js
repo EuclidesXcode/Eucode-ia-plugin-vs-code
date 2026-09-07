@@ -34,6 +34,14 @@ exports.PENDING_ACTION_PATTERNS = [
     /eu executei/i, /executei os testes/i, /rodei os testes/i,
     /testes passaram/i, /testes foram executados/i,
     /atualizei o/i, /modifiquei o/i, /corrigi o/i,
+    // Alegacao de sucesso em push/upload pro GitHub sem chamada real de tool
+    // — reproduzido com o modelo afirmando ter "subido o projeto" quando
+    // run_git nem estava disponivel na rodada (nenhum tool call aconteceu).
+    /\bsubi\b[^.]{0,30}\b(projeto|c[oó]digo|reposit[oó]rio|repo|github)\b/i,
+    /\benviei\b[^.]{0,30}\b(projeto|c[oó]digo|reposit[oó]rio|repo|github)\b/i,
+    /\bpubliquei\b[^.]{0,30}\b(projeto|c[oó]digo|reposit[oó]rio|repo|github)\b/i,
+    /\bfiz\s+(o\s+)?push\b/i, /\bdei\s+push\b/i, /\bpush\s+conclu[ií]do\b/i,
+    /\bi\s+(pushed|uploaded|published)\b/i,
     /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
     /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
     /i will refactor/i, /i will fix/i, /i will update/i,

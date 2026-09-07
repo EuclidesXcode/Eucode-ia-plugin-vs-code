@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.22.0
+
+- **NOVO: `web_search` sempre disponivel (liberdade de acesso a internet)** — antes, `web_search` (alem de `run_git`) so aparecia pro modelo quando o prompt batia com uma lista fixa de palavras-chave (uma otimizacao pra reduzir o espaco de decisao de modelos pequenos). A lista nao cobria pedidos obvios como "GitHub" ou "subir o projeto", entao a ferramenta certa ficava invisivel justamente quando mais fazia falta. `web_search` agora e oferecido em toda rodada de DEV, sem depender de palavra-chave (continua respeitando o toggle de ativar/desativar nas ferramentas)
+- **Correcao: modelo alucinava ter feito push pro GitHub quando a ferramenta de git nem estava disponivel** — reproduzido: o usuario pediu pra subir o projeto pro GitHub, o modelo afirmou ter feito o push (sem nenhuma chamada real a `run_git`, que estava oculto pela mesma lista de palavras-chave — "GitHub"/"subir"/"repositorio" nao batiam com ela), e quando questionado sobre qual conta/link, negou ter qualquer capacidade de subir codigo. A lista de palavras-chave que libera `run_git` agora inclui github/gitlab/bitbucket e verbos de upload (subir/enviar/publicar + projeto/codigo/repositorio). Alem disso, dois detectores foram ampliados: `detectsPendingAction` agora reconhece alegacoes de sucesso falso em push/upload ("subi o projeto", "fiz o push") sem tool call correspondente, e `detectsCapabilityDenial` agora reconhece negacao de capacidade de subir/publicar/enviar (antes so cobria "executar/acessar/rodar")
+
 ## 0.21.0
 
 - **Correcao: token especial do modelo (`<|im_end|>`) vazando no preambulo da timeline** — reproduzido em modo AUTO: o texto que o modelo escreve antes de chamar uma ferramenta e "congelado" no webview a partir do stream bruto (sentinel `\x00CLEAR`), e esse ponto especifico nunca passava pela limpeza de special tokens (`stripSpecialTokens`) que ja existia pro texto FINAL da resposta desde a 0.16.4 — so esse caminho intermediario ficou de fora. Agora o webview tem a mesma limpeza aplicada em todo lugar que pode exibir texto bruto do modelo

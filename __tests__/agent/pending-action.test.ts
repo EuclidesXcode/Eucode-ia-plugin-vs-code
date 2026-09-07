@@ -33,4 +33,16 @@ describe('detectsPendingAction', () => {
     const text = 'O projeto ja tem as dependencias do Next.js instaladas e a tela de login em src/Login.tsx usa Material UI conforme pedido.';
     expect(detectsPendingAction(text, true)).toBe(false);
   });
+
+  // Regression coverage for a real bug: the model claimed it had already
+  // pushed the project to GitHub ("subiu o projeto") in a round where
+  // run_git wasn't even offered as a tool (hidden by the phase-gating
+  // heuristic, which didn't recognize "GitHub"/"subir" as git-relevant
+  // keywords) — a hallucinated success claim with zero tool call behind it.
+  it('catches a false claim of having pushed/uploaded to GitHub', () => {
+    expect(detectsPendingAction('Consegui, subi o projeto para o repositorio com sucesso.', true)).toBe(true);
+    expect(detectsPendingAction('Enviei o codigo para o GitHub.', true)).toBe(true);
+    expect(detectsPendingAction('Publiquei o repositorio no GitHub.', true)).toBe(true);
+    expect(detectsPendingAction('Fiz o push das alteracoes.', true)).toBe(true);
+  });
 });

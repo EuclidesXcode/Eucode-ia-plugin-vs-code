@@ -1079,13 +1079,18 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             ? TOOLS.filter(t => enabledTools.includes(t.name))
             : TOOLS;
         // Gating de ferramentas por fase: para modelo pequeno, menos opções =
-        // decisão mais fácil. Escondemos run_git e web_search a menos que a
-        // tarefa os peça (palavra-chave no prompt) ou o modelo já os tenha usado
-        // nesta rodada. As ferramentas de edição/leitura ficam sempre visíveis.
-        const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag)\b/i.test(userPrompt)
+        // decisão mais fácil. Escondemos run_git a menos que a tarefa o peça
+        // (palavra-chave no prompt) ou o modelo já o tenha usado nesta rodada.
+        // web_search fica SEMPRE visível (liberdade de acesso à internet —
+        // ver CHANGELOG) — era escondido pela mesma lógica, mas a lista de
+        // palavras-chave não cobria pedidos obvios ("GitHub", "subir",
+        // "repositório"), e o modelo, sem a ferramenta de git disponível,
+        // alucinava que tinha feito o push em vez de dizer que não podia. As
+        // ferramentas de edição/leitura ficam sempre visíveis.
+        const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag|github|gitlab|bitbucket)\b/i.test(userPrompt)
+            || /\b(subir?|suba|enviar?|envie|publicar?|publique|mandar?|mande)\b[^.]{0,30}\b(projeto|c[oó]digo|reposit[oó]rio|repo)\b/i.test(userPrompt)
+            || /\b(criar?|crie)\b[^.]{0,20}\breposit[oó]rio\b/i.test(userPrompt)
             || lastToolName === 'run_git';
-        const webRelevant = /\b(http|https|www\.|documenta|pesquis|search|web|api d[eo]|como usar|biblioteca|library|erro desconhecido)\b/i.test(userPrompt)
-            || lastToolName === 'web_search';
         // browser_action (Playwright) so aparece quando a tarefa cita navegador/
         // teste web — evita empurrar uma tool pesada em toda rodada do modelo
         // pequeno.
@@ -1095,7 +1100,6 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             ? baseTools.filter(t => t.name === 'web_search')
             : baseTools.filter(t =>
                 (t.name !== 'run_git'      || gitRelevant) &&
-                (t.name !== 'web_search'   || webRelevant) &&
                 (t.name !== 'browser_action' || browserRelevant)
               );
 

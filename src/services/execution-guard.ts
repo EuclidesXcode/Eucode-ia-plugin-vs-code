@@ -53,9 +53,15 @@ const BUILD_COMMAND_RE = /\b(build|compile|package|tsc|vsce|webpack|rollup|esbui
 export function detectsCapabilityDenial(text: string): boolean {
     return /n[ãa]o ten(ho|ho eu)\s+acesso\s+(direto\s+)?(a|ao|à|aos|às)?\s*(terminal|sistema de arquivos|arquivos do (seu|este) computador|seu computador)/i.test(text)
         || /n[ãa]o posso executar comandos?\s+(diretamente|no (seu|este) computador)?/i.test(text)
-        || /n[ãa]o tenho a capacidade de (executar|acessar|rodar)/i.test(text)
+        // "nao tenho a capacidade de X" — X cobre as tools reais (executar/
+        // acessar/rodar comandos) e tambem git/GitHub (subir/publicar/enviar/
+        // fazer push), reproduzido com o modelo negando poder subir o projeto
+        // pro GitHub mesmo com run_git disponivel como ferramenta.
+        || /n[ãa]o tenho a capacidade de (executar|acessar|rodar|subir|publicar|enviar|fazer\s+(push|upload))/i.test(text)
+        || /n[ãa]o (posso|consigo) (subir|publicar|enviar|fazer\s+(push|upload))\s+(o\s+|para\s+o\s+)?(projeto|c[oó]digo|reposit[oó]rio|github)/i.test(text)
         || /i (don't|do not) have (direct\s+)?access to (your|the) (terminal|file ?system|computer)/i.test(text)
-        || /i (cannot|can't) execute commands? (directly|on your (computer|machine))?/i.test(text);
+        || /i (cannot|can't) execute commands? (directly|on your (computer|machine))?/i.test(text)
+        || /i (cannot|can't) (push|upload|publish) (the\s+)?(project|code|repo(sitory)?)/i.test(text);
 }
 
 export class ExecutionGuardService {
