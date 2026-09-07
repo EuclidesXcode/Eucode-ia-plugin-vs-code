@@ -11,10 +11,22 @@
 // corrective message to inject and why.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ExecutionGuardService = void 0;
+exports.detectsCapabilityDenial = detectsCapabilityDenial;
 // Words that, when present in the user prompt, indicate a build/package task.
 const BUILD_KEYWORDS = /\b(build|compile|package|deploy|vsix|release|marketplace|gerar versao|publish)\b/i;
 // Tool name patterns that count as "build" for the guard.
 const BUILD_COMMAND_RE = /\b(build|compile|package|tsc|vsce|webpack|rollup|esbuild|jest|vitest|pytest|cargo build|go build|mvn|gradle|npm run)\b/i;
+// Model denying it has tool/terminal/filesystem access — wrong whenever DEV
+// mode is active (the real tool schema always goes in the request). Exported
+// so loop.ts can gate entry into the nudge branch on it too, not just the
+// guard's own message selection — see checkCapabilityDenial below.
+function detectsCapabilityDenial(text) {
+    return /n[ãa]o ten(ho|ho eu)\s+acesso\s+(direto\s+)?(a|ao|à|aos|às)?\s*(terminal|sistema de arquivos|arquivos do (seu|este) computador|seu computador)/i.test(text)
+        || /n[ãa]o posso executar comandos?\s+(diretamente|no (seu|este) computador)?/i.test(text)
+        || /n[ãa]o tenho a capacidade de (executar|acessar|rodar)/i.test(text)
+        || /i (don't|do not) have (direct\s+)?access to (your|the) (terminal|file ?system|computer)/i.test(text)
+        || /i (cannot|can't) execute commands? (directly|on your (computer|machine))?/i.test(text);
+}
 class ExecutionGuardService {
     constructor() {
         this.repeatedCallCount = new Map();
@@ -28,7 +40,8 @@ class ExecutionGuardService {
     // Returns the highest-severity guard that applies, or null. Order
     // matters — checked from most-specific to most-generic.
     evaluate(state) {
-        return this.checkDumpedCodeInChat(state)
+        return this.checkCapabilityDenial(state)
+            || this.checkDumpedCodeInChat(state)
             || this.checkWrongFileEdit(state)
             || this.checkBuildPendingButNoCommand(state)
             || this.checkLastCommandFailed(state)
@@ -36,6 +49,25 @@ class ExecutionGuardService {
             || this.checkModelPlanning(state);
     }
     // ── Individual guards ─────────────────────────────────────────────
+    // Model claims it has no tool/terminal/filesystem access ("como sou uma
+    // IA, nao tenho acesso ao terminal do seu computador") even though DEV
+    // mode always sends the real tool schema. Once this kind of refusal is
+    // produced once and saved to session history, it tends to self-reinforce
+    // — the model imitates its own prior turn on every later message, even
+    // after the user insists it does have access. Checked first (before
+    // model_planning) and NOT gated on autoMode: this is wrong in any mode
+    // where tools exist, not just an AUTO continuation problem.
+    checkCapabilityDenial(state) {
+        if (!detectsCapabilityDenial(state.lastModelText)) {
+            return null;
+        }
+        return {
+            severity: 'critical',
+            reason: 'capability_denial',
+            message: 'Você TEM acesso a ferramentas reais neste ambiente (run_command, read_local_file, write_local_file, edit_file, list_directory e outras — vieram no schema desta mensagem). Não é uma limitação sua. Chame a ferramenta apropriada agora para executar a tarefa, em vez de dizer que não pode.',
+            requireHybridIfAvailable: true,
+        };
+    }
     // Model dumped >200 chars of code in chat instead of using a tool.
     checkDumpedCodeInChat(state) {
         if (!state.autoMode) {

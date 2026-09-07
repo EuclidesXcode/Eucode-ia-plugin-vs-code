@@ -1,4 +1,4 @@
-import { ExecutionGuardService, ExecutionState } from '../../src/services/execution-guard';
+import { ExecutionGuardService, ExecutionState, detectsCapabilityDenial } from '../../src/services/execution-guard';
 
 function makeState(overrides: Partial<ExecutionState> = {}): ExecutionState {
     return {
@@ -103,6 +103,37 @@ describe('ExecutionGuardService', () => {
 
         it('returns null when nothing applies (manual mode, clean state)', () => {
             expect(guard.evaluate(makeState({ autoMode: false }))).toBeNull();
+        });
+    });
+
+    // Regression coverage for a real bug: a local model (Qwen via Apple MLX)
+    // denied having tool/terminal access ("Desculpe pela confusao, mas como
+    // sou uma inteligencia artificial, nao tenho acesso direto ao terminal ou
+    // ao sistema de arquivos do seu computador") even though DEV mode always
+    // sends the real tool schema. The user explicitly told it "voce tem
+    // acesso a ferramentas do plugin" and it repeated essentially the same
+    // denial — a self-reinforcing pattern once it's said once. Not gated on
+    // autoMode: wrong in any mode where tools exist.
+    describe('capability denial (model claims it has no tool access)', () => {
+        it('detects the exact denial text from the reported bug', () => {
+            const text = 'Desculpe pela confusão, mas como sou uma inteligência artificial, não tenho acesso direto ao terminal ou ao sistema de arquivos do seu computador. Eu posso ajudar a formular comandos ou orientar como você pode fazer isso você mesmo, mas não posso executar comandos diretamente.';
+            expect(detectsCapabilityDenial(text)).toBe(true);
+        });
+
+        it('detects the English equivalent', () => {
+            expect(detectsCapabilityDenial("As an AI, I don't have direct access to your terminal or file system.")).toBe(true);
+        });
+
+        it('does not flag an ordinary response that never mentions capability', () => {
+            expect(detectsCapabilityDenial('Arquivo atualizado com sucesso em src/Login.tsx.')).toBe(false);
+        });
+
+        it('wins over model_planning and fires even outside autoMode', () => {
+            const state = makeState({
+                autoMode: false,
+                lastModelText: 'não tenho acesso direto ao terminal ou ao sistema de arquivos do seu computador.',
+            });
+            expect(guard.evaluate(state)?.reason).toBe('capability_denial');
         });
     });
 

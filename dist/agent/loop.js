@@ -1272,7 +1272,13 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
                 const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
                 const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
-                if ((0, pending_action_1.detectsPendingAction)(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+                // Model denies having tool/terminal/filesystem access even though DEV
+                // mode always sends the real tool schema. Not gated on AUTO — wrong in
+                // any mode where tools exist. Checked here (not just inside
+                // executionGuard.evaluate) so it also decides whether to enter the
+                // nudge branch at all, not just which message to show once inside it.
+                const deniesCapability = !chatMode && (0, execution_guard_1.detectsCapabilityDenial)(text);
+                if ((0, pending_action_1.detectsPendingAction)(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting || deniesCapability) {
                     pendingActionStreak++;
                     orchMetrics.recordPendingNudge();
                     // ── GATILHOS 3/4/5: recuperacao via pago ───────────────

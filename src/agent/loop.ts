@@ -18,7 +18,7 @@ import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS, CONTEXT_TOKEN_BUDGET, CHARS_PER_TOKEN, contextPruneTokenThreshold } from '../utils/constants';
 import { resolveFilePath } from '../utils/validation';
 import { contextSanitizer } from '../services/context-sanitizer';
-import { ExecutionGuardService, ExecutionState } from '../services/execution-guard';
+import { ExecutionGuardService, ExecutionState, detectsCapabilityDenial } from '../services/execution-guard';
 import { OrchestrationMetrics } from '../services/orchestration-metrics';
 import { FactSheet } from '../services/fact-sheet';
 import { isExtractable, extractDocument } from '../services/document-extractor';
@@ -1323,8 +1323,14 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
             const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
             const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
+            // Model denies having tool/terminal/filesystem access even though DEV
+            // mode always sends the real tool schema. Not gated on AUTO — wrong in
+            // any mode where tools exist. Checked here (not just inside
+            // executionGuard.evaluate) so it also decides whether to enter the
+            // nudge branch at all, not just which message to show once inside it.
+            const deniesCapability = !chatMode && detectsCapabilityDenial(text);
 
-            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting || deniesCapability) {
                 pendingActionStreak++;
                 orchMetrics.recordPendingNudge();
 
