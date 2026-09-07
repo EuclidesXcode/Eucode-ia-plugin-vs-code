@@ -875,7 +875,8 @@ class EucodeViewProvider implements vscode.WebviewViewProvider {
                     // provedor quando 0/ausente. Clampado para faixa segura.
                     this._settings.contextTokenBudget && this._settings.contextTokenBudget > 0
                         ? clampContextBudget(this._settings.contextTokenBudget)
-                        : defaultContextBudgetForProvider(this._settings.provider)
+                        : defaultContextBudgetForProvider(this._settings.provider),
+                    (name, toolArgs, output, success) => webviewView.webview.postMessage({ command: 'tool_result', name, args: toolArgs, output, success })
                 );
                 this._abortController = null;
                 this._injectMessage = null;

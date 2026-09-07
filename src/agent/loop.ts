@@ -651,7 +651,12 @@ export async function runAgentLoop(
     ragEmbedModel?: string,
     // Orcamento de contexto (tokens) ja resolvido pelo chamador (setting do
     // usuario ou default do provedor). Calibra poda e limpeza de output.
-    contextTokenBudget: number = CONTEXT_TOKEN_BUDGET
+    contextTokenBudget: number = CONTEXT_TOKEN_BUDGET,
+    // Chamado uma vez por ferramenta executada (exceto run_command, que já
+    // tem o próprio card de terminal ao vivo — ver onCommandStart/
+    // onCommandOutput/onCommandEnd). Alimenta o card colapsável IN/OUT na
+    // timeline do webview (estilo Claude Code) para as demais ferramentas.
+    onToolResult?: (name: string, args: Record<string, unknown>, output: string, success: boolean) => void
 ): Promise<string> {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
@@ -1190,6 +1195,16 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             const toolOutput = handler
                 ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+
+            // run_command já tem seu próprio card de terminal ao vivo
+            // (onCommandStart/Output/End, com streaming). Para as demais
+            // (incluindo run_git, que roda síncrono e hoje só tem uma linha de
+            // status), este é o único ponto que vê nome+args+output juntos —
+            // alimenta o card colapsável IN/OUT da timeline do webview.
+            if (name !== 'run_command') {
+                const isError = /^\[?(ERRO|ERROR|CANCELLED|BLOCKED)/i.test(toolOutput);
+                onToolResult?.(name, args as Record<string, unknown>, toolOutput, !isError);
+            }
 
             // Alimenta o fact sheet com o essencial ANTES de qualquer poda, para
             // que o fato sobreviva mesmo que o par tool bruto seja descartado.

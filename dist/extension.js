@@ -803,7 +803,7 @@ class EucodeViewProvider {
                 // provedor quando 0/ausente. Clampado para faixa segura.
                 this._settings.contextTokenBudget && this._settings.contextTokenBudget > 0
                     ? (0, constants_1.clampContextBudget)(this._settings.contextTokenBudget)
-                    : (0, constants_1.defaultContextBudgetForProvider)(this._settings.provider));
+                    : (0, constants_1.defaultContextBudgetForProvider)(this._settings.provider), (name, toolArgs, output, success) => webviewView.webview.postMessage({ command: 'tool_result', name, args: toolArgs, output, success }));
                 this._abortController = null;
                 this._injectMessage = null;
                 webviewView.webview.postMessage({ command: 'agent_running', running: false });
