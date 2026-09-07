@@ -132,7 +132,13 @@ function parseErrorLocations(output) {
     }
     return { files, summary };
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, 
+// Aprovar a escrita de um arquivo uma vez dispensa nova confirmacao para
+// ESSE MESMO arquivo pelo resto da tarefa — o risco de editar de novo um
+// arquivo ja aprovado nao muda, entao reperguntar so adiciona friccao sem
+// adicionar seguranca (mesmo espirito do sessionApprovedCommands acima,
+// simplificado: aqui toda aprovacao ja vale para a sessao).
+sessionApprovedFiles, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -213,10 +219,17 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return editResult;
             }
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after });
-            if (!approved) {
-                return '[CANCELLED] User rejected the file change.';
+            const resolvedForApproval = (0, validation_1.resolveFilePath)(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved = await onConfirmWrite({ filePath, before, after });
+                if (!approved) {
+                    return '[CANCELLED] User rejected the file change.';
+                }
+                sessionApprovedFiles.add(resolvedForApproval);
+                if (sessionId) {
+                    (0, memory_service_1.rememberApprovedFile)(sessionId, resolvedForApproval);
+                }
             }
             const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
@@ -265,10 +278,17 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return writeResult;
             }
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved2 = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved2) {
-                return '[CANCELLED] User rejected the file change.';
+            const resolvedForApproval2 = (0, validation_1.resolveFilePath)(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval2)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved2 = await onConfirmWrite({ filePath, before, after: content });
+                if (!approved2) {
+                    return '[CANCELLED] User rejected the file change.';
+                }
+                sessionApprovedFiles.add(resolvedForApproval2);
+                if (sessionId) {
+                    (0, memory_service_1.rememberApprovedFile)(sessionId, resolvedForApproval2);
+                }
             }
             const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
@@ -305,7 +325,11 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                     }
                 }
             }
-            if (!autoMode && !sessionApprovedCommands.has(cmd)) {
+            // Comando classificado como 'safe' (ex: ls, cat, npm test, node --version)
+            // nunca pede confirmacao fora do AUTO — mesmo criterio que ja isenta
+            // subcomandos git read-only (ver run_git/isGitReadOnly abaixo). So
+            // 'dangerous' pede aprovacao manual; 'blocked' ja foi recusado acima.
+            if (!autoMode && safety.risk !== 'safe' && !sessionApprovedCommands.has(cmd)) {
                 onStatus(`Awaiting approval to run: ${cmd}`);
                 const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
                 if (decision === 'block') {
@@ -726,6 +750,9 @@ onToolResult) {
     // Pre-populate from persisted memory so previously-approved commands
     // don't need re-confirmation across reloads of the same session.
     const sessionApprovedCommands = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedCommands : []);
+    // Mesma ideia para arquivos: aprovar a escrita de um arquivo uma vez
+    // dispensa nova confirmacao para ESSE MESMO arquivo pelo resto da sessao.
+    const sessionApprovedFiles = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedFiles : []);
     const fileCache = new Map();
     const dirCache = new Map();
     // Guard único de execução — fonte única dos nudges corretivos do loop.
@@ -742,7 +769,7 @@ onToolResult) {
         lastErrorSummary: '',
         lastEditedFile: '',
     };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, sessionApprovedFiles, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',

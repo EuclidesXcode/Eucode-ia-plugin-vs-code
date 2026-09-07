@@ -22,6 +22,7 @@ export interface SessionMemory {
     updatedAt: number;
     stack?: ProjectStack;
     approvedCommands: string[];    // commands the user marked "permitir na sessao"
+    approvedFiles: string[];       // absolute paths already approved for write/edit this session
     decisions: MemoryDecision[];   // free-form contextual notes
 }
 
@@ -39,6 +40,7 @@ function emptyMemory(sessionId: string): SessionMemory {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         approvedCommands: [],
+        approvedFiles: [],
         decisions: [],
     };
 }
@@ -58,6 +60,7 @@ export function loadSessionMemory(sessionId: string): SessionMemory {
             updatedAt: parsed.updatedAt || Date.now(),
             stack: parsed.stack,
             approvedCommands: Array.isArray(parsed.approvedCommands) ? parsed.approvedCommands : [],
+            approvedFiles: Array.isArray(parsed.approvedFiles) ? parsed.approvedFiles : [],
             decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
         };
     } catch {
@@ -83,6 +86,16 @@ export function rememberApprovedCommand(sessionId: string, command: string): voi
     const normalized = command.trim();
     if (!normalized || mem.approvedCommands.includes(normalized)) { return; }
     mem.approvedCommands.push(normalized);
+    writeMemory(mem);
+}
+
+// Adds an approved file (absolute path) to the session memory, dedup'd.
+// Persists to disk — mirrors rememberApprovedCommand above.
+export function rememberApprovedFile(sessionId: string, absolutePath: string): void {
+    const mem = loadSessionMemory(sessionId);
+    const normalized = absolutePath.trim();
+    if (!normalized || mem.approvedFiles.includes(normalized)) { return; }
+    mem.approvedFiles.push(normalized);
     writeMemory(mem);
 }
 

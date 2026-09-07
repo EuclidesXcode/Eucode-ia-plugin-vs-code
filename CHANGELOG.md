@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0
+
+- **NOVO: menos confirmacao manual, sem abrir mao de seguranca** — duas mudancas, ambas fora do modo AUTO:
+  - `run_command` deixa de pedir aprovacao para comandos classificados como **seguros** pelo classificador de risco ja existente (ex: `ls`, `cat`, `npm test`, `node --version`) — o mesmo criterio que ja isentava subcomandos git read-only (`git status`, `git log`, etc.) agora vale tambem para comandos de terminal em geral. Comandos **perigosos** (ex: `npm publish`, `git reset --hard`) continuam pedindo confirmacao normalmente; nada no bloqueio automatico de comandos destrutivos mudou.
+  - Escrever/editar um arquivo pede confirmacao uma vez; aprovado, o mesmo arquivo nao pede de novo pelo resto da tarefa (nem em mensagens seguintes da mesma sessao — persiste em `.eucode/memory/`, igual ja acontecia com comandos aprovados). Antes, cada write/edit no mesmo arquivo reabria o dialogo de aprovacao, mesmo already tendo sido aprovado minutos antes.
+  - Validado com um harness deterministico (servidor HTTP local simulando respostas do modelo, sem depender de um LLM real cooperar): comando seguro nao aciona confirmacao, comando perigoso aciona, e o segundo write no mesmo arquivo nao reabre o dialogo
+
 ## 0.19.0
 
 - **NOVO: card colapsavel IN/OUT para toda ferramenta, no estilo do Claude Code** — antes, so `run_command` tinha um bloco de terminal ao vivo; as demais ferramentas (ler/escrever arquivo, listar diretorio, buscar, git, etc.) so mostravam uma linha de status ("Reading file: X"), sem detalhe do argumento usado nem da saida real. Agora toda execucao de ferramenta (exceto `run_command`, que mantem seu terminal ao vivo) ganha um card colapsavel na timeline com secoes **IN** (argumentos) e **OUT** (resultado, com erro destacado). O agente (`loop.ts`) passa a emitir nome+argumentos+saida de cada chamada de ferramenta pelo novo callback `onToolResult`, e o webview renderiza o card anexado ao passo correspondente

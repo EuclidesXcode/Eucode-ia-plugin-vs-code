@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { callAI, callAnthropicAI, ToolCall, tryParseJsonChunk } from '../services/api-client';
 import { queryRag, formatRagContext, RagProvider } from '../services/rag-client';
 import { callSupportProvider } from '../services/hybrid-client';
-import { loadSessionMemory, rememberApprovedCommand, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
+import { loadSessionMemory, rememberApprovedCommand, rememberApprovedFile, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
 import { ProjectIntelService } from '../services/project-intel';
 import { TaskDecomposerService, SubTask } from '../services/task-decomposer';
 import { AIProvider, SupportProvider } from '../config/settings';
@@ -143,6 +143,12 @@ function buildToolHandlers(
     autoMode: boolean,
     filesReadThisRound: Set<string>,
     sessionApprovedCommands: Set<string>,
+    // Aprovar a escrita de um arquivo uma vez dispensa nova confirmacao para
+    // ESSE MESMO arquivo pelo resto da tarefa — o risco de editar de novo um
+    // arquivo ja aprovado nao muda, entao reperguntar so adiciona friccao sem
+    // adicionar seguranca (mesmo espirito do sessionApprovedCommands acima,
+    // simplificado: aqui toda aprovacao ja vale para a sessao).
+    sessionApprovedFiles: Set<string>,
     fileCache: Map<string, string>,
     dirCache: Map<string, string>,
     counters: {
@@ -240,9 +246,14 @@ function buildToolHandlers(
                 return editResult;
             }
 
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after });
-            if (!approved) { return '[CANCELLED] User rejected the file change.'; }
+            const resolvedForApproval = resolveFilePath(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved = await onConfirmWrite({ filePath, before, after });
+                if (!approved) { return '[CANCELLED] User rejected the file change.'; }
+                sessionApprovedFiles.add(resolvedForApproval);
+                if (sessionId) { rememberApprovedFile(sessionId, resolvedForApproval); }
+            }
             const editResult2 = editLocalFile(filePath, oldString, newString, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
             counters.filesWritten++;
@@ -292,9 +303,14 @@ function buildToolHandlers(
                 return writeResult;
             }
 
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved2 = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved2) { return '[CANCELLED] User rejected the file change.'; }
+            const resolvedForApproval2 = resolveFilePath(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval2)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved2 = await onConfirmWrite({ filePath, before, after: content });
+                if (!approved2) { return '[CANCELLED] User rejected the file change.'; }
+                sessionApprovedFiles.add(resolvedForApproval2);
+                if (sessionId) { rememberApprovedFile(sessionId, resolvedForApproval2); }
+            }
             const writeResult2 = writeLocalFile(filePath, content, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
             counters.filesWritten++;
@@ -331,7 +347,11 @@ function buildToolHandlers(
                 }
             }
 
-            if (!autoMode && !sessionApprovedCommands.has(cmd)) {
+            // Comando classificado como 'safe' (ex: ls, cat, npm test, node --version)
+            // nunca pede confirmacao fora do AUTO — mesmo criterio que ja isenta
+            // subcomandos git read-only (ver run_git/isGitReadOnly abaixo). So
+            // 'dangerous' pede aprovacao manual; 'blocked' ja foi recusado acima.
+            if (!autoMode && safety.risk !== 'safe' && !sessionApprovedCommands.has(cmd)) {
                 onStatus(`Awaiting approval to run: ${cmd}`);
                 const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
                 if (decision === 'block') {
@@ -766,6 +786,11 @@ export async function runAgentLoop(
     const sessionApprovedCommands = new Set<string>(
         sessionId ? loadSessionMemory(sessionId).approvedCommands : []
     );
+    // Mesma ideia para arquivos: aprovar a escrita de um arquivo uma vez
+    // dispensa nova confirmacao para ESSE MESMO arquivo pelo resto da sessao.
+    const sessionApprovedFiles = new Set<string>(
+        sessionId ? loadSessionMemory(sessionId).approvedFiles : []
+    );
     const fileCache = new Map<string, string>();
     const dirCache = new Map<string, string>();
     // Guard único de execução — fonte única dos nudges corretivos do loop.
@@ -786,7 +811,7 @@ export async function runAgentLoop(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
         onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands,
-        fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget
+        sessionApprovedFiles, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget
     );
 
     const thinkingStatus = [
