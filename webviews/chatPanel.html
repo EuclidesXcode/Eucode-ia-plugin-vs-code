@@ -1308,55 +1308,10 @@
         }
         .context-file .mi { font-size: 11px; }
 
-        /* ── Terminal inside timeline ── */
-        .tl-terminal {
-            margin-top: 6px;
-            background: #0a0e14;
-            border: 1px solid #1a3020;
-            border-radius: 6px;
-            overflow: hidden;
-            width: 100%;
-        }
-        .tl-terminal-header {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 10px;
-            background: #1c1c1c;
-            border-bottom: 1px solid #1a3020;
-            cursor: pointer;
-            user-select: none;
-        }
-        .tl-terminal-header .tl-terminal-cmd {
-            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-            font-size: 10px;
-            color: #7a9ac0;
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .tl-terminal-toggle {
-            font-size: 10px;
-            color: #767676;
-            transition: transform 0.2s;
-        }
-        .tl-terminal.collapsed .tl-terminal-toggle { transform: rotate(-90deg); }
-        .tl-terminal-body {
-            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-            font-size: 11px;
-            color: #e0e0e0;
-            white-space: pre-wrap;
-            word-break: break-all;
-            padding: 8px 10px;
-            max-height: 220px;
-            overflow-y: auto;
-            line-height: 1.5;
-        }
-        .tl-terminal.collapsed .tl-terminal-body { display: none; }
-        .tl-stderr { color: #b0524f; }
-
-        /* ── Tool card (IN/OUT, colapsavel) — estilo Claude Code ── */
+        /* ── Tool card (IN/OUT, colapsavel) — estilo Claude Code. Usado tanto
+           pelo terminal ao vivo do run_command (startTerminal/appendCommandChunk/
+           finalizeTerminal) quanto pelo card generico das demais ferramentas
+           (renderToolResult). ── */
         .tl-toolcard {
             margin-top: 6px;
             background: #1e1e1e;
@@ -1402,6 +1357,8 @@
             line-height: 1.5;
         }
         .tl-toolcard-out-error { color: #b0524f; }
+        .tl-toolcard.tl-toolcard-error { border-color: #9a4a42; }
+        .tl-toolcard.tl-toolcard-error .tl-toolcard-out { color: #b0524f; }
 
         /* ── Resposta final do modelo na timeline ── */
         .tl-item.tl-response .tl-text { color: #d8d8d8 !important; font-style: normal; }
@@ -2153,6 +2110,18 @@
 
     <script>
         const vscode = acquireVsCodeApi();
+
+        // Mesma regex de src/services/api-client.ts (stripSpecialTokens). Alguns
+        // servidores locais (ex: mlx_lm.server) nao filtram os tokens especiais
+        // do modelo no stream — o backend so limpa o texto FINAL acumulado, mas
+        // o preambulo que o modelo escreve antes de chamar uma ferramenta e
+        // "congelado" aqui no webview a partir do streamText bruto (ver o
+        // handler de '\x00CLEAR' logo abaixo), entao precisa da mesma limpeza.
+        const SPECIAL_TOKEN_RE = /<\|(?:im_start|im_end|endoftext|eot_id|end_of_text|begin_of_text|start_header_id|end_header_id|assistant|user|system)\|>/gi;
+        function stripSpecialTokens(text) {
+            return (text || '').replace(SPECIAL_TOKEN_RE, '').trim();
+        }
+
         const chatContainer = document.getElementById('chat-container');
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
@@ -4053,7 +4022,7 @@
                                 // Converte o texto parcial em markdown fixo
                                 pre.remove();
                                 const md = document.createElement('div');
-                                md.innerHTML = marked.parse(streamText);
+                                md.innerHTML = marked.parse(stripSpecialTokens(streamText));
                                 body.appendChild(md);
                             }
                             // Fecha o item de resposta como done mas mantem visivel
@@ -4064,7 +4033,7 @@
                     // Fala o preambulo (ex.: "Vou analisar a estrutura...") que o
                     // modelo escreveu antes de chamar uma ferramenta. Esse texto
                     // nao passa por agent_response, entao falamos aqui.
-                    speakPreamble(streamText);
+                    speakPreamble(stripSpecialTokens(streamText));
                     streamBubble = null;
                     streamText = '';
                     streamRafPending = false;
@@ -4258,7 +4227,7 @@
                     if (pre) { pre.remove(); }
                     if (cleanText || streamText) {
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(cleanText || streamText);
+                        md.innerHTML = marked.parse(stripSpecialTokens(cleanText || streamText));
                         body.appendChild(md);
                         appendContinueButton(body);
                     }
@@ -4269,7 +4238,7 @@
                     const pre = loadingBubble.querySelector('.tl-stream');
                     if (pre) { pre.remove(); }
                     const md = document.createElement('div');
-                    md.innerHTML = marked.parse(cleanText || streamText);
+                    md.innerHTML = marked.parse(stripSpecialTokens(cleanText || streamText));
                     loadingBubble.appendChild(md);
                     appendContinueButton(loadingBubble);
                 } else if (msg.mode === 'chat' && cleanText && loadingBubble) {
@@ -4277,7 +4246,7 @@
                     const dots = loadingBubble.querySelector('.chat-pending-dots');
                     if (dots) { dots.remove(); }
                     const md = document.createElement('div');
-                    md.innerHTML = marked.parse(cleanText);
+                    md.innerHTML = marked.parse(stripSpecialTokens(cleanText));
                     loadingBubble.appendChild(md);
                     appendContinueButton(loadingBubble);
                 } else if (!streamText && cleanText) {
@@ -4292,7 +4261,7 @@
                         const body = document.createElement('div');
                         body.className = 'tl-body';
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(cleanText);
+                        md.innerHTML = marked.parse(stripSpecialTokens(cleanText));
                         body.appendChild(md);
                         appendContinueButton(body);
                         item.appendChild(dot);
@@ -4657,6 +4626,12 @@
         let activeTerminalWrapper = null;
         let activeTerminalItem = null;
 
+        // O terminal do run_command usa o MESMO componente visual dos demais
+        // cards de ferramenta (tl-toolcard, IN/OUT) — so que, ao contrario dos
+        // outros (que so sabem o resultado no final), este atualiza o OUT
+        // incrementalmente enquanto o comando roda, e comeca expandido (o
+        // usuario normalmente quer acompanhar a saida ao vivo, como no Bash do
+        // Claude Code) em vez de colapsado como as demais ferramentas.
         function startTerminal(cmd) {
             finalizeTerminal();
 
@@ -4680,38 +4655,54 @@
             label.className = 'tl-text';
             label.textContent = cmd ? `Running: ${cmd}` : 'Running command...';
 
-            // Terminal block (collapsible)
-            const terminal = document.createElement('div');
-            terminal.className = 'tl-terminal';
+            const card = document.createElement('div');
+            card.className = 'tl-toolcard';
 
             const header = document.createElement('div');
-            header.className = 'tl-terminal-header';
-            const cmdSpan = document.createElement('span');
-            cmdSpan.className = 'tl-terminal-cmd';
-            cmdSpan.textContent = cmd || 'terminal';
+            header.className = 'tl-toolcard-header';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tl-toolcard-name';
+            nameSpan.textContent = 'Bash';
             const toggle = document.createElement('span');
-            toggle.className = 'tl-terminal-toggle mi';
+            toggle.className = 'tl-toolcard-toggle mi';
             toggle.textContent = 'expand_more';
-            header.appendChild(cmdSpan);
+            header.appendChild(nameSpan);
             header.appendChild(toggle);
             header.addEventListener('click', () => {
-                terminal.classList.toggle('collapsed');
-                toggle.textContent = terminal.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+                card.classList.toggle('collapsed');
+                toggle.textContent = card.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
             });
 
-            const termBody = document.createElement('div');
-            termBody.className = 'tl-terminal-body';
+            const cardBody = document.createElement('div');
+            cardBody.className = 'tl-toolcard-body';
 
-            terminal.appendChild(header);
-            terminal.appendChild(termBody);
+            const inLabel = document.createElement('div');
+            inLabel.className = 'tl-toolcard-section-label';
+            inLabel.textContent = 'IN';
+            const inBox = document.createElement('div');
+            inBox.className = 'tl-toolcard-in';
+            inBox.textContent = cmd || 'terminal';
+
+            const outLabel = document.createElement('div');
+            outLabel.className = 'tl-toolcard-section-label';
+            outLabel.textContent = 'OUT';
+            const outBox = document.createElement('div');
+            outBox.className = 'tl-toolcard-out';
+
+            cardBody.appendChild(inLabel);
+            cardBody.appendChild(inBox);
+            cardBody.appendChild(outLabel);
+            cardBody.appendChild(outBox);
+            card.appendChild(header);
+            card.appendChild(cardBody);
             body.appendChild(label);
-            body.appendChild(terminal);
+            body.appendChild(card);
             item.appendChild(dot);
             item.appendChild(body);
             timeline.appendChild(item);
 
-            activeTerminal = termBody;
-            activeTerminalWrapper = terminal;
+            activeTerminal = outBox;
+            activeTerminalWrapper = card;
             activeTerminalItem = item;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -4719,7 +4710,7 @@
         function appendCommandChunk(chunk) {
             if (!activeTerminal) { startTerminal(''); }
             activeTerminal.textContent += chunk;
-            activeTerminalWrapper.scrollTop = activeTerminalWrapper.scrollHeight;
+            activeTerminal.scrollTop = activeTerminal.scrollHeight;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
@@ -4727,12 +4718,11 @@
             if (activeTerminalItem) {
                 activeTerminalItem.classList.remove('active');
                 activeTerminalItem.classList.add(isError ? 'error' : 'done');
-                // Collapse the terminal body after it finishes
-                if (activeTerminalWrapper) {
-                    activeTerminalWrapper.classList.add('collapsed');
-                    const toggle = activeTerminalWrapper.querySelector('.tl-terminal-toggle');
-                    if (toggle) { toggle.textContent = 'chevron_right'; }
+                if (activeTerminalWrapper && isError) {
+                    activeTerminalWrapper.classList.add('tl-toolcard-error');
                 }
+                // Mantem expandido ao terminar — o usuario ve a saida completa
+                // sem precisar clicar, igual ao Bash do Claude Code.
             }
             activeTerminal = null;
             activeTerminalWrapper = null;

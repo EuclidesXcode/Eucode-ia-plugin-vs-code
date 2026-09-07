@@ -137,6 +137,51 @@ describe('ExecutionGuardService', () => {
         });
     });
 
+    // Regression coverage for a real bug: a local model got stuck in AUTO
+    // mode repeating the exact same "corrija o erro e tente novamente"
+    // response across every retry after a build kept failing, burning the
+    // whole retry budget (hard cap) on identical attempts instead of trying
+    // something different or admitting it was stuck.
+    describe('checkRepeatedText (model stuck repeating the same response)', () => {
+        it('does not fire on the first occurrence of a text', () => {
+            const state = makeState({ lastModelText: 'ERRO ao rodar o build: corrija e tente novamente.' });
+            expect(guard.evaluate(state)?.reason).not.toBe('repeated_text');
+        });
+
+        it('does not fire on the second occurrence (only 1 repeat)', () => {
+            const text = 'ERRO ao rodar o build: corrija e tente novamente.';
+            guard.evaluate(makeState({ lastModelText: text }));
+            const result = guard.evaluate(makeState({ lastModelText: text }));
+            expect(result?.reason).not.toBe('repeated_text');
+        });
+
+        it('fires on the third identical occurrence in a row', () => {
+            const text = 'ERRO ao rodar o build: corrija e tente novamente.';
+            guard.evaluate(makeState({ lastModelText: text }));
+            guard.evaluate(makeState({ lastModelText: text }));
+            const result = guard.evaluate(makeState({ lastModelText: text }));
+            expect(result?.reason).toBe('repeated_text');
+        });
+
+        it('resets the streak once the model says something different', () => {
+            const textA = 'ERRO ao rodar o build: corrija e tente novamente.';
+            const textB = 'Corrigi o import em routes.js, rodando o build de novo.';
+            guard.evaluate(makeState({ lastModelText: textA }));
+            guard.evaluate(makeState({ lastModelText: textA }));
+            guard.evaluate(makeState({ lastModelText: textB })); // breaks the streak
+            const result = guard.evaluate(makeState({ lastModelText: textB }));
+            expect(result?.reason).not.toBe('repeated_text');
+        });
+
+        it('fires even outside autoMode', () => {
+            const text = 'nao consigo continuar.';
+            const state = { autoMode: false, lastModelText: text };
+            guard.evaluate(makeState(state));
+            guard.evaluate(makeState(state));
+            expect(guard.evaluate(makeState(state))?.reason).toBe('repeated_text');
+        });
+    });
+
     describe('detectRepeatLoop', () => {
         it('detects 3+ identical calls but excludes run_command/todo_update', () => {
             const args = { filePath: 'a.ts' };

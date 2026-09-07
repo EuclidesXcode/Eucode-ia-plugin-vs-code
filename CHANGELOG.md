@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0
+
+- **Correcao: token especial do modelo (`<|im_end|>`) vazando no preambulo da timeline** — reproduzido em modo AUTO: o texto que o modelo escreve antes de chamar uma ferramenta e "congelado" no webview a partir do stream bruto (sentinel `\x00CLEAR`), e esse ponto especifico nunca passava pela limpeza de special tokens (`stripSpecialTokens`) que ja existia pro texto FINAL da resposta desde a 0.16.4 — so esse caminho intermediario ficou de fora. Agora o webview tem a mesma limpeza aplicada em todo lugar que pode exibir texto bruto do modelo
+- **NOVO: deteccao de resposta repetida (modelo travado no mesmo erro)** — reproduzido em AUTO com um build falhando: o modelo respondeu a mesma frase ("corrija o erro e tente novamente") identica em toda tentativa, ate esgotar as 15 tentativas do teto de auto-continuacao sem nunca tentar algo diferente. Novo guard `checkRepeatedText` (`execution-guard.ts`) detecta 3 respostas identicas seguidas e injeta uma correcao mais forte (pedindo causa raiz especifica ou admitir que travou) — ainda com tentativas sobrando, em vez de descobrir so no fim que nunca ia sair do lugar. Vale em qualquer modo, nao so AUTO
+- **Card do Bash unificado com o das demais ferramentas (IN/OUT, estilo Claude Code)** — o terminal ao vivo do `run_command` usava um componente proprio (so comando + saida crua); agora usa o mesmo card colapsavel com secoes **IN** (comando) e **OUT** (saida, atualizada em tempo real) que as demais ferramentas ja tinham desde a 0.19.0. Diferente das outras (que so sabem o resultado no final e comecam colapsadas), o card do Bash comeca **expandido** — o mais comum e querer acompanhar a saida ao vivo — e permanece expandido ao terminar, para revisar a saida completa sem precisar clicar
+
 ## 0.20.0
 
 - **NOVO: menos confirmacao manual, sem abrir mao de seguranca** — duas mudancas, ambas fora do modo AUTO:

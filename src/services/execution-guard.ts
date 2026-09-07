@@ -60,6 +60,12 @@ export function detectsCapabilityDenial(text: string): boolean {
 
 export class ExecutionGuardService {
     private repeatedCallCount = new Map<string, number>();
+    // Streak-tracking for checkRepeatedText — has to survive across evaluate()
+    // calls that pick a DIFFERENT guard as the winner, so it can't live as a
+    // local inside that method: it's updated unconditionally in evaluate()
+    // itself (see comment there) rather than short-circuited by the ||-chain.
+    private lastText = '';
+    private textRepeatCount = 0;
 
     // Records a tool call so subsequent guards can see history.
     track(state: ExecutionState, call: ToolCallRecord): void {
@@ -71,7 +77,12 @@ export class ExecutionGuardService {
     // Returns the highest-severity guard that applies, or null. Order
     // matters — checked from most-specific to most-generic.
     evaluate(state: ExecutionState): NudgeResult | null {
+        // checkRepeatedText mutates streak state — called unconditionally
+        // (not as part of the ||-chain below) so its bookkeeping never gets
+        // skipped just because a different guard ends up winning this call.
+        const repeatedTextResult = this.checkRepeatedText(state);
         return this.checkCapabilityDenial(state)
+            || repeatedTextResult
             || this.checkDumpedCodeInChat(state)
             || this.checkWrongFileEdit(state)
             || this.checkBuildPendingButNoCommand(state)
@@ -171,6 +182,33 @@ export class ExecutionGuardService {
             reason: 'build_not_passed',
             message: 'Você escreveu arquivos mas o build ainda não passou. Próximo passo: rode o build (ex: npm run build). Se falhar, corrija e tente de novo.',
             requireHybridIfAvailable: false,
+        };
+    }
+
+    // Model produced the SAME text-only response twice (or more) in a row —
+    // a real failure mode reproduced with a local model stuck retrying the
+    // same failed build without changing approach: it repeated an identical
+    // "corrija o erro e tente novamente" message across every AUTO retry
+    // until the hard cap gave up, burning the whole retry budget on
+    // attempts that were never going to be different. Catching this after
+    // just 2 repeats (3 identical responses total) means the loop finds out
+    // it's stuck WHILE it still has retries left to actually try something
+    // else, instead of only at the very end.
+    private checkRepeatedText(state: ExecutionState): NudgeResult | null {
+        const t = state.lastModelText.trim();
+        if (!t) { this.lastText = ''; this.textRepeatCount = 0; return null; }
+        if (t === this.lastText) {
+            this.textRepeatCount++;
+        } else {
+            this.lastText = t;
+            this.textRepeatCount = 0;
+        }
+        if (this.textRepeatCount < 2) { return null; }
+        return {
+            severity: 'critical',
+            reason: 'repeated_text',
+            message: `Voce respondeu exatamente a mesma coisa ${this.textRepeatCount + 1} vezes seguidas sem progredir. Repetir nao vai destravar sozinho. Releia o ultimo erro com atencao, identifique a causa raiz especifica (nome de arquivo, linha, mensagem exata) e faca algo CONCRETAMENTE DIFERENTE do que ja tentou — ou, se realmente nao souber o proximo passo, pare e explique ao usuario o que esta bloqueando, em vez de repetir a mesma frase.`,
+            requireHybridIfAvailable: true,
         };
     }
 
