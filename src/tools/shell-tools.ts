@@ -83,9 +83,66 @@ const GIT_READ_ONLY = new Set([
     'shortlog', 'describe', 'rev-parse', 'ls-files', 'blame',
 ]);
 
+// O VS Code, quando aberto pelo Finder/Dock/Spotlight (nao por um terminal),
+// roda com o PATH minimo do sistema (ex: /usr/bin:/bin:/usr/sbin:/sbin) —
+// sem Homebrew, nvm, pyenv etc, porque esses so entram no PATH via
+// .zshrc/.zprofile, que um app GUI nunca sourceia. O extension host herda
+// esse PATH minimo, entao `spawn('sh', ...)` sem ajuste nao acha `node`,
+// `npx`, `npm` etc MESMO com eles instalados e funcionando num terminal
+// normal. E a mesma classe de bug do terminal integrado do proprio VS Code,
+// que a Microsoft resolve rodando o shell de login do usuario uma vez para
+// capturar o PATH real. Fazemos o mesmo aqui: resolvido uma vez, em cache
+// pelo resto da sessao.
+let shellPathPromise: Promise<string> | null = null;
+
+function resolveShellPath(): Promise<string> {
+    const fallback = process.env.PATH || '';
+    if (process.platform === 'win32') { return Promise.resolve(fallback); }
+    if (shellPathPromise) { return shellPathPromise; }
+    shellPathPromise = new Promise((resolve) => {
+        const shellBin = process.env.SHELL || '/bin/zsh';
+        const marker = '__EUCODE_PATH__';
+        let out = '';
+        let settled = false;
+        const finish = (resolvedPath: string) => {
+            if (settled) { return; }
+            settled = true;
+            resolve(resolvedPath);
+        };
+        try {
+            // -ilc: shell de LOGIN e INTERATIVO, para sourcear .zprofile/.zshrc/
+            // .bash_profile (onde ficam os PATH de Homebrew/nvm/pyenv).
+            const child = spawn(shellBin, ['-ilc', `echo "${marker}$PATH${marker}"`], { timeout: 5000 });
+            child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
+            child.on('close', () => {
+                const match = out.match(new RegExp(`${marker}(.*)${marker}`, 's'));
+                finish(match?.[1]?.trim() || fallback);
+            });
+            child.on('error', () => finish(fallback));
+        } catch {
+            finish(fallback);
+        }
+    });
+    return shellPathPromise;
+}
+
+// Diretorios comuns de runtimes/gerenciadores de pacote no macOS/Linux —
+// somados por seguranca ao final do PATH resolvido, para o caso da resolucao
+// via shell nao capturar algo (ex: .zshrc customizado que nao roda em -ilc).
+const COMMON_BIN_DIRS = ['/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/local/sbin'];
+
+export async function buildCommandEnv(): Promise<NodeJS.ProcessEnv> {
+    if (process.platform === 'win32') { return process.env; }
+    const shellPath = await resolveShellPath();
+    const dirs = shellPath ? shellPath.split(path.delimiter) : [];
+    for (const dir of COMMON_BIN_DIRS) { if (!dirs.includes(dir)) { dirs.push(dir); } }
+    return { ...process.env, PATH: dirs.join(path.delimiter) };
+}
+
 function runAsync(command: string, cwd: string, timeoutMs: number): Promise<string> {
-    return new Promise(resolve => {
-        const child = spawn('sh', ['-c', command], { cwd, timeout: timeoutMs });
+    return new Promise(async resolve => {
+        const env = await buildCommandEnv();
+        const child = spawn('sh', ['-c', command], { cwd, timeout: timeoutMs, env });
         const stdout: string[] = [];
         const stderr: string[] = [];
         child.stdout.on('data', (d: Buffer) => stdout.push(d.toString()));
@@ -101,9 +158,10 @@ function runAsync(command: string, cwd: string, timeoutMs: number): Promise<stri
     });
 }
 
-function isRgAvailable(): Promise<boolean> {
+async function isRgAvailable(): Promise<boolean> {
+    const env = await buildCommandEnv();
     return new Promise(resolve => {
-        const child = spawn('rg', ['--version'], {});
+        const child = spawn('rg', ['--version'], { env });
         child.on('error', () => resolve(false));
         child.on('close', (code) => resolve(code === 0));
     });

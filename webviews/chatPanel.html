@@ -24,8 +24,8 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 13px;
-            background: #0a0a0f;
-            color: #c9d1d9;
+            background: #1a1a1a;
+            color: #d8d8d8;
             height: 100vh;
             display: flex;
             flex-direction: column;
@@ -34,11 +34,11 @@
         /* ── Header ── */
         #header {
             padding: 10px 14px;
-            border-bottom: 1px solid #13131f;
+            border-bottom: 1px solid #262626;
             display: flex;
             align-items: center;
             gap: 8px;
-            background: #0d0d1a;
+            background: #212121;
             flex-shrink: 0;
         }
 
@@ -46,13 +46,13 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #e05555;
+            background: #b0605c;
             flex-shrink: 0;
             transition: background 0.4s, box-shadow 0.4s;
         }
         #status-dot.online {
-            background: #22c55e;
-            box-shadow: 0 0 6px #22c55e88;
+            background: #5a9a6a;
+            box-shadow: 0 0 6px #5a9a6a88;
         }
 
         #header .title {
@@ -60,7 +60,7 @@
             font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: #3a7bd5;
+            color: #5b7ca8;
             flex: 1;
         }
 
@@ -68,9 +68,9 @@
 
         .header-btn {
             background: none;
-            border: 1px solid #1e2a3a;
+            border: 1px solid #3a3a3a;
             border-radius: 4px;
-            color: #3a7bd5;
+            color: #5b7ca8;
             cursor: pointer;
             font-size: 10px;
             font-weight: 700;
@@ -82,25 +82,25 @@
             gap: 5px;
             transition: border-color 0.15s, background 0.15s;
         }
-        .header-btn:hover { border-color: #3a7bd5; background: #0d1a2e; }
+        .header-btn:hover { border-color: #5b7ca8; background: #2a2a2a; }
         .header-btn.auto-active {
-            border-color: #22c55e;
-            color: #22c55e;
-            background: #0a1a0f;
+            border-color: #5a9a6a;
+            color: #5a9a6a;
+            background: #1e2420;
         }
         .header-btn.auto-active:hover { background: #0d2212; }
         .header-btn.hybrid-active {
-            border-color: #00d4ff;
-            color: #00d4ff;
-            background: #001a26;
-            box-shadow: 0 0 6px #00d4ff44;
+            border-color: #8a94b8;
+            color: #8a94b8;
+            background: #202020;
+            box-shadow: 0 0 6px #8a94b844;
         }
         .header-btn.hybrid-active:hover { background: #002030; }
         .header-btn.disabled {
             opacity: 0.35;
             cursor: not-allowed;
         }
-        .header-btn.disabled:hover { border-color: #1e2a3a; background: none; }
+        .header-btn.disabled:hover { border-color: #3a3a3a; background: none; }
         /* contador de tokens no header (a esquerda do botao Modos) */
         .header-token {
             display: inline-flex;
@@ -109,9 +109,9 @@
             padding: 4px 10px;
             font-size: 11px;
             font-weight: 700;
-            color: #c9d1d9;
-            background: #0a0a15;
-            border: 1px solid #1e2a3a;
+            color: #d8d8d8;
+            background: #1e1e1e;
+            border: 1px solid #3a3a3a;
             border-radius: 6px;
             margin-right: 6px;
         }
@@ -126,19 +126,19 @@
             font-size: 9px;
             font-weight: 600;
             letter-spacing: 0.04em;
-            color: #6a7f99;
+            color: #8a8a8a;
             margin-left: 4px;
         }
-        .modes-summary.has-active { color: #22c55e; }
-        .modes-summary.chat { color: #8b9eff; }
+        .modes-summary.has-active { color: #5a9a6a; }
+        .modes-summary.chat { color: #9a9a9a; }
         .modes-dropdown {
             display: none;
             position: absolute;
             top: calc(100% + 6px);
             right: 0;
             min-width: 280px;
-            background: #0a0a15;
-            border: 1px solid #1e2a3a;
+            background: #1e1e1e;
+            border: 1px solid #3a3a3a;
             border-radius: 6px;
             box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
             padding: 10px;
@@ -150,13 +150,13 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #3a5a7a;
+            color: #767676;
             margin-bottom: 6px;
             margin-top: 4px;
         }
         .modes-segmented {
             display: flex;
-            border: 1px solid #1e2a3a;
+            border: 1px solid #3a3a3a;
             border-radius: 5px;
             overflow: hidden;
             margin-bottom: 12px;
@@ -165,7 +165,7 @@
             flex: 1;
             background: none;
             border: none;
-            color: #6a7f99;
+            color: #8a8a8a;
             cursor: pointer;
             font-size: 11px;
             font-weight: 700;
@@ -173,14 +173,14 @@
             padding: 8px 10px;
             transition: background 0.12s, color 0.12s;
         }
-        .modes-seg-btn:hover { background: #0d1a2e; color: #c9d1d9; }
+        .modes-seg-btn:hover { background: #2a2a2a; color: #d8d8d8; }
         .modes-seg-btn.active {
-            background: #0d1a2e;
-            color: #3a7bd5;
+            background: #2a2a2a;
+            color: #5b7ca8;
         }
         .modes-seg-btn[data-mode="chat"].active {
-            color: #8b9eff;
-            background: #0d0f26;
+            color: #9a9a9a;
+            background: #242424;
         }
         .modes-toggle-row {
             display: flex;
@@ -201,24 +201,24 @@
         }
         .modes-toggle-name {
             font-size: 12px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             display: inline-flex;
             align-items: center;
             gap: 6px;
         }
         .modes-toggle-desc {
             font-size: 10px;
-            color: #4a5568;
+            color: #7a7a7a;
             line-height: 1.3;
         }
         .modes-chat-notice {
             margin-top: 10px;
             padding: 8px 10px;
-            background: #0d0f26;
+            background: #242424;
             border: 1px solid #2a2f4a;
             border-radius: 4px;
             font-size: 10px;
-            color: #8b9eff;
+            color: #9a9a9a;
             line-height: 1.4;
         }
 
@@ -226,8 +226,8 @@
         #sessions-panel {
             display: none;
             flex-direction: column;
-            background: #0d0d1a;
-            border-bottom: 1px solid #13131f;
+            background: #212121;
+            border-bottom: 1px solid #262626;
             max-height: 240px;
             overflow-y: auto;
         }
@@ -237,7 +237,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 8px 14px;
-            border-bottom: 1px solid #13131f;
+            border-bottom: 1px solid #262626;
             flex-shrink: 0;
         }
         .sessions-panel-title {
@@ -245,7 +245,7 @@
             font-weight: 700;
             letter-spacing: 0.1em;
             text-transform: uppercase;
-            color: #3a5080;
+            color: #767676;
         }
         .sessions-list { display: flex; flex-direction: column; }
         .session-item {
@@ -254,28 +254,28 @@
             gap: 8px;
             padding: 8px 14px;
             cursor: pointer;
-            border-bottom: 1px solid #13131f;
+            border-bottom: 1px solid #262626;
             transition: background 0.12s;
         }
-        .session-item:hover { background: #0d1525; }
-        .session-item.active { background: #0d1a2e; border-left: 2px solid #3a7bd5; }
+        .session-item:hover { background: #202020; }
+        .session-item.active { background: #2a2a2a; border-left: 2px solid #5b7ca8; }
         .session-info { flex: 1; min-width: 0; }
         .session-title {
             font-size: 11px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
         .session-date {
             font-size: 10px;
-            color: #3a5080;
+            color: #767676;
             margin-top: 2px;
         }
         .session-delete {
             background: none;
             border: none;
-            color: #3a3a5a;
+            color: #3a3a3a;
             cursor: pointer;
             padding: 2px;
             border-radius: 3px;
@@ -284,7 +284,7 @@
             flex-shrink: 0;
             transition: color 0.12s;
         }
-        .session-delete:hover { color: #e05555; }
+        .session-delete:hover { color: #b0605c; }
 
         /* ── Config panel ── */
         #config-panel {
@@ -292,8 +292,8 @@
             flex-direction: column;
             gap: 14px;
             padding: 16px;
-            border-bottom: 1px solid #13131f;
-            background: #0d0d1a;
+            border-bottom: 1px solid #262626;
+            background: #212121;
         }
         #config-panel.open { display: flex; }
 
@@ -302,18 +302,18 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #3a5080;
+            color: #767676;
             margin-bottom: 6px;
         }
 
         .config-select,
         .config-input {
             width: 100%;
-            background: #0a0a15;
-            border: 1px solid #1a1a2e;
+            background: #1e1e1e;
+            border: 1px solid #242424;
             border-radius: 6px;
             padding: 8px 12px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             font-size: 13px;
             font-family: inherit;
             outline: none;
@@ -321,13 +321,13 @@
         }
         .config-select:focus,
         .config-input:focus {
-            border-color: #3a7bd5;
-            box-shadow: 0 0 0 2px #3a7bd520;
+            border-color: #5b7ca8;
+            box-shadow: 0 0 0 2px #5b7ca820;
         }
         .config-select { cursor: pointer; }
         .config-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
 
-        .config-hint { font-size: 11px; color: #2a3a4a; margin-top: 5px; }
+        .config-hint { font-size: 11px; color: #3a3a3a; margin-top: 5px; }
         .config-sublabel {
             font-size: 10px;
             font-weight: 600;
@@ -337,10 +337,10 @@
         }
         .claude-model-chip {
             font-size: 10px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-            background: #0d1a2e; border: 1px solid #1e2a3a; border-radius: 4px;
-            color: #3a7bd5; padding: 3px 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+            background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 4px;
+            color: #5b7ca8; padding: 3px 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
         }
-        .claude-model-chip:hover { border-color: #3a7bd5; background: #0d2040; }
+        .claude-model-chip:hover { border-color: #5b7ca8; background: #0d2040; }
 
         /* ── Tools toggles ── */
         .tools-grid {
@@ -349,9 +349,9 @@
             gap: 8px;
         }
         .config-collapsible {
-            border: 1px solid #1a1a2e;
+            border: 1px solid #242424;
             border-radius: 4px;
-            background: #0a0a15;
+            background: #1e1e1e;
             padding: 0;
         }
         .config-collapsible[open] { padding-bottom: 8px; }
@@ -362,7 +362,7 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #3a7bd5;
+            color: #5b7ca8;
             list-style: none;
             display: flex;
             align-items: center;
@@ -388,22 +388,22 @@
             align-items: center;
             justify-content: space-between;
             padding: 8px 10px;
-            background: #050510;
-            border: 1px solid #13131f;
+            background: #161616;
+            border: 1px solid #262626;
             border-radius: 4px;
         }
         .editor-feature-info { display: flex; flex-direction: column; gap: 2px; }
-        .editor-feature-name { font-size: 12px; color: #c9d1d9; font-weight: 500; }
-        .editor-feature-desc { font-size: 10px; color: #4a5568; line-height: 1.35; }
+        .editor-feature-name { font-size: 12px; color: #d8d8d8; font-weight: 500; }
+        .editor-feature-desc { font-size: 10px; color: #7a7a7a; line-height: 1.35; }
 
         .hybrid-intensity-row {
             margin-top: 10px;
             padding-top: 10px;
-            border-top: 1px solid #00d4ff22;
+            border-top: 1px solid #8a94b822;
         }
         .hybrid-intensity-segmented {
             display: flex;
-            border: 1px solid #00d4ff44;
+            border: 1px solid #8a94b844;
             border-radius: 5px;
             overflow: hidden;
         }
@@ -418,13 +418,13 @@
             letter-spacing: 0.04em;
             padding: 7px 4px;
             transition: background 0.12s, color 0.12s;
-            border-right: 1px solid #00d4ff22;
+            border-right: 1px solid #8a94b822;
         }
         .hybrid-int-btn:last-child { border-right: none; }
-        .hybrid-int-btn:hover { background: #001a26; color: #c9e8f5; }
+        .hybrid-int-btn:hover { background: #202020; color: #c9e8f5; }
         .hybrid-int-btn.active {
-            background: #00d4ff22;
-            color: #00d4ff;
+            background: #8a94b822;
+            color: #8a94b8;
         }
 
         .cmd-scope-row {
@@ -432,8 +432,8 @@
             flex-direction: column;
             gap: 6px;
             padding: 8px 10px;
-            background: #050510;
-            border: 1px solid #13131f;
+            background: #161616;
+            border: 1px solid #262626;
             border-radius: 4px;
             margin-bottom: 8px;
         }
@@ -442,19 +442,19 @@
             align-items: center;
             gap: 8px;
             font-size: 12px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             cursor: pointer;
         }
-        .cmd-scope-opt input[type="radio"] { accent-color: #3a7bd5; }
-        .cmd-scope-opt strong { color: #c9d1d9; font-weight: 600; }
+        .cmd-scope-opt input[type="radio"] { accent-color: #5b7ca8; }
+        .cmd-scope-opt strong { color: #d8d8d8; font-weight: 600; }
         .cmd-open-file-btn {
             display: inline-flex;
             align-items: center;
             gap: 6px;
             background: none;
-            border: 1px solid #1e2a3a;
+            border: 1px solid #3a3a3a;
             border-radius: 4px;
-            color: #3a7bd5;
+            color: #5b7ca8;
             cursor: pointer;
             font-size: 11px;
             font-weight: 700;
@@ -462,21 +462,21 @@
             text-transform: uppercase;
             padding: 6px 12px;
         }
-        .cmd-open-file-btn:hover { background: #0d1a2e; }
+        .cmd-open-file-btn:hover { background: #2a2a2a; }
         .tool-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 7px 10px;
-            background: #0a0a15;
-            border: 1px solid #1a1a2e;
+            background: #1e1e1e;
+            border: 1px solid #242424;
             border-radius: 6px;
             transition: border-color 0.15s;
         }
         .tool-row:has(.tool-toggle:checked) { border-color: #1a3a1a; }
         .tool-row-info { display: flex; flex-direction: column; gap: 2px; }
-        .tool-row-name { font-size: 12px; font-weight: 600; color: #c9d1d9; }
-        .tool-row-desc { font-size: 10px; color: #3a5080; }
+        .tool-row-name { font-size: 12px; font-weight: 600; color: #d8d8d8; }
+        .tool-row-desc { font-size: 10px; color: #767676; }
 
         .switch {
             position: relative;
@@ -490,8 +490,8 @@
             position: absolute;
             cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background-color: #242424;
+            border: 1px solid #333333;
             transition: .3s;
             border-radius: 22px;
         }
@@ -502,12 +502,12 @@
             width: 14px;
             left: 3px;
             bottom: 3px;
-            background-color: #3a5080;
+            background-color: #767676;
             transition: .3s;
             border-radius: 50%;
         }
-        .switch input:checked + .slider { background-color: #0d2a0d; border-color: #22c55e; }
-        .switch input:checked + .slider:before { background-color: #22c55e; transform: translateX(16px); }
+        .switch input:checked + .slider { background-color: #0d2a0d; border-color: #5a9a6a; }
+        .switch input:checked + .slider:before { background-color: #5a9a6a; transform: translateX(16px); }
 
         .config-actions {
             display: flex;
@@ -516,12 +516,12 @@
             align-items: center;
         }
 
-        #config-feedback { font-size: 11px; color: #22c55e; flex: 1; }
+        #config-feedback { font-size: 11px; color: #5a9a6a; flex: 1; }
 
         .config-save-btn {
-            background: #1a2a4a;
-            border: 1px solid #3a7bd5;
-            color: #3a7bd5;
+            background: #2a2a2a;
+            border: 1px solid #5b7ca8;
+            color: #5b7ca8;
             border-radius: 6px;
             padding: 7px 18px;
             font-size: 11px;
@@ -531,12 +531,12 @@
             cursor: pointer;
             transition: background 0.15s, color 0.15s;
         }
-        .config-save-btn:hover { background: #3a7bd5; color: #fff; }
+        .config-save-btn:hover { background: #5b7ca8; color: #fff; }
 
         .config-cancel-btn {
             background: none;
-            border: 1px solid #1a1a2e;
-            color: #3a5080;
+            border: 1px solid #242424;
+            color: #767676;
             border-radius: 6px;
             padding: 7px 18px;
             font-size: 11px;
@@ -546,7 +546,7 @@
             cursor: pointer;
             transition: border-color 0.15s, color 0.15s;
         }
-        .config-cancel-btn:hover { border-color: #3a5080; color: #7090b0; }
+        .config-cancel-btn:hover { border-color: #767676; color: #8a8a8a; }
 
         /* ── Chat ── */
         #chat-container {
@@ -557,7 +557,7 @@
             flex-direction: column;
             gap: 20px;
             scrollbar-width: thin;
-            scrollbar-color: #1a1a2e transparent;
+            scrollbar-color: #242424 transparent;
         }
 
         /* ── Borda de escuta do JARVIS (estilo Apple Intelligence) ──
@@ -600,7 +600,7 @@
             }
         }
         #chat-container::-webkit-scrollbar { width: 4px; }
-        #chat-container::-webkit-scrollbar-thumb { background: #1a1a2e; border-radius: 2px; }
+        #chat-container::-webkit-scrollbar-thumb { background: #242424; border-radius: 2px; }
 
         .message-row { display: flex; flex-direction: column; gap: 5px; max-width: 100%; }
         .message-row.user { align-items: flex-end; }
@@ -625,8 +625,8 @@
             letter-spacing: 0.02em;
             flex-shrink: 0;
         }
-        .agent .message-avatar { background: #1a2a4a; color: #3a7bd5; }
-        .user .message-avatar { background: #1a2a3a; color: #7ab3ff; }
+        .agent .message-avatar { background: #2a2a2a; color: #5b7ca8; }
+        .user .message-avatar { background: #333333; color: #7ab3ff; }
 
         .message-label {
             font-size: 10px;
@@ -634,8 +634,8 @@
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
-        .agent .message-label { color: #3a7bd5; }
-        .user .message-label { color: #5a8ac0; }
+        .agent .message-label { color: #5b7ca8; }
+        .user .message-label { color: #909090; }
         .msg-mode-badge {
             display: inline-block;
             font-size: 8px;
@@ -647,7 +647,7 @@
             opacity: 0.7;
             vertical-align: middle;
         }
-        .msg-mode-badge.chat { color: #8b9eff; border-color: #4a5a8a; background: #0d0f26; }
+        .msg-mode-badge.chat { color: #9a9a9a; border-color: #4a5a8a; background: #242424; }
         .message-row.is-chat .message-bubble { border-left: 2px solid #4a5a8a; padding-left: 12px; }
         .chat-pending-dots {
             display: inline-flex;
@@ -657,7 +657,7 @@
         .chat-pending-dots span {
             width: 6px; height: 6px;
             border-radius: 50%;
-            background: #8b9eff;
+            background: #9a9a9a;
             opacity: 0.4;
             animation: chat-bounce 1.2s infinite ease-in-out;
         }
@@ -678,23 +678,23 @@
         }
 
         .user .message-bubble {
-            background: linear-gradient(135deg, #1a2a4a 0%, #0f1e35 100%);
+            background: linear-gradient(135deg, #2a2a2a 0%, #0f1e35 100%);
             border: 1px solid #2a4a7a;
             color: #c9d8f0;
             border-radius: 12px 12px 2px 12px;
         }
 
         .agent .message-bubble {
-            background: #0d0d1a;
+            background: #212121;
             border: 1px solid #13132a;
-            color: #c9d1d9;
+            color: #d8d8d8;
             border-radius: 12px 12px 12px 2px;
             width: 100%;
             max-width: 100%;
         }
 
         .agent .message-bubble.loading {
-            color: #3a5080;
+            color: #767676;
             font-style: italic;
             display: flex;
             flex-wrap: wrap;
@@ -724,7 +724,7 @@
             top: 18px;
             bottom: -3px;
             width: 1px;
-            background: #1e2a3a;
+            background: #3a3a3a;
         }
         .tl-dot {
             width: 13px;
@@ -738,18 +738,18 @@
         }
         .tl-item.done .tl-dot {
             background: #0d2a0d;
-            border: 1.5px solid #22c55e;
+            border: 1.5px solid #5a9a6a;
         }
         .tl-item.done .tl-dot::after {
             content: '';
             width: 5px;
             height: 5px;
             border-radius: 50%;
-            background: #22c55e;
+            background: #5a9a6a;
         }
         .tl-item.active .tl-dot {
-            background: #0d1a2e;
-            border: 1.5px solid #3a7bd5;
+            background: #2a2a2a;
+            border: 1.5px solid #5b7ca8;
             animation: tl-pulse 1.4s ease-in-out infinite;
         }
         .tl-item.active .tl-dot::after {
@@ -757,7 +757,7 @@
             width: 5px;
             height: 5px;
             border-radius: 50%;
-            background: #3a7bd5;
+            background: #5b7ca8;
             animation: tl-pulse 1.4s ease-in-out infinite;
         }
         @keyframes tl-pulse {
@@ -769,7 +769,7 @@
             line-height: 1.5;
             padding-top: 0;
         }
-        .tl-item.active .tl-text { color: #c9d1d9; }
+        .tl-item.active .tl-text { color: #d8d8d8; }
         /* sucesso — verde */
         .tl-item.done .tl-text { color: #2a6a2a; }
         .tl-item.done .tl-dot  { background: #001400; border-color: #1a7a1a; }
@@ -788,31 +788,31 @@
         }
         .tl-item.tl-hybrid::after { display: none; }
         .tl-item.tl-hybrid .tl-body {
-            background: linear-gradient(90deg, transparent 0%, #001a2630 100%);
-            border-right: 2px solid #00d4ff;
+            background: linear-gradient(90deg, transparent 0%, #20202030 100%);
+            border-right: 2px solid #8a94b8;
             padding: 4px 10px 4px 10px;
             border-radius: 4px 0 0 4px;
             max-width: 90%;
         }
         .tl-item.tl-hybrid.active .tl-dot {
-            background: #001a26;
-            border: 1.5px solid #00d4ff;
+            background: #202020;
+            border: 1.5px solid #8a94b8;
             animation: tl-pulse 1.4s ease-in-out infinite;
         }
-        .tl-item.tl-hybrid.active .tl-dot::after { background: #00d4ff; }
+        .tl-item.tl-hybrid.active .tl-dot::after { background: #8a94b8; }
         .tl-item.tl-hybrid.done .tl-dot {
-            background: #001a26;
-            border: 1.5px solid #00d4ff;
+            background: #202020;
+            border: 1.5px solid #8a94b8;
         }
-        .tl-item.tl-hybrid.done .tl-dot::after { background: #00d4ff; }
+        .tl-item.tl-hybrid.done .tl-dot::after { background: #8a94b8; }
         .tl-item.tl-hybrid .tl-text { color: #6ad7ee; }
-        .tl-item.tl-hybrid.done .tl-text { color: #00d4ff; }
+        .tl-item.tl-hybrid.done .tl-text { color: #8a94b8; }
         .tl-item.tl-hybrid .tl-hybrid-badge {
             font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: #00d4ff;
+            color: #8a94b8;
             opacity: 0.75;
             margin-bottom: 2px;
             display: block;
@@ -856,8 +856,8 @@
         }
         .message-bubble h1 { font-size: 15px; border-bottom: 1px solid #13132a; padding-bottom: 6px; }
         .message-bubble h2 { font-size: 13px; }
-        .message-bubble h3 { font-size: 12px; color: #5a8ac0; }
-        .message-bubble a { color: #3a7bd5; text-decoration: none; }
+        .message-bubble h3 { font-size: 12px; color: #909090; }
+        .message-bubble a { color: #5b7ca8; text-decoration: none; }
         .message-bubble a:hover { text-decoration: underline; }
 
         .message-bubble code:not(pre code) {
@@ -874,7 +874,7 @@
             margin: 10px 0;
             border-radius: 8px;
             overflow: hidden;
-            border: 1px solid #1a1a2e;
+            border: 1px solid #242424;
         }
 
         .code-header {
@@ -883,18 +883,18 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #1a1a2e;
+            border-bottom: 1px solid #242424;
         }
         .code-lang {
             font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: #3a7bd5;
+            color: #5b7ca8;
         }
         .copy-btn {
             font-size: 10px;
-            color: #3a5080;
+            color: #767676;
             background: none;
             border: none;
             cursor: pointer;
@@ -925,32 +925,32 @@
             display: none;
             align-items: center;
             gap: 8px;
-            background: #0d0d1a;
+            background: #212121;
         }
         #image-preview img {
             height: 44px;
             border-radius: 6px;
-            border: 1px solid #1a1a2e;
+            border: 1px solid #242424;
             object-fit: cover;
         }
-        #image-preview-name { font-size: 11px; color: #3a5080; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #image-preview-name { font-size: 11px; color: #767676; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         #image-remove {
             background: none;
             border: none;
-            color: #3a3a5a;
+            color: #3a3a3a;
             cursor: pointer;
             padding: 2px 4px;
             transition: color 0.15s;
             display: inline-flex;
             align-items: center;
         }
-        #image-remove:hover { color: #e05555; }
+        #image-remove:hover { color: #b0605c; }
 
         .msg-image {
             max-width: 100%;
             max-height: 260px;
             border-radius: 8px;
-            border: 1px solid #1a1a2e;
+            border: 1px solid #242424;
             margin-bottom: 8px;
             display: block;
         }
@@ -958,11 +958,11 @@
         /* ── Input area ── */
         #input-area {
             padding: 12px 14px;
-            border-top: 1px solid #13131f;
+            border-top: 1px solid #262626;
             display: flex;
             gap: 8px;
             align-items: center;
-            background: #0d0d1a;
+            background: #212121;
         }
 
         /* ── Save command banner ── */
@@ -971,7 +971,7 @@
             align-items: center;
             gap: 8px;
             padding: 8px 14px;
-            background: #1a1a0a;
+            background: #242420;
             border-top: 1px solid #2a2410;
             border-bottom: 1px solid #2a2410;
             font-size: 11px;
@@ -990,7 +990,7 @@
             padding: 3px 8px;
             margin-left: auto;
         }
-        .save-cmd-btn-yes:hover { background: #ffb84a; color: #1a1a0a; }
+        .save-cmd-btn-yes:hover { background: #ffb84a; color: #242420; }
         .save-cmd-btn-no { margin-left: 4px; border-color: #555; color: #888; }
         .save-cmd-btn-no:hover { border-color: #888; color: #ccc; }
 
@@ -1003,8 +1003,8 @@
             max-width: 520px;
             max-height: 240px;
             overflow-y: auto;
-            background: #0a0a15;
-            border: 1px solid #1a2a3a;
+            background: #1e1e1e;
+            border: 1px solid #333333;
             border-radius: 6px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             z-index: 100;
@@ -1015,34 +1015,34 @@
             gap: 10px;
             padding: 8px 12px;
             cursor: pointer;
-            border-bottom: 1px solid #13131f;
+            border-bottom: 1px solid #262626;
         }
         .cmd-ac-item:last-child { border-bottom: none; }
-        .cmd-ac-item:hover, .cmd-ac-item.selected { background: #0d1a2e; }
+        .cmd-ac-item:hover, .cmd-ac-item.selected { background: #2a2a2a; }
         .cmd-ac-icon {
             width: 20px;
             height: 20px;
             border-radius: 4px;
-            background: #13131f;
+            background: #262626;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
         }
-        .cmd-ac-icon.auto { background: #0a1a0f; color: #22c55e; }
-        .cmd-ac-icon.hybrid { background: #001a26; color: #00d4ff; }
+        .cmd-ac-icon.auto { background: #1e2420; color: #5a9a6a; }
+        .cmd-ac-icon.hybrid { background: #202020; color: #8a94b8; }
         .cmd-ac-icon.both {
-            background: linear-gradient(135deg, #0a1a0f 50%, #001a26 50%);
+            background: linear-gradient(135deg, #1e2420 50%, #202020 50%);
             color: #fff;
         }
         .cmd-ac-name {
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-            color: #3a7bd5;
+            color: #5b7ca8;
             font-size: 12px;
             font-weight: 600;
         }
         .cmd-ac-desc {
-            color: #6a7f99;
+            color: #8a8a8a;
             font-size: 11px;
             margin-left: auto;
             white-space: nowrap;
@@ -1053,7 +1053,7 @@
         .cmd-ac-empty {
             padding: 10px 12px;
             font-size: 11px;
-            color: #4a5568;
+            color: #7a7a7a;
             font-style: italic;
         }
 
@@ -1070,8 +1070,8 @@
         }
         #new-cmd-modal.open { display: flex; }
         .new-cmd-modal-content {
-            background: #0d0d1a;
-            border: 1px solid #1e2a3a;
+            background: #212121;
+            border: 1px solid #3a3a3a;
             border-radius: 8px;
             width: 100%;
             max-width: 480px;
@@ -1081,7 +1081,7 @@
         }
         .new-cmd-modal-header {
             padding: 14px 16px;
-            border-bottom: 1px solid #13131f;
+            border-bottom: 1px solid #262626;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -1089,17 +1089,17 @@
             font-weight: 700;
             letter-spacing: 0.06em;
             text-transform: uppercase;
-            color: #c9d1d9;
+            color: #d8d8d8;
         }
         .new-cmd-close {
             margin-left: auto;
             background: none;
             border: none;
-            color: #6a7f99;
+            color: #8a8a8a;
             cursor: pointer;
             padding: 2px;
         }
-        .new-cmd-close:hover { color: #c9d1d9; }
+        .new-cmd-close:hover { color: #d8d8d8; }
         .new-cmd-modal-body {
             padding: 16px;
             display: flex;
@@ -1112,21 +1112,21 @@
             font-weight: 700;
             letter-spacing: 0.06em;
             text-transform: uppercase;
-            color: #4a5568;
+            color: #7a7a7a;
             margin-top: 6px;
         }
         .new-cmd-input {
-            background: #0a0a15;
-            border: 1px solid #1a1a2e;
+            background: #1e1e1e;
+            border: 1px solid #242424;
             border-radius: 4px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 12px;
             padding: 7px 10px;
             outline: none;
         }
         .new-cmd-input.mono { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
-        .new-cmd-input:focus { border-color: #3a7bd5; }
+        .new-cmd-input:focus { border-color: #5b7ca8; }
         .new-cmd-input[type="text"] { height: 32px; }
         .new-cmd-toggles {
             display: flex;
@@ -1139,28 +1139,28 @@
             align-items: center;
             gap: 8px;
             font-size: 12px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             cursor: pointer;
         }
-        .new-cmd-toggle input[type="checkbox"] { accent-color: #3a7bd5; }
+        .new-cmd-toggle input[type="checkbox"] { accent-color: #5b7ca8; }
         .new-cmd-scope {
             display: flex;
             flex-direction: column;
             gap: 6px;
             margin-top: 10px;
             padding-top: 10px;
-            border-top: 1px solid #13131f;
+            border-top: 1px solid #262626;
             font-size: 11px;
-            color: #6a7f99;
+            color: #8a8a8a;
         }
         .new-cmd-scope-opt {
             display: flex;
             align-items: center;
             gap: 8px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             cursor: pointer;
         }
-        .new-cmd-scope-opt input[type="radio"] { accent-color: #3a7bd5; }
+        .new-cmd-scope-opt input[type="radio"] { accent-color: #5b7ca8; }
         .new-cmd-error {
             background: #1a0000;
             border: 1px solid #9a2020;
@@ -1172,16 +1172,16 @@
         }
         .new-cmd-modal-footer {
             padding: 12px 16px;
-            border-top: 1px solid #13131f;
+            border-top: 1px solid #262626;
             display: flex;
             gap: 8px;
             justify-content: flex-end;
         }
         .new-cmd-btn-cancel, .new-cmd-btn-save {
             background: none;
-            border: 1px solid #1e2a3a;
+            border: 1px solid #3a3a3a;
             border-radius: 4px;
-            color: #6a7f99;
+            color: #8a8a8a;
             cursor: pointer;
             font-size: 11px;
             font-weight: 700;
@@ -1189,18 +1189,18 @@
             text-transform: uppercase;
             padding: 7px 14px;
         }
-        .new-cmd-btn-cancel:hover { border-color: #3a5080; color: #7090b0; }
+        .new-cmd-btn-cancel:hover { border-color: #767676; color: #8a8a8a; }
         .new-cmd-btn-save {
-            border-color: #3a7bd5;
-            color: #3a7bd5;
+            border-color: #5b7ca8;
+            color: #5b7ca8;
         }
-        .new-cmd-btn-save:hover { background: #3a7bd5; color: #fff; }
+        .new-cmd-btn-save:hover { background: #5b7ca8; color: #fff; }
 
         .icon-btn {
             background: none;
-            border: 1px solid #1a1a2e;
+            border: 1px solid #242424;
             border-radius: 8px;
-            color: #3a5080;
+            color: #767676;
             cursor: pointer;
             padding: 7px 9px;
             line-height: 1;
@@ -1210,17 +1210,17 @@
             justify-content: center;
             transition: border-color 0.15s, color 0.15s, background 0.15s;
         }
-        .icon-btn:hover { border-color: #3a7bd5; color: #3a7bd5; background: #0d1a2e; }
+        .icon-btn:hover { border-color: #5b7ca8; color: #5b7ca8; background: #2a2a2a; }
         .icon-btn.mic-recording {
-            border-color: #ff4757;
-            color: #ff4757;
+            border-color: #b0524f;
+            color: #b0524f;
             background: #1a0a0d;
             animation: mic-pulse 1s ease-in-out infinite;
         }
         .icon-btn.mic-transcribing {
-            border-color: #00d4ff;
-            color: #00d4ff;
-            background: #001a26;
+            border-color: #8a94b8;
+            color: #8a94b8;
+            background: #202020;
         }
         @keyframes mic-pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.5); }
@@ -1229,11 +1229,11 @@
 
         #user-input {
             flex: 1;
-            background: #0a0a15;
-            border: 1px solid #1a1a2e;
+            background: #1e1e1e;
+            border: 1px solid #242424;
             border-radius: 8px;
             padding: 9px 13px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             font-size: 13px;
             font-family: inherit;
             resize: none;
@@ -1242,10 +1242,10 @@
             transition: border-color 0.15s, box-shadow 0.15s;
         }
         #user-input:focus {
-            border-color: #3a7bd5;
-            box-shadow: 0 0 0 2px #3a7bd520;
+            border-color: #5b7ca8;
+            box-shadow: 0 0 0 2px #5b7ca820;
         }
-        #user-input::placeholder { color: #2a3a4a; }
+        #user-input::placeholder { color: #3a3a3a; }
 
         #send-btn, #stop-btn {
             border-radius: 8px;
@@ -1263,19 +1263,27 @@
             transition: background 0.15s, color 0.15s;
         }
         #send-btn {
-            background: #1a2a4a;
-            border: 1px solid #3a7bd5;
-            color: #3a7bd5;
+            background: #2a2a2a;
+            border: 1px solid #5b7ca8;
+            color: #5b7ca8;
         }
-        #send-btn:hover { background: #3a7bd5; color: #fff; }
+        #send-btn:hover { background: #5b7ca8; color: #fff; }
         #send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
         #stop-btn {
             background: #1a0a0a;
-            border: 1px solid #c0392b;
-            color: #e05555;
-            display: none;
+            border: 1px solid #9a4a42;
+            color: #b0605c;
+            /* visibility (nao display): o botao fica sempre no fluxo do flexbox,
+               so invisivel/inerte quando o agente nao esta rodando. Se ele fosse
+               inserido/removido do layout no exato instante em que a resposta
+               comeca a chegar, o botao Enviar/Injetar salta de lugar bem quando
+               o usuario mais provavelmente vai clicar ali de novo — um clique
+               destinado ao Enviar acaba caindo no Stop recem-aparecido e cancela
+               a execucao sem o usuario perceber. */
+            visibility: hidden;
+            pointer-events: none;
         }
-        #stop-btn:hover { background: #c0392b; color: #fff; }
+        #stop-btn:hover { background: #9a4a42; color: #fff; }
 
         /* ── Context files bar ── */
         #context-bar {
@@ -1283,15 +1291,15 @@
             padding: 5px 14px;
             gap: 6px;
             flex-wrap: wrap;
-            border-top: 1px solid #13131f;
-            background: #0a0a15;
+            border-top: 1px solid #262626;
+            background: #1e1e1e;
         }
         #context-bar.has-files { display: flex; }
         .context-file {
             font-size: 10px;
-            color: #3a5080;
-            background: #0d0d1a;
-            border: 1px solid #1a1a2e;
+            color: #767676;
+            background: #212121;
+            border: 1px solid #242424;
             border-radius: 4px;
             padding: 2px 7px;
             display: inline-flex;
@@ -1300,78 +1308,82 @@
         }
         .context-file .mi { font-size: 11px; }
 
-        /* ── Terminal inside timeline ── */
-        .tl-terminal {
+        /* ── Tool card (IN/OUT, colapsavel) — estilo Claude Code. Usado tanto
+           pelo terminal ao vivo do run_command (startTerminal/appendCommandChunk/
+           finalizeTerminal) quanto pelo card generico das demais ferramentas
+           (renderToolResult). ── */
+        .tl-toolcard {
             margin-top: 6px;
-            background: #0a0e14;
-            border: 1px solid #1a3020;
+            background: #1e1e1e;
+            border: 1px solid #333333;
             border-radius: 6px;
             overflow: hidden;
             width: 100%;
         }
-        .tl-terminal-header {
+        .tl-toolcard-header {
             display: flex;
             align-items: center;
             gap: 6px;
             padding: 5px 10px;
-            background: #0d1117;
-            border-bottom: 1px solid #1a3020;
+            background: #242424;
             cursor: pointer;
             user-select: none;
         }
-        .tl-terminal-header .tl-terminal-cmd {
+        .tl-toolcard-name {
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
             font-size: 10px;
-            color: #58a6ff;
+            color: #b0b0b0;
             flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
         }
-        .tl-terminal-toggle {
-            font-size: 10px;
-            color: #3a5080;
-            transition: transform 0.2s;
+        .tl-toolcard-toggle { font-size: 10px; color: #6a6a6a; transition: transform 0.2s; }
+        .tl-toolcard.collapsed .tl-toolcard-body { display: none; }
+        .tl-toolcard-body { border-top: 1px solid #333333; }
+        .tl-toolcard-section-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #6a6a6a;
+            padding: 6px 10px 2px;
         }
-        .tl-terminal.collapsed .tl-terminal-toggle { transform: rotate(-90deg); }
-        .tl-terminal-body {
+        .tl-toolcard-in, .tl-toolcard-out {
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
             font-size: 11px;
-            color: #e6edf3;
+            color: #d8d8d8;
             white-space: pre-wrap;
             word-break: break-all;
-            padding: 8px 10px;
+            padding: 0 10px 8px;
             max-height: 220px;
             overflow-y: auto;
             line-height: 1.5;
         }
-        .tl-terminal.collapsed .tl-terminal-body { display: none; }
-        .tl-stderr { color: #f85149; }
+        .tl-toolcard-out-error { color: #b0524f; }
+        .tl-toolcard.tl-toolcard-error { border-color: #9a4a42; }
+        .tl-toolcard.tl-toolcard-error .tl-toolcard-out { color: #b0524f; }
 
         /* ── Resposta final do modelo na timeline ── */
-        .tl-item.tl-response .tl-text { color: #c9d1d9 !important; font-style: normal; }
-        .tl-item.tl-response .tl-dot { background: #0d1117 !important; border-color: #3a7bd5 !important; }
-        .tl-item.tl-response .tl-dot::after { background: #3a7bd5 !important; }
-        .tl-item.tl-response .tl-body > div { color: #c9d1d9; font-size: 13px; line-height: 1.7; }
+        .tl-item.tl-response .tl-text { color: #d8d8d8 !important; font-style: normal; }
+        .tl-item.tl-response .tl-dot { background: #1c1c1c !important; border-color: #5b7ca8 !important; }
+        .tl-item.tl-response .tl-dot::after { background: #5b7ca8 !important; }
+        .tl-item.tl-response .tl-body > div { color: #d8d8d8; font-size: 13px; line-height: 1.7; }
         .tl-item.tl-response .tl-body > div p { margin: 0 0 8px; }
         .tl-item.tl-response .tl-body > div p:last-child { margin-bottom: 0; }
-        .tl-item.tl-response .tl-body > div code { background: #161b22; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
-        .tl-item.tl-response .tl-body > div pre { background: #161b22; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+        .tl-item.tl-response .tl-body > div code { background: #262626; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
+        .tl-item.tl-response .tl-body > div pre { background: #262626; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
 
         /* ── Telemetry item ── */
-        .tl-item.tl-telemetry .tl-dot { background: #0d1117 !important; border-color: #444 !important; }
+        .tl-item.tl-telemetry .tl-dot { background: #1c1c1c !important; border-color: #444 !important; }
         .tl-item.tl-telemetry .tl-dot::after { background: #555 !important; }
         .tl-item.tl-telemetry .tl-text { color: #555e6b !important; font-size: 11px; font-style: normal; letter-spacing: 0.02em; }
         .tl-telemetry-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-        .tl-chip { background: #13131f; border: 1px solid #222; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #4a5568; }
-        .tl-chip span { color: #6a7f99; }
+        .tl-chip { background: #262626; border: 1px solid #222; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #7a7a7a; }
+        .tl-chip span { color: #8a8a8a; }
 
         .continue-btn {
             margin-top: 10px;
-            background: #0d1a2e;
-            border: 1px solid #3a7bd5;
+            background: #2a2a2a;
+            border: 1px solid #5b7ca8;
             border-radius: 4px;
-            color: #3a7bd5;
+            color: #5b7ca8;
             cursor: pointer;
             font-size: 11px;
             font-weight: 700;
@@ -1383,13 +1395,13 @@
             gap: 6px;
             transition: background 0.15s, color 0.15s;
         }
-        .continue-btn:hover:not(:disabled) { background: #3a7bd5; color: #fff; }
+        .continue-btn:hover:not(:disabled) { background: #5b7ca8; color: #fff; }
         .continue-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* ── Streaming text inside timeline ── */
         .tl-stream {
             margin-top: 8px;
-            color: #c9d1d9;
+            color: #d8d8d8;
             white-space: pre-wrap;
             word-break: break-word;
             font-size: 12px;
@@ -1405,15 +1417,15 @@
         .confirm-card {
             border: 1px solid #2a4a7a;
             border-radius: 10px;
-            background: #080c14;
+            background: #181818;
             overflow: hidden;
             width: 100%;
         }
 
         .confirm-card-header {
             padding: 10px 14px;
-            background: #0d1525;
-            border-bottom: 1px solid #1a2a4a;
+            background: #202020;
+            border-bottom: 1px solid #2a2a2a;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -1424,7 +1436,7 @@
             height: 16px;
             border-radius: 3px;
             background: #1a3a6a;
-            color: #3a7bd5;
+            color: #5b7ca8;
             font-size: 9px;
             font-weight: 800;
             display: flex;
@@ -1452,8 +1464,8 @@
             padding: 2px 7px;
             border-radius: 3px;
         }
-        .confirm-card-badge.new { background: #0d2a1a; color: #22c55e; border: 1px solid #22c55e44; }
-        .confirm-card-badge.edit { background: #1a1a0a; color: #f59e0b; border: 1px solid #f59e0b44; }
+        .confirm-card-badge.new { background: #0d2a1a; color: #5a9a6a; border: 1px solid #5a9a6a44; }
+        .confirm-card-badge.edit { background: #242420; color: #f59e0b; border: 1px solid #f59e0b44; }
 
         .confirm-diff {
             max-height: 420px;
@@ -1466,11 +1478,11 @@
         .diff-hunk-header {
             font-family: 'Consolas', 'JetBrains Mono', monospace;
             font-size: 11px;
-            color: #569cd6;
+            color: #6f96b8;
             background: #0d1926;
             padding: 2px 0;
-            border-top: 1px solid #2a3a4a;
-            border-bottom: 1px solid #2a3a4a;
+            border-top: 1px solid #3a3a3a;
+            border-bottom: 1px solid #3a3a3a;
             user-select: none;
         }
         .diff-hunk-header .diff-ln {
@@ -1478,11 +1490,11 @@
             width: 38px;
             text-align: right;
             padding-right: 8px;
-            color: #3a5a7a;
+            color: #767676;
         }
         .diff-hunk-header .diff-ln + .diff-ln { width: 38px; }
-        .diff-hunk-header .diff-sign { display: inline-block; width: 14px; color: #569cd6; }
-        .diff-hunk-header .diff-text { color: #569cd6; font-style: italic; }
+        .diff-hunk-header .diff-sign { display: inline-block; width: 14px; color: #6f96b8; }
+        .diff-hunk-header .diff-text { color: #6f96b8; font-style: italic; }
 
         .diff-line {
             display: flex;
@@ -1538,7 +1550,7 @@
             text-overflow: ellipsis;
         }
         /* Sobrescreve cores do hljs apenas dentro do diff para não colidir */
-        .diff-content .hljs-keyword   { color: #569cd6; }
+        .diff-content .hljs-keyword   { color: #6f96b8; }
         .diff-content .hljs-string    { color: #ce9178; }
         .diff-content .hljs-comment   { color: #6a9955; font-style: italic; }
         .diff-content .hljs-number    { color: #b5cea8; }
@@ -1548,7 +1560,7 @@
         .diff-content .hljs-variable  { color: #9cdcfe; }
         .diff-content .hljs-attr      { color: #9cdcfe; }
         .diff-content .hljs-type      { color: #4ec9b0; }
-        .diff-content .hljs-literal   { color: #569cd6; }
+        .diff-content .hljs-literal   { color: #6f96b8; }
         .diff-content .hljs-operator  { color: #d4d4d4; }
         .diff-line.removed .diff-content { color: #f4a0a0; }
         .diff-line.added   .diff-content { color: #a0d4a0; }
@@ -1558,15 +1570,15 @@
             display: flex;
             gap: 8px;
             padding: 10px 14px;
-            border-top: 1px solid #1a2a4a;
-            background: #0d1525;
+            border-top: 1px solid #2a2a2a;
+            background: #202020;
             justify-content: flex-end;
         }
 
         .confirm-accept-btn {
             background: #0d2a1a;
-            border: 1px solid #22c55e;
-            color: #22c55e;
+            border: 1px solid #5a9a6a;
+            color: #5a9a6a;
             border-radius: 6px;
             padding: 6px 16px;
             font-size: 11px;
@@ -1579,7 +1591,7 @@
             gap: 5px;
             transition: background 0.15s, color 0.15s;
         }
-        .confirm-accept-btn:hover { background: #22c55e; color: #000; }
+        .confirm-accept-btn:hover { background: #5a9a6a; color: #000; }
 
         .confirm-reject-btn {
             background: none;
@@ -1597,7 +1609,7 @@
             cursor: pointer;
             transition: border-color 0.15s, color 0.15s;
         }
-        .confirm-reject-btn:hover { border-color: #e05555; color: #e05555; }
+        .confirm-reject-btn:hover { border-color: #b0605c; color: #b0605c; }
 
         .confirm-decided {
             font-size: 11px;
@@ -1605,30 +1617,30 @@
             letter-spacing: 0.06em;
             text-transform: uppercase;
             padding: 10px 14px;
-            border-top: 1px solid #1a2a4a;
-            background: #0d1525;
+            border-top: 1px solid #2a2a2a;
+            background: #202020;
         }
-        .confirm-decided.accepted { color: #22c55e; }
-        .confirm-decided.rejected { color: #e05555; }
+        .confirm-decided.accepted { color: #5a9a6a; }
+        .confirm-decided.rejected { color: #b0605c; }
 
         /* ── Todo list ── */
         .todo-card {
-            border: 1px solid #1a2a3a;
+            border: 1px solid #333333;
             border-radius: 8px;
-            background: #080c14;
+            background: #181818;
             overflow: hidden;
             width: 100%;
             margin-top: 4px;
         }
         .todo-header {
             padding: 7px 12px;
-            background: #0d1525;
-            border-bottom: 1px solid #1a2a4a;
+            background: #202020;
+            border-bottom: 1px solid #2a2a2a;
             font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.1em;
             text-transform: uppercase;
-            color: #3a5080;
+            color: #767676;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -1652,15 +1664,15 @@
             justify-content: center;
             font-size: 9px;
         }
-        .todo-item.pending .todo-icon   { border: 1.5px solid #2a3a4a; color: transparent; }
-        .todo-item.in_progress .todo-icon { border: 1.5px solid #3a7bd5; background: #0d1a2e; }
-        .todo-item.completed .todo-icon { background: #22c55e; border: 1.5px solid #22c55e; }
-        .todo-item.pending   .todo-text { color: #3a5080; }
-        .todo-item.in_progress .todo-text { color: #c9d1d9; font-weight: 600; }
+        .todo-item.pending .todo-icon   { border: 1.5px solid #3a3a3a; color: transparent; }
+        .todo-item.in_progress .todo-icon { border: 1.5px solid #5b7ca8; background: #2a2a2a; }
+        .todo-item.completed .todo-icon { background: #5a9a6a; border: 1.5px solid #5a9a6a; }
+        .todo-item.pending   .todo-text { color: #767676; }
+        .todo-item.in_progress .todo-text { color: #d8d8d8; font-weight: 600; }
         .todo-item.completed .todo-text { color: #3a6a3a; text-decoration: line-through; }
         .todo-spinner {
             width: 8px; height: 8px;
-            border: 1.5px solid #3a7bd5;
+            border: 1.5px solid #5b7ca8;
             border-top-color: transparent;
             border-radius: 50%;
             animation: spin 0.7s linear infinite;
@@ -1672,7 +1684,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            color: #1a2a3a;
+            color: #333333;
             font-size: 10px;
             font-weight: 600;
             letter-spacing: 0.08em;
@@ -1706,14 +1718,14 @@
                 <div class="modes-section-label">Modos do agente</div>
                 <label class="modes-toggle-row">
                     <div class="modes-toggle-info">
-                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#22c55e">bolt</span>Auto</span>
+                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#5a9a6a">bolt</span>Auto</span>
                         <span class="modes-toggle-desc">Escreve, testa e corrige sem pedir aprovacao</span>
                     </div>
                     <label class="switch"><input type="checkbox" id="mode-auto"><span class="slider"></span></label>
                 </label>
                 <label class="modes-toggle-row">
                     <div class="modes-toggle-info">
-                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#00d4ff">diamond</span>Hybrid</span>
+                        <span class="modes-toggle-name"><span class="mi" style="font-size:13px;color:#8a94b8">diamond</span>Hybrid</span>
                         <span class="modes-toggle-desc">IA paga como suporte estrategico ao local</span>
                     </div>
                     <label class="switch"><input type="checkbox" id="mode-hybrid"><span class="slider"></span></label>
@@ -1763,7 +1775,7 @@
             <div id="config-context-budget-hint" class="config-hint">Calibra a poda de contexto e os limites de output. Vazio ou 0 = usa o padrao do provedor. Ajuste para casar com a janela real do modelo (ex: MLX/Qwen suporta ate 32768, mas a RAM limita).</div>
         </div>
         <div>
-            <div class="config-label" id="config-key-label">API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
+            <div class="config-label" id="config-key-label">API Key <span style="color:#333333;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></div>
             <input id="config-key-input" class="config-input mono" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off">
         </div>
         <details class="config-collapsible">
@@ -1848,9 +1860,9 @@
                 </button>
             </div>
         </details>
-        <div id="config-jarvis-section" style="border: 1px solid #ff4757aa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
-            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#ff4757;">
-                <span>🎙 JARVIS — Modo de voz <span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:2px 6px;border-radius:3px;letter-spacing:0.06em;margin-left:6px;vertical-align:middle;">BETA</span></span>
+        <div id="config-jarvis-section" style="border: 1px solid #b0524faa; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #1a0a0d11 0%, transparent 100%);">
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#b0524f;">
+                <span>🎙 JARVIS — Modo de voz <span style="font-size:9px;background:#b0524f;color:#1a0a0d;padding:2px 6px;border-radius:3px;letter-spacing:0.06em;margin-left:6px;vertical-align:middle;">BETA</span></span>
                 <label class="switch" style="margin-left:auto">
                     <input type="checkbox" id="config-jarvis-enabled">
                     <span class="slider"></span>
@@ -1943,7 +1955,7 @@
                         </label>
                     </div>
                     <button type="button" id="config-show-pairing" class="cmd-open-file-btn">Mostrar dados de pareamento</button>
-                    <div id="config-pairing-info" style="display:none;background:#0a0a15;border:1px solid #1a1a2e;border-radius:4px;padding:8px 10px;font-size:11px;color:#7090b0;">
+                    <div id="config-pairing-info" style="display:none;background:#1e1e1e;border:1px solid #242424;border-radius:4px;padding:8px 10px;font-size:11px;color:#8a8a8a;">
                         <div id="config-pairing-content" style="font-family:monospace;line-height:1.6;"></div>
                     </div>
                 </div>
@@ -1973,18 +1985,18 @@
                     <label class="config-sublabel">Modelo de embedding</label>
                     <input id="config-rag-embed-model" class="config-input mono" type="text" placeholder="ex: text-embedding-nomic-embed-text-v1.5" spellcheck="false">
                 </div>
-                <div class="config-hint" id="config-rag-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a></div>
+                <div class="config-hint" id="config-rag-hint">Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#5b7ca8;text-decoration:none">Docs Chroma</a></div>
             </div>
         </div>
-        <div style="border: 1px solid #00d4ff44; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #001a2611 0%, transparent 100%);">
-            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#00d4ff;">
+        <div style="border: 1px solid #8a94b844; border-radius: 6px; padding: 10px 12px; background: linear-gradient(180deg, #20202011 0%, transparent 100%);">
+            <div class="config-label" style="display:flex;align-items:center;justify-content:space-between;color:#8a94b8;">
                 ◆ HYBRID — IA local + IA paga como suporte
                 <label class="switch" style="margin-left:auto">
                     <input type="checkbox" id="config-hybrid-enabled">
                     <span class="slider"></span>
                 </label>
             </div>
-            <div class="config-hint" style="margin-top:6px;margin-bottom:8px;color:#7090b0;">
+            <div class="config-hint" style="margin-top:6px;margin-bottom:8px;color:#8a8a8a;">
                 A IA local faz o trabalho principal (~70%). A IA paga entra como consultor em momentos criticos: planejamento inicial, verificacao de acoes, recuperacao de erros.
             </div>
             <div id="config-hybrid-rows" style="display:none;gap:6px;flex-direction:column;">
@@ -1998,14 +2010,14 @@
                 <div class="config-hint" id="config-hybrid-hint">Padrao: claude-sonnet-4-6</div>
 
                 <div class="hybrid-intensity-row">
-                    <div class="config-label" style="color:#00d4ff;margin-bottom:6px;">Intensidade do suporte</div>
+                    <div class="config-label" style="color:#8a94b8;margin-bottom:6px;">Intensidade do suporte</div>
                     <div class="hybrid-intensity-segmented">
                         <button type="button" class="hybrid-int-btn" data-val="25">25%</button>
                         <button type="button" class="hybrid-int-btn" data-val="50">50%</button>
                         <button type="button" class="hybrid-int-btn" data-val="75">75%</button>
                         <button type="button" class="hybrid-int-btn" data-val="100">100%</button>
                     </div>
-                    <div class="config-hint" id="config-hybrid-intensity-hint" style="margin-top:6px;color:#7090b0;">
+                    <div class="config-hint" id="config-hybrid-intensity-hint" style="margin-top:6px;color:#8a8a8a;">
                         <strong>50%</strong> — Recovery + planejamento de tarefas grandes.
                     </div>
                 </div>
@@ -2054,7 +2066,7 @@
     <div id="new-cmd-modal" style="display:none;">
         <div class="new-cmd-modal-content">
             <div class="new-cmd-modal-header">
-                <span class="mi" style="font-size:18px;color:#3a7bd5">bookmark_add</span>
+                <span class="mi" style="font-size:18px;color:#5b7ca8">bookmark_add</span>
                 <span>Novo comando personalizavel</span>
                 <button id="new-cmd-close" class="new-cmd-close"><span class="mi" style="font-size:16px">close</span></button>
             </div>
@@ -2098,6 +2110,18 @@
 
     <script>
         const vscode = acquireVsCodeApi();
+
+        // Mesma regex de src/services/api-client.ts (stripSpecialTokens). Alguns
+        // servidores locais (ex: mlx_lm.server) nao filtram os tokens especiais
+        // do modelo no stream — o backend so limpa o texto FINAL acumulado, mas
+        // o preambulo que o modelo escreve antes de chamar uma ferramenta e
+        // "congelado" aqui no webview a partir do streamText bruto (ver o
+        // handler de '\x00CLEAR' logo abaixo), entao precisa da mesma limpeza.
+        const SPECIAL_TOKEN_RE = /<\|(?:im_start|im_end|endoftext|eot_id|end_of_text|begin_of_text|start_header_id|end_header_id|assistant|user|system)\|>/gi;
+        function stripSpecialTokens(text) {
+            return (text || '').replace(SPECIAL_TOKEN_RE, '').trim();
+        }
+
         const chatContainer = document.getElementById('chat-container');
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
@@ -2299,7 +2323,7 @@
                 el = document.createElement('div');
                 el.id = 'voice-approval-banner';
                 el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:70px;'
-                    + 'background:#1a2a3a;color:#dbeafe;border:1px solid #2d4a6a;padding:8px 14px;'
+                    + 'background:#333333;color:#dbeafe;border:1px solid #2d4a6a;padding:8px 14px;'
                     + 'border-radius:8px;font-size:12px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4);'
                     + 'white-space:nowrap;';
                 document.body.appendChild(el);
@@ -2673,7 +2697,8 @@
 
         function setAgentRunning(running) {
             agentRunning = running;
-            stopBtn.style.display = running ? 'inline-flex' : 'none';
+            stopBtn.style.visibility = running ? 'visible' : 'hidden';
+            stopBtn.style.pointerEvents = running ? 'auto' : 'none';
             sendBtn.innerHTML = running
                 ? '<span class="mi" style="font-size:16px">send</span>Injetar'
                 : '<span class="mi" style="font-size:16px">send</span>Enviar';
@@ -2809,7 +2834,7 @@
             sessionsList.innerHTML = '';
             if (!sessions || sessions.length === 0) {
                 const empty = document.createElement('div');
-                empty.style.cssText = 'padding:12px 14px;color:#3a5080;font-size:11px;';
+                empty.style.cssText = 'padding:12px 14px;color:#767676;font-size:11px;';
                 empty.textContent = 'Nenhuma sessao salva.';
                 sessionsList.appendChild(empty);
                 return;
@@ -2884,8 +2909,8 @@
             configRagEndpoint.placeholder = isQdrant ? 'http://localhost:6333' : 'http://localhost:8000';
             configRagEndpointLabel.textContent = isQdrant ? 'Endpoint do Qdrant' : 'Endpoint do Chroma';
             configRagHint.innerHTML = isQdrant
-                ? '<span style="font-size:9px;background:#ff4757;color:#1a0a0d;padding:1px 5px;border-radius:3px;letter-spacing:0.06em;margin-right:6px;">BETA</span>Requer Qdrant rodando localmente. O Qdrant nao embeda texto: informe um host /v1/embeddings (ex: LM Studio) e o modelo de embedding usado para indexar. <a href="https://qdrant.tech/documentation/" style="color:#3a7bd5;text-decoration:none">Docs Qdrant</a>'
-                : 'Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#3a7bd5;text-decoration:none">Docs Chroma</a>';
+                ? '<span style="font-size:9px;background:#b0524f;color:#1a0a0d;padding:1px 5px;border-radius:3px;letter-spacing:0.06em;margin-right:6px;">BETA</span>Requer Qdrant rodando localmente. O Qdrant nao embeda texto: informe um host /v1/embeddings (ex: LM Studio) e o modelo de embedding usado para indexar. <a href="https://qdrant.tech/documentation/" style="color:#5b7ca8;text-decoration:none">Docs Qdrant</a>'
+                : 'Requer Chroma rodando localmente. Endpoint + nome da collection. <a href="https://docs.trychroma.com/getting-started" style="color:#5b7ca8;text-decoration:none">Docs Chroma</a>';
         }
         configRagProvider.addEventListener('change', applyRagProviderUI);
 
@@ -3124,7 +3149,7 @@
             }
             configKeyLabel.innerHTML = isAnthropic
                 ? 'API Key'
-                : 'API Key <span style="color:#1a2a3a;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
+                : 'API Key <span style="color:#333333;font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span>';
             // Se ja ha chave salva, preserva os pontinhos; senao mostra o hint.
             configKeyInput.placeholder = savedSettings.apiKey ? MASKED_KEY : (isAnthropic ? 'sk-ant-...' : 'sk-...');
             configModelHint.textContent = isAnthropic
@@ -3890,6 +3915,8 @@
                 appendCommandChunk(msg.chunk);
             } else if (msg.command === 'command_end') {
                 finalizeTerminal(msg.exitCode !== 0);
+            } else if (msg.command === 'tool_result') {
+                renderToolResult(msg.name, msg.args, msg.output, msg.success);
             } else if (msg.command === 'confirm_write') {
                 clearStatus();
                 appendConfirmCard(msg.id, msg.filePath, msg.before, msg.after);
@@ -3995,7 +4022,7 @@
                                 // Converte o texto parcial em markdown fixo
                                 pre.remove();
                                 const md = document.createElement('div');
-                                md.innerHTML = marked.parse(streamText);
+                                md.innerHTML = marked.parse(stripSpecialTokens(streamText));
                                 body.appendChild(md);
                             }
                             // Fecha o item de resposta como done mas mantem visivel
@@ -4006,7 +4033,7 @@
                     // Fala o preambulo (ex.: "Vou analisar a estrutura...") que o
                     // modelo escreveu antes de chamar uma ferramenta. Esse texto
                     // nao passa por agent_response, entao falamos aqui.
-                    speakPreamble(streamText);
+                    speakPreamble(stripSpecialTokens(streamText));
                     streamBubble = null;
                     streamText = '';
                     streamRafPending = false;
@@ -4072,7 +4099,7 @@
             } else if (msg.command === 'wake_word_state') {
                 if (wakeWordStatus) {
                     const labels = { listening: '● ouvindo…', recording: '● gravando…', transcribing: '● transcrevendo…', idle: '' };
-                    const colors = { listening: '#22c55e', recording: '#ff4757', transcribing: '#f59e0b', idle: '#888' };
+                    const colors = { listening: '#5a9a6a', recording: '#b0524f', transcribing: '#f59e0b', idle: '#888' };
                     wakeWordStatus.textContent = labels[msg.state] || '';
                     wakeWordStatus.style.color = colors[msg.state] || '#888';
                 }
@@ -4120,7 +4147,7 @@
                 const url = 'http://' + recommendedHost + ':' + msg.port;
                 configPairingInfo.style.display = 'block';
                 configPairingContent.innerHTML =
-                    '<div><b>Status:</b> ' + (msg.running ? '<span style="color:#22c55e">rodando</span>' : '<span style="color:#ff4757">parado</span>') + '</div>' +
+                    '<div><b>Status:</b> ' + (msg.running ? '<span style="color:#5a9a6a">rodando</span>' : '<span style="color:#b0524f">parado</span>') + '</div>' +
                     '<div><b>URL:</b> ' + url + '</div>' +
                     '<div><b>Token:</b> <span style="word-break:break-all">' + msg.token + '</span></div>' +
                     '<div><b>IPs locais:</b> ' + ips + '</div>' +
@@ -4200,7 +4227,7 @@
                     if (pre) { pre.remove(); }
                     if (cleanText || streamText) {
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(cleanText || streamText);
+                        md.innerHTML = marked.parse(stripSpecialTokens(cleanText || streamText));
                         body.appendChild(md);
                         appendContinueButton(body);
                     }
@@ -4211,7 +4238,7 @@
                     const pre = loadingBubble.querySelector('.tl-stream');
                     if (pre) { pre.remove(); }
                     const md = document.createElement('div');
-                    md.innerHTML = marked.parse(cleanText || streamText);
+                    md.innerHTML = marked.parse(stripSpecialTokens(cleanText || streamText));
                     loadingBubble.appendChild(md);
                     appendContinueButton(loadingBubble);
                 } else if (msg.mode === 'chat' && cleanText && loadingBubble) {
@@ -4219,7 +4246,7 @@
                     const dots = loadingBubble.querySelector('.chat-pending-dots');
                     if (dots) { dots.remove(); }
                     const md = document.createElement('div');
-                    md.innerHTML = marked.parse(cleanText);
+                    md.innerHTML = marked.parse(stripSpecialTokens(cleanText));
                     loadingBubble.appendChild(md);
                     appendContinueButton(loadingBubble);
                 } else if (!streamText && cleanText) {
@@ -4234,7 +4261,7 @@
                         const body = document.createElement('div');
                         body.className = 'tl-body';
                         const md = document.createElement('div');
-                        md.innerHTML = marked.parse(cleanText);
+                        md.innerHTML = marked.parse(stripSpecialTokens(cleanText));
                         body.appendChild(md);
                         appendContinueButton(body);
                         item.appendChild(dot);
@@ -4599,6 +4626,12 @@
         let activeTerminalWrapper = null;
         let activeTerminalItem = null;
 
+        // O terminal do run_command usa o MESMO componente visual dos demais
+        // cards de ferramenta (tl-toolcard, IN/OUT) — so que, ao contrario dos
+        // outros (que so sabem o resultado no final), este atualiza o OUT
+        // incrementalmente enquanto o comando roda, e comeca expandido (o
+        // usuario normalmente quer acompanhar a saida ao vivo, como no Bash do
+        // Claude Code) em vez de colapsado como as demais ferramentas.
         function startTerminal(cmd) {
             finalizeTerminal();
 
@@ -4622,38 +4655,54 @@
             label.className = 'tl-text';
             label.textContent = cmd ? `Running: ${cmd}` : 'Running command...';
 
-            // Terminal block (collapsible)
-            const terminal = document.createElement('div');
-            terminal.className = 'tl-terminal';
+            const card = document.createElement('div');
+            card.className = 'tl-toolcard';
 
             const header = document.createElement('div');
-            header.className = 'tl-terminal-header';
-            const cmdSpan = document.createElement('span');
-            cmdSpan.className = 'tl-terminal-cmd';
-            cmdSpan.textContent = cmd || 'terminal';
+            header.className = 'tl-toolcard-header';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tl-toolcard-name';
+            nameSpan.textContent = 'Bash';
             const toggle = document.createElement('span');
-            toggle.className = 'tl-terminal-toggle mi';
+            toggle.className = 'tl-toolcard-toggle mi';
             toggle.textContent = 'expand_more';
-            header.appendChild(cmdSpan);
+            header.appendChild(nameSpan);
             header.appendChild(toggle);
             header.addEventListener('click', () => {
-                terminal.classList.toggle('collapsed');
-                toggle.textContent = terminal.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+                card.classList.toggle('collapsed');
+                toggle.textContent = card.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
             });
 
-            const termBody = document.createElement('div');
-            termBody.className = 'tl-terminal-body';
+            const cardBody = document.createElement('div');
+            cardBody.className = 'tl-toolcard-body';
 
-            terminal.appendChild(header);
-            terminal.appendChild(termBody);
+            const inLabel = document.createElement('div');
+            inLabel.className = 'tl-toolcard-section-label';
+            inLabel.textContent = 'IN';
+            const inBox = document.createElement('div');
+            inBox.className = 'tl-toolcard-in';
+            inBox.textContent = cmd || 'terminal';
+
+            const outLabel = document.createElement('div');
+            outLabel.className = 'tl-toolcard-section-label';
+            outLabel.textContent = 'OUT';
+            const outBox = document.createElement('div');
+            outBox.className = 'tl-toolcard-out';
+
+            cardBody.appendChild(inLabel);
+            cardBody.appendChild(inBox);
+            cardBody.appendChild(outLabel);
+            cardBody.appendChild(outBox);
+            card.appendChild(header);
+            card.appendChild(cardBody);
             body.appendChild(label);
-            body.appendChild(terminal);
+            body.appendChild(card);
             item.appendChild(dot);
             item.appendChild(body);
             timeline.appendChild(item);
 
-            activeTerminal = termBody;
-            activeTerminalWrapper = terminal;
+            activeTerminal = outBox;
+            activeTerminalWrapper = card;
             activeTerminalItem = item;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -4661,7 +4710,7 @@
         function appendCommandChunk(chunk) {
             if (!activeTerminal) { startTerminal(''); }
             activeTerminal.textContent += chunk;
-            activeTerminalWrapper.scrollTop = activeTerminalWrapper.scrollHeight;
+            activeTerminal.scrollTop = activeTerminal.scrollHeight;
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
@@ -4669,16 +4718,86 @@
             if (activeTerminalItem) {
                 activeTerminalItem.classList.remove('active');
                 activeTerminalItem.classList.add(isError ? 'error' : 'done');
-                // Collapse the terminal body after it finishes
-                if (activeTerminalWrapper) {
-                    activeTerminalWrapper.classList.add('collapsed');
-                    const toggle = activeTerminalWrapper.querySelector('.tl-terminal-toggle');
-                    if (toggle) { toggle.textContent = 'chevron_right'; }
+                if (activeTerminalWrapper && isError) {
+                    activeTerminalWrapper.classList.add('tl-toolcard-error');
                 }
+                // Mantem expandido ao terminar — o usuario ve a saida completa
+                // sem precisar clicar, igual ao Bash do Claude Code.
             }
             activeTerminal = null;
             activeTerminalWrapper = null;
             activeTerminalItem = null;
+        }
+
+        // ── Ferramentas (exceto run_command, que ja tem o terminal ao vivo
+        // acima): card colapsavel IN/OUT no estilo do Claude Code, anexado ao
+        // item da timeline que ja esta ativo (a linha de status que o loop
+        // manda logo antes de rodar a ferramenta) em vez de criar um item novo.
+        const TOOLCARD_OUTPUT_LIMIT = 4000;
+
+        function formatToolArgs(args) {
+            if (!args || typeof args !== 'object' || Object.keys(args).length === 0) { return '(sem argumentos)'; }
+            return Object.entries(args)
+                .map(([k, v]) => {
+                    const val = typeof v === 'string' ? v : JSON.stringify(v);
+                    return val.length > 300 ? k + ': ' + val.slice(0, 300) + '…' : k + ': ' + val;
+                })
+                .join('\n');
+        }
+
+        function renderToolResult(name, args, output, success) {
+            const timeline = getTimeline();
+            if (!timeline) { return; }
+            const item = timeline.querySelector('.tl-item.active') || timeline.lastElementChild;
+            if (!item) { return; }
+
+            const card = document.createElement('div');
+            card.className = 'tl-toolcard collapsed';
+
+            const header = document.createElement('div');
+            header.className = 'tl-toolcard-header';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tl-toolcard-name';
+            nameSpan.textContent = name;
+            const toggle = document.createElement('span');
+            toggle.className = 'tl-toolcard-toggle mi';
+            toggle.textContent = 'chevron_right';
+            header.appendChild(nameSpan);
+            header.appendChild(toggle);
+            header.addEventListener('click', () => {
+                card.classList.toggle('collapsed');
+                toggle.textContent = card.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+            });
+
+            const body = document.createElement('div');
+            body.className = 'tl-toolcard-body';
+
+            const inLabel = document.createElement('div');
+            inLabel.className = 'tl-toolcard-section-label';
+            inLabel.textContent = 'IN';
+            const inBox = document.createElement('div');
+            inBox.className = 'tl-toolcard-in';
+            inBox.textContent = formatToolArgs(args);
+
+            const outLabel = document.createElement('div');
+            outLabel.className = 'tl-toolcard-section-label';
+            outLabel.textContent = 'OUT';
+            const outBox = document.createElement('div');
+            outBox.className = 'tl-toolcard-out' + (success ? '' : ' tl-toolcard-out-error');
+            const full = output || '(sem saida)';
+            outBox.textContent = full.length > TOOLCARD_OUTPUT_LIMIT ? full.slice(0, TOOLCARD_OUTPUT_LIMIT) + '\n…(truncado)' : full;
+
+            body.appendChild(inLabel);
+            body.appendChild(inBox);
+            body.appendChild(outLabel);
+            body.appendChild(outBox);
+            card.appendChild(header);
+            card.appendChild(body);
+
+            const tlBody = item.querySelector('.tl-body') || item;
+            tlBody.appendChild(card);
+            if (!success) { item.classList.remove('active'); item.classList.remove('done'); item.classList.add('error'); }
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         // ── Custom commands (eucode.json) ──

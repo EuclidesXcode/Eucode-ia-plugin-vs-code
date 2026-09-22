@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSessionMemoryPath = getSessionMemoryPath;
 exports.loadSessionMemory = loadSessionMemory;
 exports.rememberApprovedCommand = rememberApprovedCommand;
+exports.rememberApprovedFile = rememberApprovedFile;
 exports.rememberDecision = rememberDecision;
 exports.detectAndRememberStack = detectAndRememberStack;
 exports.buildMemorySummary = buildMemorySummary;
@@ -57,6 +58,7 @@ function emptyMemory(sessionId) {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         approvedCommands: [],
+        approvedFiles: [],
         decisions: [],
     };
 }
@@ -77,6 +79,7 @@ function loadSessionMemory(sessionId) {
             updatedAt: parsed.updatedAt || Date.now(),
             stack: parsed.stack,
             approvedCommands: Array.isArray(parsed.approvedCommands) ? parsed.approvedCommands : [],
+            approvedFiles: Array.isArray(parsed.approvedFiles) ? parsed.approvedFiles : [],
             decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
         };
     }
@@ -106,6 +109,17 @@ function rememberApprovedCommand(sessionId, command) {
         return;
     }
     mem.approvedCommands.push(normalized);
+    writeMemory(mem);
+}
+// Adds an approved file (absolute path) to the session memory, dedup'd.
+// Persists to disk — mirrors rememberApprovedCommand above.
+function rememberApprovedFile(sessionId, absolutePath) {
+    const mem = loadSessionMemory(sessionId);
+    const normalized = absolutePath.trim();
+    if (!normalized || mem.approvedFiles.includes(normalized)) {
+        return;
+    }
+    mem.approvedFiles.push(normalized);
     writeMemory(mem);
 }
 // Adds a free-form decision/note. Dedup on identical text.

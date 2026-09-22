@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { callAI, callAnthropicAI, ToolCall, tryParseJsonChunk } from '../services/api-client';
 import { queryRag, formatRagContext, RagProvider } from '../services/rag-client';
 import { callSupportProvider } from '../services/hybrid-client';
-import { loadSessionMemory, rememberApprovedCommand, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
+import { loadSessionMemory, rememberApprovedCommand, rememberApprovedFile, rememberDecision, buildMemorySummary, dumpMemoryAsJson, detectAndRememberStack } from '../services/memory-service';
 import { ProjectIntelService } from '../services/project-intel';
 import { TaskDecomposerService, SubTask } from '../services/task-decomposer';
 import { AIProvider, SupportProvider } from '../config/settings';
@@ -18,11 +18,12 @@ import { TOOLS, TOOL_NAMES } from './tools-definition';
 import { MAX_AGENT_STEPS, CONTEXT_TOKEN_BUDGET, CHARS_PER_TOKEN, contextPruneTokenThreshold } from '../utils/constants';
 import { resolveFilePath } from '../utils/validation';
 import { contextSanitizer } from '../services/context-sanitizer';
-import { ExecutionGuardService, ExecutionState } from '../services/execution-guard';
+import { ExecutionGuardService, ExecutionState, detectsCapabilityDenial } from '../services/execution-guard';
 import { OrchestrationMetrics } from '../services/orchestration-metrics';
 import { FactSheet } from '../services/fact-sheet';
 import { isExtractable, extractDocument } from '../services/document-extractor';
 import { executeBrowserAction } from '../tools/browser-tools';
+import { detectsPendingAction } from './pending-action';
 import { validateCommandSafety } from '../tools/command-safety';
 
 export type TodoItem = { content: string; status: 'pending' | 'in_progress' | 'completed' };
@@ -142,6 +143,12 @@ function buildToolHandlers(
     autoMode: boolean,
     filesReadThisRound: Set<string>,
     sessionApprovedCommands: Set<string>,
+    // Aprovar a escrita de um arquivo uma vez dispensa nova confirmacao para
+    // ESSE MESMO arquivo pelo resto da tarefa — o risco de editar de novo um
+    // arquivo ja aprovado nao muda, entao reperguntar so adiciona friccao sem
+    // adicionar seguranca (mesmo espirito do sessionApprovedCommands acima,
+    // simplificado: aqui toda aprovacao ja vale para a sessao).
+    sessionApprovedFiles: Set<string>,
     fileCache: Map<string, string>,
     dirCache: Map<string, string>,
     counters: {
@@ -239,9 +246,14 @@ function buildToolHandlers(
                 return editResult;
             }
 
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after });
-            if (!approved) { return '[CANCELLED] User rejected the file change.'; }
+            const resolvedForApproval = resolveFilePath(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved = await onConfirmWrite({ filePath, before, after });
+                if (!approved) { return '[CANCELLED] User rejected the file change.'; }
+                sessionApprovedFiles.add(resolvedForApproval);
+                if (sessionId) { rememberApprovedFile(sessionId, resolvedForApproval); }
+            }
             const editResult2 = editLocalFile(filePath, oldString, newString, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
             counters.filesWritten++;
@@ -291,9 +303,14 @@ function buildToolHandlers(
                 return writeResult;
             }
 
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved2 = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved2) { return '[CANCELLED] User rejected the file change.'; }
+            const resolvedForApproval2 = resolveFilePath(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval2)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved2 = await onConfirmWrite({ filePath, before, after: content });
+                if (!approved2) { return '[CANCELLED] User rejected the file change.'; }
+                sessionApprovedFiles.add(resolvedForApproval2);
+                if (sessionId) { rememberApprovedFile(sessionId, resolvedForApproval2); }
+            }
             const writeResult2 = writeLocalFile(filePath, content, cwd);
             fileCache.delete(resolveFilePath(filePath, cwd));
             counters.filesWritten++;
@@ -330,7 +347,11 @@ function buildToolHandlers(
                 }
             }
 
-            if (!autoMode && !sessionApprovedCommands.has(cmd)) {
+            // Comando classificado como 'safe' (ex: ls, cat, npm test, node --version)
+            // nunca pede confirmacao fora do AUTO — mesmo criterio que ja isenta
+            // subcomandos git read-only (ver run_git/isGitReadOnly abaixo). So
+            // 'dangerous' pede aprovacao manual; 'blocked' ja foi recusado acima.
+            if (!autoMode && safety.risk !== 'safe' && !sessionApprovedCommands.has(cmd)) {
                 onStatus(`Awaiting approval to run: ${cmd}`);
                 const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
                 if (decision === 'block') {
@@ -470,38 +491,6 @@ function buildToolHandlers(
             );
         },
     };
-}
-
-const PENDING_ACTION_PATTERNS = [
-    /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
-    /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
-    /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
-    /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
-    /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
-    /vou procurar/i, /vou buscar/i, /vou ler/i, /vou analisar/i, /vou listar/i, /vou abrir/i,
-    /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
-    /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
-    /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
-    /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
-    /escrevi o arquivo/i, /gravei o arquivo/i,
-    /criei o mock/i, /gerei o arquivo/i,
-    /eu removi/i, /removi os/i, /apaguei os/i, /deletei os/i,
-    /eu criei/i, /eu escrevi/i, /eu atualizei/i, /eu modifiquei/i,
-    /eu executei/i, /executei os testes/i, /rodei os testes/i,
-    /testes passaram/i, /testes foram executados/i,
-    /atualizei o/i, /modifiquei o/i, /corrigi o/i,
-    /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
-    /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
-    /i will refactor/i, /i will fix/i, /i will update/i,
-    /i removed/i, /i deleted/i, /i updated/i, /i modified/i,
-    /i ran the tests/i, /tests passed/i, /i executed/i,
-];
-
-function detectsPendingAction(text: string, autoMode = false): boolean {
-    const toCheck = autoMode
-        ? text
-        : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
-    return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 
 // Normaliza um objeto ja parseado para ToolCall, cobrindo os varios shapes que
@@ -682,7 +671,12 @@ export async function runAgentLoop(
     ragEmbedModel?: string,
     // Orcamento de contexto (tokens) ja resolvido pelo chamador (setting do
     // usuario ou default do provedor). Calibra poda e limpeza de output.
-    contextTokenBudget: number = CONTEXT_TOKEN_BUDGET
+    contextTokenBudget: number = CONTEXT_TOKEN_BUDGET,
+    // Chamado uma vez por ferramenta executada (exceto run_command, que já
+    // tem o próprio card de terminal ao vivo — ver onCommandStart/
+    // onCommandOutput/onCommandEnd). Alimenta o card colapsável IN/OUT na
+    // timeline do webview (estilo Claude Code) para as demais ferramentas.
+    onToolResult?: (name: string, args: Record<string, unknown>, output: string, success: boolean) => void
 ): Promise<string> {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
@@ -792,6 +786,11 @@ export async function runAgentLoop(
     const sessionApprovedCommands = new Set<string>(
         sessionId ? loadSessionMemory(sessionId).approvedCommands : []
     );
+    // Mesma ideia para arquivos: aprovar a escrita de um arquivo uma vez
+    // dispensa nova confirmacao para ESSE MESMO arquivo pelo resto da sessao.
+    const sessionApprovedFiles = new Set<string>(
+        sessionId ? loadSessionMemory(sessionId).approvedFiles : []
+    );
     const fileCache = new Map<string, string>();
     const dirCache = new Map<string, string>();
     // Guard único de execução — fonte única dos nudges corretivos do loop.
@@ -812,7 +811,7 @@ export async function runAgentLoop(
         onStatus, onCommandStart, onCommandOutput, onCommandEnd,
         onConfirmWrite, onConfirmCommand, onGetDiagnostics,
         onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands,
-        fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget
+        sessionApprovedFiles, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget
     );
 
     const thinkingStatus = [
@@ -1080,13 +1079,18 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             ? TOOLS.filter(t => enabledTools.includes(t.name))
             : TOOLS;
         // Gating de ferramentas por fase: para modelo pequeno, menos opções =
-        // decisão mais fácil. Escondemos run_git e web_search a menos que a
-        // tarefa os peça (palavra-chave no prompt) ou o modelo já os tenha usado
-        // nesta rodada. As ferramentas de edição/leitura ficam sempre visíveis.
-        const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag)\b/i.test(userPrompt)
+        // decisão mais fácil. Escondemos run_git a menos que a tarefa o peça
+        // (palavra-chave no prompt) ou o modelo já o tenha usado nesta rodada.
+        // web_search fica SEMPRE visível (liberdade de acesso à internet —
+        // ver CHANGELOG) — era escondido pela mesma lógica, mas a lista de
+        // palavras-chave não cobria pedidos obvios ("GitHub", "subir",
+        // "repositório"), e o modelo, sem a ferramenta de git disponível,
+        // alucinava que tinha feito o push em vez de dizer que não podia. As
+        // ferramentas de edição/leitura ficam sempre visíveis.
+        const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag|github|gitlab|bitbucket)\b/i.test(userPrompt)
+            || /\b(subir?|suba|enviar?|envie|publicar?|publique|mandar?|mande)\b[^.]{0,30}\b(projeto|c[oó]digo|reposit[oó]rio|repo)\b/i.test(userPrompt)
+            || /\b(criar?|crie)\b[^.]{0,20}\breposit[oó]rio\b/i.test(userPrompt)
             || lastToolName === 'run_git';
-        const webRelevant = /\b(http|https|www\.|documenta|pesquis|search|web|api d[eo]|como usar|biblioteca|library|erro desconhecido)\b/i.test(userPrompt)
-            || lastToolName === 'web_search';
         // browser_action (Playwright) so aparece quando a tarefa cita navegador/
         // teste web — evita empurrar uma tool pesada em toda rodada do modelo
         // pequeno.
@@ -1096,7 +1100,6 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             ? baseTools.filter(t => t.name === 'web_search')
             : baseTools.filter(t =>
                 (t.name !== 'run_git'      || gitRelevant) &&
-                (t.name !== 'web_search'   || webRelevant) &&
                 (t.name !== 'browser_action' || browserRelevant)
               );
 
@@ -1221,6 +1224,16 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             const toolOutput = handler
                 ? await handler(args as Record<string, any>, defaultCwd, step, MAX_AGENT_STEPS)
                 : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+
+            // run_command já tem seu próprio card de terminal ao vivo
+            // (onCommandStart/Output/End, com streaming). Para as demais
+            // (incluindo run_git, que roda síncrono e hoje só tem uma linha de
+            // status), este é o único ponto que vê nome+args+output juntos —
+            // alimenta o card colapsável IN/OUT da timeline do webview.
+            if (name !== 'run_command') {
+                const isError = /^\[?(ERRO|ERROR|CANCELLED|BLOCKED)/i.test(toolOutput);
+                onToolResult?.(name, args as Record<string, unknown>, toolOutput, !isError);
+            }
 
             // Alimenta o fact sheet com o essencial ANTES de qualquer poda, para
             // que o fato sobreviva mesmo que o par tool bruto seja descartado.
@@ -1354,8 +1367,14 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
             const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
             const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
+            // Model denies having tool/terminal/filesystem access even though DEV
+            // mode always sends the real tool schema. Not gated on AUTO — wrong in
+            // any mode where tools exist. Checked here (not just inside
+            // executionGuard.evaluate) so it also decides whether to enter the
+            // nudge branch at all, not just which message to show once inside it.
+            const deniesCapability = !chatMode && detectsCapabilityDenial(text);
 
-            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+            if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting || deniesCapability) {
                 pendingActionStreak++;
                 orchMetrics.recordPendingNudge();
 

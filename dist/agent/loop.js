@@ -57,6 +57,7 @@ const orchestration_metrics_1 = require("../services/orchestration-metrics");
 const fact_sheet_1 = require("../services/fact-sheet");
 const document_extractor_1 = require("../services/document-extractor");
 const browser_tools_1 = require("../tools/browser-tools");
+const pending_action_1 = require("./pending-action");
 const command_safety_1 = require("../tools/command-safety");
 // Extrai nomes de funções, classes, exports e variáveis exportadas de um bloco de código
 function extractSymbols(code) {
@@ -131,7 +132,13 @@ function parseErrorLocations(output) {
     }
     return { files, summary };
 }
-function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
+function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, autoMode, filesReadThisRound, sessionApprovedCommands, 
+// Aprovar a escrita de um arquivo uma vez dispensa nova confirmacao para
+// ESSE MESMO arquivo pelo resto da tarefa — o risco de editar de novo um
+// arquivo ja aprovado nao muda, entao reperguntar so adiciona friccao sem
+// adicionar seguranca (mesmo espirito do sessionApprovedCommands acima,
+// simplificado: aqui toda aprovacao ja vale para a sessao).
+sessionApprovedFiles, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
     return {
         list_directory: async (args, cwd) => {
             const dir = path.resolve(cwd, args.dirPath || args.path || cwd);
@@ -212,10 +219,17 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return editResult;
             }
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved = await onConfirmWrite({ filePath, before, after });
-            if (!approved) {
-                return '[CANCELLED] User rejected the file change.';
+            const resolvedForApproval = (0, validation_1.resolveFilePath)(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved = await onConfirmWrite({ filePath, before, after });
+                if (!approved) {
+                    return '[CANCELLED] User rejected the file change.';
+                }
+                sessionApprovedFiles.add(resolvedForApproval);
+                if (sessionId) {
+                    (0, memory_service_1.rememberApprovedFile)(sessionId, resolvedForApproval);
+                }
             }
             const editResult2 = (0, file_tools_1.editLocalFile)(filePath, oldString, newString, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
@@ -264,10 +278,17 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                 onFileTouched?.((0, validation_1.resolveFilePath)(filePath, cwd));
                 return writeResult;
             }
-            onStatus(`Awaiting approval: ${path.basename(filePath)}`);
-            const approved2 = await onConfirmWrite({ filePath, before, after: content });
-            if (!approved2) {
-                return '[CANCELLED] User rejected the file change.';
+            const resolvedForApproval2 = (0, validation_1.resolveFilePath)(filePath, cwd);
+            if (!sessionApprovedFiles.has(resolvedForApproval2)) {
+                onStatus(`Awaiting approval: ${path.basename(filePath)}`);
+                const approved2 = await onConfirmWrite({ filePath, before, after: content });
+                if (!approved2) {
+                    return '[CANCELLED] User rejected the file change.';
+                }
+                sessionApprovedFiles.add(resolvedForApproval2);
+                if (sessionId) {
+                    (0, memory_service_1.rememberApprovedFile)(sessionId, resolvedForApproval2);
+                }
             }
             const writeResult2 = (0, file_tools_1.writeLocalFile)(filePath, content, cwd);
             fileCache.delete((0, validation_1.resolveFilePath)(filePath, cwd));
@@ -304,7 +325,11 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
                     }
                 }
             }
-            if (!autoMode && !sessionApprovedCommands.has(cmd)) {
+            // Comando classificado como 'safe' (ex: ls, cat, npm test, node --version)
+            // nunca pede confirmacao fora do AUTO — mesmo criterio que ja isenta
+            // subcomandos git read-only (ver run_git/isGitReadOnly abaixo). So
+            // 'dangerous' pede aprovacao manual; 'blocked' ja foi recusado acima.
+            if (!autoMode && safety.risk !== 'safe' && !sessionApprovedCommands.has(cmd)) {
                 onStatus(`Awaiting approval to run: ${cmd}`);
                 const decision = await onConfirmCommand({ command: cmd, cwd: workDir });
                 if (decision === 'block') {
@@ -457,36 +482,6 @@ function buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandE
             }, (args.browser === 'webkit' ? 'webkit' : 'chromium'));
         },
     };
-}
-const PENDING_ACTION_PATTERNS = [
-    /vou criar/i, /vou escrever/i, /vou gerar/i, /vou adicionar/i,
-    /vou implementar/i, /vou modificar/i, /vou editar/i, /vou atualizar/i,
-    /vou executar/i, /vou rodar/i, /vou instalar/i, /vou fazer/i,
-    /vou refatorar/i, /vou corrigir/i, /vou ajustar/i, /vou focar/i,
-    /vou usar/i, /vou aplicar/i, /vou tentar/i, /vou verificar/i,
-    /vou procurar/i, /vou buscar/i, /vou ler/i, /vou analisar/i, /vou listar/i, /vou abrir/i,
-    /agora vou/i, /agora crio/i, /agora escrevo/i, /agora corrijo/i,
-    /a seguir vou/i, /em seguida vou/i, /enquanto isso/i,
-    /criando o arquivo/i, /escrevendo o arquivo/i, /refatorando/i,
-    /criei o arquivo/i, /arquivo foi criado/i, /arquivo criado/i,
-    /escrevi o arquivo/i, /gravei o arquivo/i,
-    /criei o mock/i, /gerei o arquivo/i,
-    /eu removi/i, /removi os/i, /apaguei os/i, /deletei os/i,
-    /eu criei/i, /eu escrevi/i, /eu atualizei/i, /eu modifiquei/i,
-    /eu executei/i, /executei os testes/i, /rodei os testes/i,
-    /testes passaram/i, /testes foram executados/i,
-    /atualizei o/i, /modifiquei o/i, /corrigi o/i,
-    /i will create/i, /i will write/i, /i will now/i, /i'll create/i, /i'll write/i,
-    /i have created/i, /i've created/i, /i have written/i, /file has been created/i,
-    /i will refactor/i, /i will fix/i, /i will update/i,
-    /i removed/i, /i deleted/i, /i updated/i, /i modified/i,
-    /i ran the tests/i, /tests passed/i, /i executed/i,
-];
-function detectsPendingAction(text, autoMode = false) {
-    const toCheck = autoMode
-        ? text
-        : text.split('\n').filter(l => l.trim()).slice(-6).join(' ');
-    return PENDING_ACTION_PATTERNS.some(p => p.test(toCheck));
 }
 // Normaliza um objeto ja parseado para ToolCall, cobrindo os varios shapes que
 // modelos pequenos emitem quando o servidor NAO faz o tool-calling nativo:
@@ -651,7 +646,12 @@ async function runAgentLoop(userPrompt, contextBlock, defaultCwd, endpoint, auth
 ragProvider = 'chroma', ragEmbedHost, ragEmbedModel, 
 // Orcamento de contexto (tokens) ja resolvido pelo chamador (setting do
 // usuario ou default do provedor). Calibra poda e limpeza de output.
-contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
+contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET, 
+// Chamado uma vez por ferramenta executada (exceto run_command, que já
+// tem o próprio card de terminal ao vivo — ver onCommandStart/
+// onCommandOutput/onCommandEnd). Alimenta o card colapsável IN/OUT na
+// timeline do webview (estilo Claude Code) para as demais ferramentas.
+onToolResult) {
     // CHAT mode skips all coding-agent ceremony: no AUTO/HYBRID guards
     // applied, no RAG, no session memory injection, no workspace context.
     // The system prompt is just the conversational instructions.
@@ -750,6 +750,9 @@ contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
     // Pre-populate from persisted memory so previously-approved commands
     // don't need re-confirmation across reloads of the same session.
     const sessionApprovedCommands = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedCommands : []);
+    // Mesma ideia para arquivos: aprovar a escrita de um arquivo uma vez
+    // dispensa nova confirmacao para ESSE MESMO arquivo pelo resto da sessao.
+    const sessionApprovedFiles = new Set(sessionId ? (0, memory_service_1.loadSessionMemory)(sessionId).approvedFiles : []);
     const fileCache = new Map();
     const dirCache = new Map();
     // Guard único de execução — fonte única dos nudges corretivos do loop.
@@ -766,7 +769,7 @@ contextTokenBudget = constants_2.CONTEXT_TOKEN_BUDGET) {
         lastErrorSummary: '',
         lastEditedFile: '',
     };
-    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget);
+    const toolHandlers = buildToolHandlers(onStatus, onCommandStart, onCommandOutput, onCommandEnd, onConfirmWrite, onConfirmCommand, onGetDiagnostics, onTodoUpdate, effectiveAutoMode, filesReadThisRound, sessionApprovedCommands, sessionApprovedFiles, fileCache, dirCache, counters, onFileTouched, sessionId, contextTokenBudget);
     const thinkingStatus = [
         'Analyzing your request...',
         'Processing project context...',
@@ -1042,13 +1045,18 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 ? tools_definition_2.TOOLS.filter(t => enabledTools.includes(t.name))
                 : tools_definition_2.TOOLS;
             // Gating de ferramentas por fase: para modelo pequeno, menos opções =
-            // decisão mais fácil. Escondemos run_git e web_search a menos que a
-            // tarefa os peça (palavra-chave no prompt) ou o modelo já os tenha usado
-            // nesta rodada. As ferramentas de edição/leitura ficam sempre visíveis.
-            const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag)\b/i.test(userPrompt)
+            // decisão mais fácil. Escondemos run_git a menos que a tarefa o peça
+            // (palavra-chave no prompt) ou o modelo já o tenha usado nesta rodada.
+            // web_search fica SEMPRE visível (liberdade de acesso à internet —
+            // ver CHANGELOG) — era escondido pela mesma lógica, mas a lista de
+            // palavras-chave não cobria pedidos obvios ("GitHub", "subir",
+            // "repositório"), e o modelo, sem a ferramenta de git disponível,
+            // alucinava que tinha feito o push em vez de dizer que não podia. As
+            // ferramentas de edição/leitura ficam sempre visíveis.
+            const gitRelevant = /\b(git|commit|push|pull|branch|merge|stash|diff|checkout|rebase|tag|github|gitlab|bitbucket)\b/i.test(userPrompt)
+                || /\b(subir?|suba|enviar?|envie|publicar?|publique|mandar?|mande)\b[^.]{0,30}\b(projeto|c[oó]digo|reposit[oó]rio|repo)\b/i.test(userPrompt)
+                || /\b(criar?|crie)\b[^.]{0,20}\breposit[oó]rio\b/i.test(userPrompt)
                 || lastToolName === 'run_git';
-            const webRelevant = /\b(http|https|www\.|documenta|pesquis|search|web|api d[eo]|como usar|biblioteca|library|erro desconhecido)\b/i.test(userPrompt)
-                || lastToolName === 'web_search';
             // browser_action (Playwright) so aparece quando a tarefa cita navegador/
             // teste web — evita empurrar uma tool pesada em toda rodada do modelo
             // pequeno.
@@ -1057,7 +1065,6 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
             const activeTools = chatMode
                 ? baseTools.filter(t => t.name === 'web_search')
                 : baseTools.filter(t => (t.name !== 'run_git' || gitRelevant) &&
-                    (t.name !== 'web_search' || webRelevant) &&
                     (t.name !== 'browser_action' || browserRelevant));
             // Poda preventiva calibrada pelo orçamento de contexto (CONTEXT_TOKEN_
             // BUDGET). Só poda quando passa do threshold derivado — janelas maiores
@@ -1173,6 +1180,15 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 const toolOutput = handler
                     ? await handler(args, defaultCwd, step, constants_2.MAX_AGENT_STEPS)
                     : `ERRO: Ferramenta "${name}" nao reconhecida.`;
+                // run_command já tem seu próprio card de terminal ao vivo
+                // (onCommandStart/Output/End, com streaming). Para as demais
+                // (incluindo run_git, que roda síncrono e hoje só tem uma linha de
+                // status), este é o único ponto que vê nome+args+output juntos —
+                // alimenta o card colapsável IN/OUT da timeline do webview.
+                if (name !== 'run_command') {
+                    const isError = /^\[?(ERRO|ERROR|CANCELLED|BLOCKED)/i.test(toolOutput);
+                    onToolResult?.(name, args, toolOutput, !isError);
+                }
                 // Alimenta o fact sheet com o essencial ANTES de qualquer poda, para
                 // que o fato sobreviva mesmo que o par tool bruto seja descartado.
                 // Leitura: destila símbolos do conteúdo. Escrita/edição: registra o
@@ -1301,7 +1317,13 @@ Output a NUMBERED list of 3-7 short steps. STRICT format rules:
                 const lastCommandFailed = effectiveAutoMode && counters.lastCommandFailed;
                 const buildNotYetPassed = effectiveAutoMode && counters.filesWritten > 0 && !counters.lastBuildPassed;
                 const dumpedInsteadOfWriting = effectiveAutoMode && dumpedCodeInChat;
-                if (detectsPendingAction(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting) {
+                // Model denies having tool/terminal/filesystem access even though DEV
+                // mode always sends the real tool schema. Not gated on AUTO — wrong in
+                // any mode where tools exist. Checked here (not just inside
+                // executionGuard.evaluate) so it also decides whether to enter the
+                // nudge branch at all, not just which message to show once inside it.
+                const deniesCapability = !chatMode && (0, execution_guard_1.detectsCapabilityDenial)(text);
+                if ((0, pending_action_1.detectsPendingAction)(text, effectiveAutoMode) || modelIsPlanning || lastCommandFailed || buildNotYetPassed || dumpedInsteadOfWriting || deniesCapability) {
                     pendingActionStreak++;
                     orchMetrics.recordPendingNudge();
                     // ── GATILHOS 3/4/5: recuperacao via pago ───────────────

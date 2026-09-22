@@ -46,8 +46,32 @@ const BUILD_KEYWORDS = /\b(build|compile|package|deploy|vsix|release|marketplace
 // Tool name patterns that count as "build" for the guard.
 const BUILD_COMMAND_RE = /\b(build|compile|package|tsc|vsce|webpack|rollup|esbuild|jest|vitest|pytest|cargo build|go build|mvn|gradle|npm run)\b/i;
 
+// Model denying it has tool/terminal/filesystem access — wrong whenever DEV
+// mode is active (the real tool schema always goes in the request). Exported
+// so loop.ts can gate entry into the nudge branch on it too, not just the
+// guard's own message selection — see checkCapabilityDenial below.
+export function detectsCapabilityDenial(text: string): boolean {
+    return /n[ãa]o ten(ho|ho eu)\s+acesso\s+(direto\s+)?(a|ao|à|aos|às)?\s*(terminal|sistema de arquivos|arquivos do (seu|este) computador|seu computador)/i.test(text)
+        || /n[ãa]o posso executar comandos?\s+(diretamente|no (seu|este) computador)?/i.test(text)
+        // "nao tenho a capacidade de X" — X cobre as tools reais (executar/
+        // acessar/rodar comandos) e tambem git/GitHub (subir/publicar/enviar/
+        // fazer push), reproduzido com o modelo negando poder subir o projeto
+        // pro GitHub mesmo com run_git disponivel como ferramenta.
+        || /n[ãa]o tenho a capacidade de (executar|acessar|rodar|subir|publicar|enviar|fazer\s+(push|upload))/i.test(text)
+        || /n[ãa]o (posso|consigo) (subir|publicar|enviar|fazer\s+(push|upload))\s+(o\s+|para\s+o\s+)?(projeto|c[oó]digo|reposit[oó]rio|github)/i.test(text)
+        || /i (don't|do not) have (direct\s+)?access to (your|the) (terminal|file ?system|computer)/i.test(text)
+        || /i (cannot|can't) execute commands? (directly|on your (computer|machine))?/i.test(text)
+        || /i (cannot|can't) (push|upload|publish) (the\s+)?(project|code|repo(sitory)?)/i.test(text);
+}
+
 export class ExecutionGuardService {
     private repeatedCallCount = new Map<string, number>();
+    // Streak-tracking for checkRepeatedText — has to survive across evaluate()
+    // calls that pick a DIFFERENT guard as the winner, so it can't live as a
+    // local inside that method: it's updated unconditionally in evaluate()
+    // itself (see comment there) rather than short-circuited by the ||-chain.
+    private lastText = '';
+    private textRepeatCount = 0;
 
     // Records a tool call so subsequent guards can see history.
     track(state: ExecutionState, call: ToolCallRecord): void {
@@ -59,7 +83,13 @@ export class ExecutionGuardService {
     // Returns the highest-severity guard that applies, or null. Order
     // matters — checked from most-specific to most-generic.
     evaluate(state: ExecutionState): NudgeResult | null {
-        return this.checkDumpedCodeInChat(state)
+        // checkRepeatedText mutates streak state — called unconditionally
+        // (not as part of the ||-chain below) so its bookkeeping never gets
+        // skipped just because a different guard ends up winning this call.
+        const repeatedTextResult = this.checkRepeatedText(state);
+        return this.checkCapabilityDenial(state)
+            || repeatedTextResult
+            || this.checkDumpedCodeInChat(state)
             || this.checkWrongFileEdit(state)
             || this.checkBuildPendingButNoCommand(state)
             || this.checkLastCommandFailed(state)
@@ -68,6 +98,24 @@ export class ExecutionGuardService {
     }
 
     // ── Individual guards ─────────────────────────────────────────────
+
+    // Model claims it has no tool/terminal/filesystem access ("como sou uma
+    // IA, nao tenho acesso ao terminal do seu computador") even though DEV
+    // mode always sends the real tool schema. Once this kind of refusal is
+    // produced once and saved to session history, it tends to self-reinforce
+    // — the model imitates its own prior turn on every later message, even
+    // after the user insists it does have access. Checked first (before
+    // model_planning) and NOT gated on autoMode: this is wrong in any mode
+    // where tools exist, not just an AUTO continuation problem.
+    private checkCapabilityDenial(state: ExecutionState): NudgeResult | null {
+        if (!detectsCapabilityDenial(state.lastModelText)) { return null; }
+        return {
+            severity: 'critical',
+            reason: 'capability_denial',
+            message: 'Você TEM acesso a ferramentas reais neste ambiente (run_command, read_local_file, write_local_file, edit_file, list_directory e outras — vieram no schema desta mensagem). Não é uma limitação sua. Chame a ferramenta apropriada agora para executar a tarefa, em vez de dizer que não pode.',
+            requireHybridIfAvailable: true,
+        };
+    }
 
     // Model dumped >200 chars of code in chat instead of using a tool.
     private checkDumpedCodeInChat(state: ExecutionState): NudgeResult | null {
@@ -140,6 +188,33 @@ export class ExecutionGuardService {
             reason: 'build_not_passed',
             message: 'Você escreveu arquivos mas o build ainda não passou. Próximo passo: rode o build (ex: npm run build). Se falhar, corrija e tente de novo.',
             requireHybridIfAvailable: false,
+        };
+    }
+
+    // Model produced the SAME text-only response twice (or more) in a row —
+    // a real failure mode reproduced with a local model stuck retrying the
+    // same failed build without changing approach: it repeated an identical
+    // "corrija o erro e tente novamente" message across every AUTO retry
+    // until the hard cap gave up, burning the whole retry budget on
+    // attempts that were never going to be different. Catching this after
+    // just 2 repeats (3 identical responses total) means the loop finds out
+    // it's stuck WHILE it still has retries left to actually try something
+    // else, instead of only at the very end.
+    private checkRepeatedText(state: ExecutionState): NudgeResult | null {
+        const t = state.lastModelText.trim();
+        if (!t) { this.lastText = ''; this.textRepeatCount = 0; return null; }
+        if (t === this.lastText) {
+            this.textRepeatCount++;
+        } else {
+            this.lastText = t;
+            this.textRepeatCount = 0;
+        }
+        if (this.textRepeatCount < 2) { return null; }
+        return {
+            severity: 'critical',
+            reason: 'repeated_text',
+            message: `Voce respondeu exatamente a mesma coisa ${this.textRepeatCount + 1} vezes seguidas sem progredir. Repetir nao vai destravar sozinho. Releia o ultimo erro com atencao, identifique a causa raiz especifica (nome de arquivo, linha, mensagem exata) e faca algo CONCRETAMENTE DIFERENTE do que ja tentou — ou, se realmente nao souber o proximo passo, pare e explique ao usuario o que esta bloqueando, em vez de repetir a mesma frase.`,
+            requireHybridIfAvailable: true,
         };
     }
 

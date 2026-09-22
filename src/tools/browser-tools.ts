@@ -8,19 +8,24 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
+import { buildCommandEnv } from './shell-tools';
 
 // Carrega o Playwright sob demanda. Como o pacote NAO vai no .vsix (fica em
 // devDependencies), tentamos resolver de varios lugares: (1) o node_modules do
 // proprio plugin — util em dev; (2) a instalacao GLOBAL do npm do usuario, que
 // e onde 'npm i -g playwright' coloca. Retorna null se nada resolver, para
 // browser_action responder com instrucao de instalacao em vez de crashar.
-function loadPlaywright(): typeof import('playwright') | null {
+async function loadPlaywright(): Promise<typeof import('playwright') | null> {
     // 1) resolucao padrao (node_modules local / dev)
     try { return require('playwright'); } catch { /* tenta global */ }
-    // 2) resolucao global: descobre o prefixo do npm e monta o caminho.
+    // 2) resolucao global: descobre o prefixo do npm e monta o caminho. Precisa
+    // do PATH real do usuario (Homebrew/nvm) — ver buildCommandEnv em
+    // shell-tools.ts — senao `npm` "some" quando o VS Code roda com o PATH
+    // minimo do sistema (app GUI aberto sem terminal).
     try {
         const { execSync } = require('child_process');
-        const globalRoot = String(execSync('npm root -g', { encoding: 'utf8' })).trim();
+        const env = await buildCommandEnv();
+        const globalRoot = String(execSync('npm root -g', { encoding: 'utf8', env })).trim();
         if (globalRoot) {
             return require(path.join(globalRoot, 'playwright'));
         }
@@ -108,7 +113,7 @@ class BrowserManager {
             await this.close();
         }
         if (!this.browser || !this.browser.isConnected()) {
-            const pw = loadPlaywright();
+            const pw = await loadPlaywright();
             if (!pw) { throw new Error(PLAYWRIGHT_MISSING_MSG); }
             const launcher = browserType === 'webkit' ? pw.webkit : pw.chromium;
             this.browser = await launcher.launch({ headless: false });
